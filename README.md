@@ -36,7 +36,7 @@ npx eas-cli@latest build --platform android --profile preview
 
 The preview profile produces an APK suitable for direct Android installation. EAS manages the signing key so later builds can update the installed app.
 
-The included GitHub workflow builds a smaller ARM64 preview APK and attaches it to the `v1.2.0` GitHub Release. ARM64 covers modern Android phones while omitting emulator-only CPU libraries that made the universal APK unnecessarily large. The build does not require an Expo account. It uses development signing and is intended for direct testing; use EAS signing before a public or Play Store release.
+The GitHub workflows build smaller ARM64 preview APKs without an Expo account. Every pull request receives a temporary downloadable artifact, and every successful build on `main` publishes a uniquely numbered GitHub prerelease. ARM64 covers modern Android phones while omitting emulator-only CPU libraries that made the universal APK unnecessarily large. These builds use development signing and are intended for direct testing; use EAS signing before a public or Play Store release.
 
 ## Release notes
 
