@@ -1,0 +1,44 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Build installable APK
+        working-directory: android
+        run: ./gradlew assembleRelease
+      - name: Name APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk pharmacy-pocket-v1.0.0.apk
+      - name: Publish preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: Pharmacy Pocket v1.0.0
+          prerelease: true
+          generate_release_notes: true
+          files: pharmacy-pocket-v1.0.0.apk
