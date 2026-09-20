@@ -39,6 +39,9 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Regression tests
+        run: npm test
+
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean --no-install
 

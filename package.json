@@ -1,8 +1,9 @@
 {
   "name": "pharmacy-pocket-native",
   "main": "expo-router/entry",
-  "version": "1.2.0",
+  "version": "2.5.0",
   "scripts": {
+    "test": "node --test tests/*.cjs",
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",

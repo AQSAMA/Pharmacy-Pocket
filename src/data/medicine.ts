@@ -38,5 +38,6 @@ export function isMedicine(value: unknown): value is Medicine {
   );
 }
 
-export const formatPrice = (value: number) => value.toLocaleString('en-US');
+const priceFormatter = new Intl.NumberFormat('en-US');
+export const formatPrice = (value: number) => priceFormatter.format(value);
 export const hasArabic = (value: string) => /[\u0600-\u06FF]/.test(value);
