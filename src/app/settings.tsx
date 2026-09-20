@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing';
 import React from 'react';
 import { Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 
-import { isMedicine } from '@/data/medicine';
+import { createBackup, parseBackup, type ParsedBackup } from '@/data/backup';
 import { useMedicines } from '@/data/medicine-store';
 
 function SettingButton({ label, onPress }: { label: string; onPress(): void }) {
@@ -12,28 +12,35 @@ function SettingButton({ label, onPress }: { label: string; onPress(): void }) {
 }
 
 export default function SettingsScreen() {
-  const { items, largeText, setLargeText, merge } = useMedicines();
+  const { items, largeText, setLargeText, merge, replace } = useMedicines();
 
   const backup = async () => {
     try {
       if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device.');
       const uri = `${FileSystem.cacheDirectory}pharmacy-pocket-${new Date().toISOString().slice(0, 10)}.json`;
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), medicines: items }, null, 2));
-      await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Save Pharmacy Pocket backup' });
+      await FileSystem.writeAsStringAsync(uri, JSON.stringify(createBackup(items), null, 2));
+      await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export Pharmacy Pocket JSON' });
     } catch (error) {
       Alert.alert('Backup failed', error instanceof Error ? error.message : 'Please try again.');
     }
+  };
+
+  const applyImport = (data: ParsedBackup, mode: 'merge' | 'replace') => {
+    const action = mode === 'replace' ? replace(data.medicines) : merge(data.medicines);
+    void action
+      .then(() => Alert.alert('Import complete', `${data.medicines.length} medicines and ${data.sections.length} sections were imported.`))
+      .catch((error) => Alert.alert('Import failed', error instanceof Error ? error.message : 'Please try again.'));
   };
 
   const restore = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
       if (result.canceled) return;
-      const data = JSON.parse(await FileSystem.readAsStringAsync(result.assets[0].uri));
-      if (!Array.isArray(data.medicines) || data.medicines.length > 5000 || !data.medicines.every(isMedicine)) throw new Error('This is not a valid Pharmacy Pocket backup.');
-      Alert.alert('Merge backup?', 'Matching medicines will be replaced with the values in this backup.', [
+      const data = parseBackup(JSON.parse(await FileSystem.readAsStringAsync(result.assets[0].uri)));
+      Alert.alert('Import Pharmacy Pocket JSON', `${data.medicines.length} medicines · ${data.sections.length} sections\n\nMerge keeps medicines already on this phone. Replace makes the app match the file exactly.`, [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Merge', onPress: () => void merge(data.medicines).then(() => Alert.alert('Backup restored')) },
+        { text: 'Merge', onPress: () => applyImport(data, 'merge') },
+        { text: 'Replace', style: 'destructive', onPress: () => applyImport(data, 'replace') },
       ]);
     } catch (error) {
       Alert.alert('Import failed', error instanceof Error ? error.message : 'Please try again.');
@@ -50,11 +57,11 @@ export default function SettingsScreen() {
       <View style={{ flex: 1, paddingRight: 15 }}><Text selectable style={{ color: '#234a3c', fontSize: 16, fontWeight: '700' }}>Large text</Text><Text selectable style={{ color: '#75857f', fontSize: 13 }}>For reading from farther away</Text></View>
       <Switch value={largeText} onValueChange={setLargeText} trackColor={{ false: '#ced8d3', true: '#78ad96' }} thumbColor={largeText ? '#103e3b' : '#ffffff'} />
     </View>
-    <SettingButton label="Download / share backup" onPress={() => void backup()} />
-    <SettingButton label="Restore / merge backup" onPress={() => void restore()} />
+    <SettingButton label="Export one JSON file" onPress={() => void backup()} />
+    <SettingButton label="Import JSON · merge or replace" onPress={() => void restore()} />
     <View style={{ backgroundColor: '#e7efea', borderRadius: 15, padding: 16, gap: 8 }}>
       <Text selectable style={{ color: '#315247', fontWeight: '800' }}>About your data</Text>
-      <Text selectable style={{ color: '#60766d', fontSize: 13, lineHeight: 20 }}>Arabic names and prices were imported from your supplied list. Download a backup after important changes.</Text>
+      <Text selectable style={{ color: '#60766d', fontSize: 13, lineHeight: 20 }}>One JSON file contains all medicines, category sections, order, and favorites. Files exported by the original web app are supported.</Text>
       <Text selectable style={{ color: '#60766d', fontSize: 13, lineHeight: 20 }}>Descriptions are reference notes and are not verified clinical guidance.</Text>
     </View>
   </ScrollView>;

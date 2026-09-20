@@ -2,7 +2,7 @@ import 'expo-sqlite/localStorage/install';
 
 import React, { createContext, use, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getMedicines, initializeDatabase, mergeMedicines, saveMedicine, toggleFavorite } from './database';
+import { getMedicines, initializeDatabase, mergeMedicines, replaceMedicines, saveMedicine, toggleFavorite } from './database';
 import type { Medicine } from './medicine';
 
 type Store = {
@@ -13,6 +13,7 @@ type Store = {
   save(item: Medicine): Promise<void>;
   favorite(item: Medicine): Promise<void>;
   merge(items: Medicine[]): Promise<void>;
+  replace(items: Medicine[]): Promise<void>;
 };
 
 const MedicineContext = createContext<Store | null>(null);
@@ -50,6 +51,10 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
       },
       async merge(next) {
         await mergeMedicines(next);
+        await refresh();
+      },
+      async replace(next) {
+        await replaceMedicines(next);
         await refresh();
       },
     }),

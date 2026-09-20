@@ -1,7 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
 import type { Medicine } from './medicine';
-import { seed } from './seed';
 
 type MedicineRow = Omit<Medicine, 'favorite'> & { favorite: number };
 
@@ -29,27 +28,6 @@ export async function initializeDatabase() {
       sort_order INTEGER NOT NULL
     );
   `);
-  const result = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM medicines');
-  if ((result?.count ?? 0) === 0) {
-    await db.withTransactionAsync(async () => {
-      for (const [index, item] of seed.entries()) {
-        await db.runAsync(
-          `INSERT INTO medicines
-           (id, category, subcategory, name, note, official, discounted, revision, favorite, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-          item.id,
-          item.category,
-          item.subcategory,
-          item.name,
-          item.note,
-          item.official,
-          item.discounted,
-          item.revision,
-          index,
-        );
-      }
-    });
-  }
 }
 
 export async function getMedicines(): Promise<Medicine[]> {
@@ -89,4 +67,28 @@ export async function toggleFavorite(id: string, favorite: boolean) {
 
 export async function mergeMedicines(items: Medicine[]) {
   for (const item of items) await saveMedicine(item);
+}
+
+export async function replaceMedicines(items: Medicine[]) {
+  const db = await database();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM medicines');
+    for (const [index, item] of items.entries()) {
+      await db.runAsync(
+        `INSERT INTO medicines
+         (id, category, subcategory, name, note, official, discounted, revision, favorite, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        item.id,
+        item.category,
+        item.subcategory,
+        item.name,
+        item.note,
+        item.official,
+        item.discounted,
+        item.revision,
+        Number(item.favorite ?? false),
+        index,
+      );
+    }
+  });
 }
