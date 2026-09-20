@@ -1,0 +1,64 @@
+name: Validate and build PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Type-check and build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out PR
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build ARM64 APK
+        working-directory: android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -Pandroid.enableMinifyInReleaseBuilds=true -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+
+      - name: Name APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64.apk
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64
+          path: pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Add download instructions
+        run: |
+          echo "### Android APK ready" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download **pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64** from the Artifacts section of this workflow run." >> "$GITHUB_STEP_SUMMARY"
