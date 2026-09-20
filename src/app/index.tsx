@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, PanResponder, Pressable, ScrollView, SectionList, Text, TextInput, View, type SectionListRenderItemInfo } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, SectionList, StyleSheet, Text, TextInput, View, type SectionListRenderItemInfo } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MedicineCard } from '@/components/medicine-card';
@@ -34,36 +35,40 @@ export default function HomeScreen() {
     return [...groups.values()];
   }, [items, category, query, favoritesOnly]);
 
-  const visibleCount = sections.reduce((count, section) => count + section.data.length, 0);
-  const stepCategory = (direction: number) => {
+  const visibleCount = useMemo(() => sections.reduce((count, section) => count + section.data.length, 0), [sections]);
+  const stepCategory = useCallback((direction: number) => {
     const current = categories.findIndex((item) => item.id === category);
     setCategory(categories[(current + direction + categories.length) % categories.length].id);
-  };
-  const pan = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 25 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
-    onPanResponderRelease: (_, gesture) => { if (Math.abs(gesture.dx) > 75 && !query) stepCategory(gesture.dx < 0 ? 1 : -1); },
-  }), [category, query]);
+  }, [category]);
+  const categorySwipe = useMemo(() => Gesture.Pan()
+    .enabled(!query)
+    .activeOffsetX([-28, 28])
+    .failOffsetY([-14, 14])
+    .onEnd(({ translationX }) => {
+      if (Math.abs(translationX) > 75) stepCategory(translationX < 0 ? 1 : -1);
+    })
+    .runOnJS(true), [query, stepCategory]);
 
   const renderMedicine = useCallback(({ item, index, section }: SectionListRenderItemInfo<Medicine, MedicineSection>) => (
-    <View style={{ marginHorizontal: 16, overflow: 'hidden', borderTopLeftRadius: index === 0 ? 15 : 0, borderTopRightRadius: index === 0 ? 15 : 0, borderBottomLeftRadius: index === section.data.length - 1 ? 15 : 0, borderBottomRightRadius: index === section.data.length - 1 ? 15 : 0 }}>
-      <MedicineCard item={item} large={largeText} currency={currency} onFavorite={() => void favorite(item)} />
+    <View style={styles.cardContainer}>
+      <MedicineCard item={item} large={largeText} currency={currency} first={index === 0} last={index === section.data.length - 1} onFavorite={() => void favorite(item)} />
     </View>
   ), [currency, favorite, largeText]);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: '#f4f7f6', justifyContent: 'center' }}><ActivityIndicator color="#126052" size="large" /></View>;
 
-  return <View style={{ flex: 1, backgroundColor: '#f4f7f6' }} {...pan.panHandlers}>
+  return <GestureDetector gesture={categorySwipe}><View style={styles.screen}>
     <SectionList
       sections={sections}
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       stickySectionHeadersEnabled
-      initialNumToRender={10}
-      maxToRenderPerBatch={8}
-      updateCellsBatchingPeriod={45}
-      windowSize={7}
-      removeClippedSubviews={process.env.EXPO_OS === 'android'}
+      initialNumToRender={14}
+      maxToRenderPerBatch={14}
+      updateCellsBatchingPeriod={24}
+      windowSize={9}
+      removeClippedSubviews={false}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 146 + insets.bottom }}
       ListHeaderComponent={<View style={{ paddingTop: insets.top + 9, paddingHorizontal: 16, gap: 12 }}>
@@ -72,14 +77,14 @@ export default function HomeScreen() {
           <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 14, backgroundColor: pressed ? '#dceae3' : '#ffffff', alignItems: 'center', justifyContent: 'center' })}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
         </View>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8 }}>
-          <Text selectable style={{ color: '#71827a', fontSize: 13 }}>{visibleCount} medicines</Text>
+          <Text style={{ color: '#71827a', fontSize: 13 }}>{visibleCount} medicines</Text>
           <View style={{ flexDirection: 'row', gap: 7 }}>
             <Pressable onPress={() => setFavoritesOnly((value) => !value)} style={{ backgroundColor: favoritesOnly ? '#dceee4' : '#ffffff', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9 }}><Text style={{ color: '#315b49', fontWeight: '600' }}>☆ Favorites</Text></Pressable>
             <Pressable onPress={() => setLargeText(!largeText)} style={{ backgroundColor: largeText ? '#dceee4' : '#ffffff', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9 }}><Text style={{ color: '#315b49', fontWeight: '600' }}>T Large</Text></Pressable>
           </View>
         </View>
       </View>}
-      renderSectionHeader={({ section }) => { const selected = categoryById(section.category); return <View style={{ backgroundColor: '#f4f7f6', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 9 }}><View style={{ width: 5, height: 19, borderRadius: 4, backgroundColor: selected.color }} /><Text selectable style={{ color: '#203b34', fontSize: 15, fontWeight: '800', flex: 1 }}>{section.title}</Text><Text selectable style={{ color: '#81928b', fontSize: 12 }}>{section.data.length}</Text><Text selectable style={{ color: '#81928b', fontSize: 13, writingDirection: 'rtl' }}>{selected.arabic}</Text></View>; }}
+      renderSectionHeader={({ section }) => { const selected = categoryById(section.category); return <View style={{ backgroundColor: '#f4f7f6', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 9 }}><View style={{ width: 5, height: 19, borderRadius: 4, backgroundColor: selected.color }} /><Text style={{ color: '#203b34', fontSize: 15, fontWeight: '800', flex: 1 }}>{section.title}</Text><Text style={{ color: '#81928b', fontSize: 12 }}>{section.data.length}</Text><Text style={{ color: '#81928b', fontSize: 13, writingDirection: 'rtl' }}>{selected.arabic}</Text></View>; }}
       renderItem={renderMedicine}
       ListEmptyComponent={<View style={{ alignItems: 'center', padding: 48, gap: 11 }}><Text style={{ fontSize: 30 }}>{items.length ? '⌕' : '＋'}</Text><Text selectable style={{ color: '#24443a', fontSize: 18, fontWeight: '700' }}>{items.length ? 'No medicines found' : 'Your pocket is empty'}</Text><Text selectable style={{ color: '#71827a', textAlign: 'center', lineHeight: 21 }}>{items.length ? 'Try a shorter name or another category.' : 'Import your web app JSON from Settings, or add your first medicine.'}</Text>{!items.length ? <Pressable onPress={() => router.push('/settings')} style={{ backgroundColor: '#103e3b', borderRadius: 12, paddingHorizontal: 18, minHeight: 46, justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontWeight: '700' }}>Import JSON</Text></Pressable> : null}</View>}
     />
@@ -93,5 +98,10 @@ export default function HomeScreen() {
         <Pressable accessibilityLabel="Next category" onPress={() => stepCategory(1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>›</Text></Pressable>
       </View>
     </View>
-  </View>;
+  </View></GestureDetector>;
 }
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#f4f7f6' },
+  cardContainer: { marginHorizontal: 16 },
+});

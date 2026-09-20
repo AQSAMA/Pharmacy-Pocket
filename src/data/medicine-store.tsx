@@ -56,8 +56,14 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
         await refresh();
       },
       async favorite(item) {
-        await toggleFavorite(item.id, !item.favorite);
-        await refresh();
+        const nextFavorite = !item.favorite;
+        setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, favorite: nextFavorite } : candidate));
+        try {
+          await toggleFavorite(item.id, nextFavorite);
+        } catch (error) {
+          setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, favorite: item.favorite } : candidate));
+          throw error;
+        }
       },
       async merge(next) {
         await mergeMedicines(next);
