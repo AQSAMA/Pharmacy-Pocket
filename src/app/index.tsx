@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, PanResponder, Pressable, ScrollView, SectionList, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, PanResponder, Pressable, ScrollView, SectionList, Text, TextInput, View, type SectionListRenderItemInfo } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MedicineCard } from '@/components/medicine-card';
@@ -12,7 +12,7 @@ type MedicineSection = { key: string; title: string; category: string; data: Med
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { items, ready, largeText, setLargeText, favorite } = useMedicines();
+  const { items, ready, largeText, currency, setLargeText, favorite } = useMedicines();
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
@@ -24,7 +24,7 @@ export default function HomeScreen() {
     for (const item of items) {
       if (category !== 'all' && item.category !== category) continue;
       if (favoritesOnly && !item.favorite) continue;
-      if (needle && !normalize(`${item.name} ${item.note} ${item.subcategory}`).includes(needle)) continue;
+      if (needle && !normalize(`${item.name} ${item.note} ${item.description ?? ''} ${item.subcategory}`).includes(needle)) continue;
       const key = `${item.category}|${item.subcategory}`;
       const title = item.subcategory === 'General' ? categoryById(item.category).label : item.subcategory;
       const section = groups.get(key) ?? { key, title, category: item.category, data: [] };
@@ -44,6 +44,12 @@ export default function HomeScreen() {
     onPanResponderRelease: (_, gesture) => { if (Math.abs(gesture.dx) > 75 && !query) stepCategory(gesture.dx < 0 ? 1 : -1); },
   }), [category, query]);
 
+  const renderMedicine = useCallback(({ item, index, section }: SectionListRenderItemInfo<Medicine, MedicineSection>) => (
+    <View style={{ marginHorizontal: 16, overflow: 'hidden', borderTopLeftRadius: index === 0 ? 15 : 0, borderTopRightRadius: index === 0 ? 15 : 0, borderBottomLeftRadius: index === section.data.length - 1 ? 15 : 0, borderBottomRightRadius: index === section.data.length - 1 ? 15 : 0 }}>
+      <MedicineCard item={item} large={largeText} currency={currency} onFavorite={() => void favorite(item)} />
+    </View>
+  ), [currency, favorite, largeText]);
+
   if (!ready) return <View style={{ flex: 1, backgroundColor: '#f4f7f6', justifyContent: 'center' }}><ActivityIndicator color="#126052" size="large" /></View>;
 
   return <View style={{ flex: 1, backgroundColor: '#f4f7f6' }} {...pan.panHandlers}>
@@ -51,18 +57,20 @@ export default function HomeScreen() {
       sections={sections}
       keyExtractor={(item) => item.id}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       stickySectionHeadersEnabled
+      initialNumToRender={10}
+      maxToRenderPerBatch={8}
+      updateCellsBatchingPeriod={45}
+      windowSize={7}
+      removeClippedSubviews={process.env.EXPO_OS === 'android'}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 146 + insets.bottom }}
-      ListHeaderComponent={<View style={{ paddingTop: insets.top + 13, paddingHorizontal: 16, gap: 16 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: '#103e3b', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#b8f0cb', fontSize: 23 }}>✚</Text></View>
-            <View><Text selectable style={{ color: '#103e3b', fontSize: 20, fontWeight: '800' }}>Pharmacy Pocket</Text><Text selectable style={{ color: '#75877f', fontSize: 12 }}>Your prices · IQD</Text></View>
-          </View>
-          <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={{ padding: 12 }}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
+      ListHeaderComponent={<View style={{ paddingTop: insets.top + 9, paddingHorizontal: 16, gap: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TextInput value={query} onChangeText={setQuery} placeholder="Search Arabic, English, use…" placeholderTextColor="#81908a" autoCapitalize="none" autoCorrect={false} returnKeyType="search" style={{ flex: 1, height: 52, borderWidth: 1, borderColor: '#ceddd5', backgroundColor: '#ffffff', borderRadius: 14, paddingHorizontal: 15, color: '#173c30', fontSize: 17, textAlign: 'auto' }} />
+          <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 14, backgroundColor: pressed ? '#dceae3' : '#ffffff', alignItems: 'center', justifyContent: 'center' })}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
         </View>
-        <TextInput value={query} onChangeText={setQuery} placeholder="Search Arabic, English, use…" placeholderTextColor="#81908a" autoCapitalize="none" autoCorrect={false} returnKeyType="search" style={{ height: 54, borderWidth: 1, borderColor: '#ceddd5', backgroundColor: '#ffffff', borderRadius: 15, paddingHorizontal: 16, color: '#173c30', fontSize: 17, textAlign: 'auto' }} />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8 }}>
           <Text selectable style={{ color: '#71827a', fontSize: 13 }}>{visibleCount} medicines</Text>
           <View style={{ flexDirection: 'row', gap: 7 }}>
@@ -72,7 +80,7 @@ export default function HomeScreen() {
         </View>
       </View>}
       renderSectionHeader={({ section }) => { const selected = categoryById(section.category); return <View style={{ backgroundColor: '#f4f7f6', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 9 }}><View style={{ width: 5, height: 19, borderRadius: 4, backgroundColor: selected.color }} /><Text selectable style={{ color: '#203b34', fontSize: 15, fontWeight: '800', flex: 1 }}>{section.title}</Text><Text selectable style={{ color: '#81928b', fontSize: 12 }}>{section.data.length}</Text><Text selectable style={{ color: '#81928b', fontSize: 13, writingDirection: 'rtl' }}>{selected.arabic}</Text></View>; }}
-      renderItem={({ item, index, section }) => <View style={{ marginHorizontal: 16, overflow: 'hidden', borderTopLeftRadius: index === 0 ? 15 : 0, borderTopRightRadius: index === 0 ? 15 : 0, borderBottomLeftRadius: index === section.data.length - 1 ? 15 : 0, borderBottomRightRadius: index === section.data.length - 1 ? 15 : 0 }}><MedicineCard item={item} large={largeText} onFavorite={() => void favorite(item)} /></View>}
+      renderItem={renderMedicine}
       ListEmptyComponent={<View style={{ alignItems: 'center', padding: 48, gap: 11 }}><Text style={{ fontSize: 30 }}>{items.length ? '⌕' : '＋'}</Text><Text selectable style={{ color: '#24443a', fontSize: 18, fontWeight: '700' }}>{items.length ? 'No medicines found' : 'Your pocket is empty'}</Text><Text selectable style={{ color: '#71827a', textAlign: 'center', lineHeight: 21 }}>{items.length ? 'Try a shorter name or another category.' : 'Import your web app JSON from Settings, or add your first medicine.'}</Text>{!items.length ? <Pressable onPress={() => router.push('/settings')} style={{ backgroundColor: '#103e3b', borderRadius: 12, paddingHorizontal: 18, minHeight: 46, justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontWeight: '700' }}>Import JSON</Text></Pressable> : null}</View>}
     />
     <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingBottom: Math.max(insets.bottom, 9), paddingTop: 9, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#dce5e1', gap: 7 }}>

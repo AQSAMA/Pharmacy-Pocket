@@ -1,8 +1,8 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import React from 'react';
-import { Alert, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 
 import { createBackup, parseBackup, type ParsedBackup } from '@/data/backup';
 import { useMedicines } from '@/data/medicine-store';
@@ -12,13 +12,16 @@ function SettingButton({ label, onPress }: { label: string; onPress(): void }) {
 }
 
 export default function SettingsScreen() {
-  const { items, largeText, setLargeText, merge, replace } = useMedicines();
+  const { items, largeText, currency, setLargeText, setCurrency, merge, replace } = useMedicines();
+  const [currencyDraft, setCurrencyDraft] = useState(currency);
+
+  useEffect(() => setCurrencyDraft(currency), [currency]);
 
   const backup = async () => {
     try {
       if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device.');
       const uri = `${FileSystem.cacheDirectory}pharmacy-pocket-${new Date().toISOString().slice(0, 10)}.json`;
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify(createBackup(items), null, 2));
+      await FileSystem.writeAsStringAsync(uri, JSON.stringify(createBackup(items, currency), null, 2));
       await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export Pharmacy Pocket JSON' });
     } catch (error) {
       Alert.alert('Backup failed', error instanceof Error ? error.message : 'Please try again.');
@@ -28,7 +31,10 @@ export default function SettingsScreen() {
   const applyImport = (data: ParsedBackup, mode: 'merge' | 'replace') => {
     const action = mode === 'replace' ? replace(data.medicines) : merge(data.medicines);
     void action
-      .then(() => Alert.alert('Import complete', `${data.medicines.length} medicines and ${data.sections.length} sections were imported.`))
+      .then(() => {
+        setCurrency(data.currency);
+        Alert.alert('Import complete', `${data.medicines.length} medicines and ${data.sections.length} sections were imported.`);
+      })
       .catch((error) => Alert.alert('Import failed', error instanceof Error ? error.message : 'Please try again.'));
   };
 
@@ -56,6 +62,11 @@ export default function SettingsScreen() {
     <View style={{ minHeight: 56, borderRadius: 13, backgroundColor: '#ffffff', paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <View style={{ flex: 1, paddingRight: 15 }}><Text selectable style={{ color: '#234a3c', fontSize: 16, fontWeight: '700' }}>Large text</Text><Text selectable style={{ color: '#75857f', fontSize: 13 }}>For reading from farther away</Text></View>
       <Switch value={largeText} onValueChange={setLargeText} trackColor={{ false: '#ced8d3', true: '#78ad96' }} thumbColor={largeText ? '#103e3b' : '#ffffff'} />
+    </View>
+    <View style={{ borderRadius: 13, backgroundColor: '#ffffff', padding: 15, gap: 8 }}>
+      <Text selectable style={{ color: '#234a3c', fontSize: 16, fontWeight: '700' }}>Currency name</Text>
+      <TextInput value={currencyDraft} onChangeText={setCurrencyDraft} onBlur={() => setCurrency(currencyDraft)} onSubmitEditing={() => setCurrency(currencyDraft)} placeholder="IQD" maxLength={24} returnKeyType="done" autoCapitalize="characters" selectTextOnFocus style={{ minHeight: 48, borderWidth: 1, borderColor: '#ceddd5', borderRadius: 11, paddingHorizontal: 13, color: '#173c30', fontSize: 17 }} />
+      <Text selectable style={{ color: '#75857f', fontSize: 13 }}>Leave it blank to use IQD.</Text>
     </View>
     <SettingButton label="Export one JSON file" onPress={() => void backup()} />
     <SettingButton label="Import JSON · merge or replace" onPress={() => void restore()} />

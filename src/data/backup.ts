@@ -20,7 +20,7 @@ export type PharmacyPocketBackup = {
   schema: typeof BACKUP_SCHEMA;
   version: typeof BACKUP_VERSION;
   exportedAt: string;
-  currency: 'IQD';
+  currency: string;
   sections: BackupSection[];
   favoriteIds: string[];
   medicines: Array<Omit<Medicine, 'favorite'>>;
@@ -29,6 +29,7 @@ export type PharmacyPocketBackup = {
 export type ParsedBackup = {
   medicines: Medicine[];
   sections: BackupSection[];
+  currency: string;
   sourceVersion: number;
 };
 
@@ -60,12 +61,12 @@ export function buildSections(items: Medicine[]): BackupSection[] {
   return [...sections.values()];
 }
 
-export function createBackup(items: Medicine[], exportedAt = new Date().toISOString()): PharmacyPocketBackup {
+export function createBackup(items: Medicine[], currency = 'IQD', exportedAt = new Date().toISOString()): PharmacyPocketBackup {
   return {
     schema: BACKUP_SCHEMA,
     version: BACKUP_VERSION,
     exportedAt,
-    currency: 'IQD',
+    currency: currency.trim() || 'IQD',
     sections: buildSections(items),
     favoriteIds: items.filter((item) => item.favorite).map((item) => item.id),
     medicines: items.map(({ favorite: _favorite, ...item }) => ({
@@ -127,6 +128,7 @@ export function parseBackup(value: unknown): ParsedBackup {
     : new Set<string>();
   const medicines = data.medicines.map((item) => ({
     ...item,
+    description: typeof item.description === 'string' ? item.description : '',
     revision: Number.isInteger(item.revision) && item.revision >= 0 ? item.revision : 0,
     favorite: favoriteIds.has(item.id) || item.favorite === true,
   }));
@@ -139,5 +141,7 @@ export function parseBackup(value: unknown): ParsedBackup {
   if (sourceVersion < 1 || sourceVersion > BACKUP_VERSION) {
     throw new Error(`Backup version ${sourceVersion} is not supported by this app.`);
   }
-  return { medicines: orderBySections(medicines, sections), sections, sourceVersion };
+  const currency = typeof data.currency === 'string' && data.currency.trim() ? data.currency.trim() : 'IQD';
+  if (currency.length > 24) throw new Error('The currency name in this file is too long.');
+  return { medicines: orderBySections(medicines, sections), sections, currency, sourceVersion };
 }

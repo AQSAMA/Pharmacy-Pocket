@@ -11,7 +11,7 @@ const makeId = () => `med-${Date.now()}-${Math.random().toString(36).slice(2, 8)
 
 export default function EditMedicineScreen() {
   const params = useLocalSearchParams<{ id?: string; category?: string }>();
-  const { items, save } = useMedicines();
+  const { items, currency, save } = useMedicines();
   const existing = useMemo(() => items.find((item) => item.id === params.id), [items, params.id]);
   const [name, setName] = useState(existing?.name ?? '');
   const [category, setCategory] = useState(existing?.category ?? params.category ?? 'syrups');
@@ -19,6 +19,7 @@ export default function EditMedicineScreen() {
   const [official, setOfficial] = useState(existing ? String(existing.official) : '');
   const [discounted, setDiscounted] = useState(existing?.discounted == null ? '' : String(existing.discounted));
   const [note, setNote] = useState(existing?.note ?? '');
+  const [description, setDescription] = useState(existing?.description ?? '');
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -36,6 +37,7 @@ export default function EditMedicineScreen() {
       official: officialNumber,
       discounted: discountedNumber,
       note: note.trim(),
+      description: description.trim(),
       revision: existing?.revision ?? 0,
       favorite: existing?.favorite,
     };
@@ -65,7 +67,8 @@ export default function EditMedicineScreen() {
         <View style={{ flex: 1 }}><FormField label="Discounted price" value={discounted} onChangeText={setDiscounted} keyboardType="number-pad" placeholder="Optional" /></View>
       </View>
       <FormField label="Supplied note" value={note} onChangeText={setNote} multiline numberOfLines={3} style={{ minHeight: 88, textAlignVertical: 'top' }} />
-      <Text selectable style={{ color: '#7b8984', fontSize: 13, lineHeight: 19 }}>Prices are in IQD. A blank discounted price means no second price was supplied.</Text>
+      <FormField label="Description" value={description} onChangeText={setDescription} multiline numberOfLines={5} placeholder="Details shown on the medicine page" style={{ minHeight: 116, textAlignVertical: 'top' }} />
+      <Text selectable style={{ color: '#7b8984', fontSize: 13, lineHeight: 19 }}>Prices use {currency}. A blank discounted price means no second price was supplied.</Text>
       <Pressable disabled={saving} onPress={() => void submit()} style={({ pressed }) => ({ minHeight: 52, borderRadius: 13, backgroundColor: '#103e3b', alignItems: 'center', justifyContent: 'center', opacity: saving || pressed ? 0.65 : 1 })}>
         <Text style={{ color: '#ffffff', fontSize: 17, fontWeight: '800' }}>{saving ? 'Saving…' : 'Save medicine'}</Text>
       </Pressable>

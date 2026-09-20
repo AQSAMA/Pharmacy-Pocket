@@ -8,7 +8,9 @@ A fast, offline medicine price reference built with Expo and React Native.
 - Arabic and English search
 - Swipe, category strip, and previous/next category controls
 - Official and customer-requested prices in IQD
+- Configurable currency name, with IQD as the default
 - Large-text and customer price views
+- Full-card tap targets, floating medicine details, and longer descriptions
 - Add, edit, favorite, and one-file JSON import/export
 - Imports the original web app's v1 backups; v2 exports remain importable by the web app
 - Merge or exactly replace medicines while preserving category-section order
@@ -34,7 +36,7 @@ npx eas-cli@latest build --platform android --profile preview
 
 The preview profile produces an APK suitable for direct Android installation. EAS manages the signing key so later builds can update the installed app.
 
-The included GitHub workflow also builds a preview APK and attaches it to the `v1.1.0` GitHub Release. That build does not require an Expo account. It uses development signing and is intended for direct testing; use EAS signing before a public or Play Store release.
+The included GitHub workflow builds a smaller ARM64 preview APK and attaches it to the `v1.2.0` GitHub Release. ARM64 covers modern Android phones while omitting emulator-only CPU libraries that made the universal APK unnecessarily large. The build does not require an Expo account. It uses development signing and is intended for direct testing; use EAS signing before a public or Play Store release.
 
 ## Release notes
 

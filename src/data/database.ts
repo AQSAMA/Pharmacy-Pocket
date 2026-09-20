@@ -21,6 +21,7 @@ export async function initializeDatabase() {
       subcategory TEXT NOT NULL,
       name TEXT NOT NULL,
       note TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
       official INTEGER NOT NULL,
       discounted INTEGER,
       revision INTEGER NOT NULL DEFAULT 0,
@@ -28,6 +29,10 @@ export async function initializeDatabase() {
       sort_order INTEGER NOT NULL
     );
   `);
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(medicines)');
+  if (!columns.some((column) => column.name === 'description')) {
+    await db.execAsync("ALTER TABLE medicines ADD COLUMN description TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 export async function getMedicines(): Promise<Medicine[]> {
@@ -45,13 +50,14 @@ export async function saveMedicine(item: Medicine) {
   const last = await db.getFirstAsync<{ value: number }>('SELECT COALESCE(MAX(sort_order), -1) AS value FROM medicines');
   await db.runAsync(
     `INSERT OR REPLACE INTO medicines
-     (id, category, subcategory, name, note, official, discounted, revision, favorite, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, category, subcategory, name, note, description, official, discounted, revision, favorite, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     item.id,
     item.category,
     item.subcategory,
     item.name,
     item.note,
+    item.description ?? '',
     item.official,
     item.discounted,
     item.revision,
@@ -76,13 +82,14 @@ export async function replaceMedicines(items: Medicine[]) {
     for (const [index, item] of items.entries()) {
       await db.runAsync(
         `INSERT INTO medicines
-         (id, category, subcategory, name, note, official, discounted, revision, favorite, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, category, subcategory, name, note, description, official, discounted, revision, favorite, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         item.id,
         item.category,
         item.subcategory,
         item.name,
         item.note,
+        item.description ?? '',
         item.official,
         item.discounted,
         item.revision,

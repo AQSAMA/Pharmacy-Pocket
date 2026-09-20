@@ -9,7 +9,9 @@ type Store = {
   items: Medicine[];
   ready: boolean;
   largeText: boolean;
+  currency: string;
   setLargeText(value: boolean): void;
+  setCurrency(value: string): void;
   save(item: Medicine): Promise<void>;
   favorite(item: Medicine): Promise<void>;
   merge(items: Medicine[]): Promise<void>;
@@ -22,11 +24,13 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<Medicine[]>([]);
   const [ready, setReady] = useState(false);
   const [largeText, setLargeTextState] = useState(false);
+  const [currency, setCurrencyState] = useState('IQD');
 
   const refresh = useCallback(async () => setItems(await getMedicines()), []);
 
   useEffect(() => {
     setLargeTextState(localStorage.getItem('large-text') === 'true');
+    setCurrencyState(localStorage.getItem('currency-name')?.trim() || 'IQD');
     initializeDatabase()
       .then(refresh)
       .finally(() => setReady(true));
@@ -37,9 +41,15 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
       items,
       ready,
       largeText,
+      currency,
       setLargeText(value) {
         setLargeTextState(value);
         localStorage.setItem('large-text', String(value));
+      },
+      setCurrency(value) {
+        const next = value.trim() || 'IQD';
+        setCurrencyState(next);
+        localStorage.setItem('currency-name', next);
       },
       async save(item) {
         await saveMedicine(item);
@@ -58,7 +68,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
         await refresh();
       },
     }),
-    [items, ready, largeText, refresh],
+    [items, ready, largeText, currency, refresh],
   );
 
   return <MedicineContext value={value}>{children}</MedicineContext>;

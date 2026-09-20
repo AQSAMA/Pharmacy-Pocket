@@ -4,6 +4,7 @@ export type Medicine = {
   subcategory: string;
   name: string;
   note: string;
+  description?: string;
   official: number;
   discounted: number | null;
   revision: number;
@@ -27,6 +28,7 @@ export function isMedicine(value: unknown): value is Medicine {
       (key) => typeof item[key as keyof Medicine] === 'string',
     ) &&
     Boolean(item.id && item.name.trim() && item.category) &&
+    (item.description === undefined || typeof item.description === 'string') &&
     Number.isInteger(item.official) &&
     item.official >= 0 &&
     Number.isInteger(item.revision) &&
