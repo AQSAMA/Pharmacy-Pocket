@@ -13,7 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { normalize } = require('../src/data/medicine.ts');
+const { normalize, isMedicine } = require('../src/data/medicine.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
 test('writes execute serially, including rapid repeated favorite toggles', async () => {
@@ -51,6 +51,16 @@ test('backup preserves Arabic, descriptions, favorites, and custom currency', ()
 
 test('Arabic search ignores diacritics and normalizes alef', () => {
   assert.equal(normalize('أَ'), normalize('ا'));
+});
+
+test('shared validation rejects unsafe imported prices and revisions', () => {
+  const base = { id: 'safe', name: 'Medicine', category: 'syrups', subcategory: 'General', note: '', official: 3000, discounted: null, revision: 0 };
+  assert.equal(isMedicine(base), true);
+  for (const field of ['official', 'discounted', 'revision']) {
+    const invalid = { ...base, [field]: Number.MAX_SAFE_INTEGER + 1 };
+    assert.equal(isMedicine(invalid), false);
+    assert.throws(() => parseBackup(createBackup([invalid])));
+  }
 });
 
 test('navigation and scroll regression guards', () => {

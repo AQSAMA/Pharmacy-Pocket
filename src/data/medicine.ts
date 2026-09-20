@@ -29,12 +29,12 @@ export function isMedicine(value: unknown): value is Medicine {
     ) &&
     Boolean(item.id && item.name.trim() && item.category) &&
     (item.description === undefined || typeof item.description === 'string') &&
-    Number.isInteger(item.official) &&
+    Number.isSafeInteger(item.official) &&
     item.official >= 0 &&
-    Number.isInteger(item.revision) &&
+    Number.isSafeInteger(item.revision) &&
     item.revision >= 0 &&
     (item.discounted === null ||
-      (Number.isInteger(item.discounted) && item.discounted >= 0))
+      (Number.isSafeInteger(item.discounted) && item.discounted >= 0))
   );
 }
 

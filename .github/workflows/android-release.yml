@@ -18,6 +18,18 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+      - name: Protect published release source
+        if: github.ref == 'refs/heads/release/2.5'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          tags=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v2.5")
+          published_sha=$(echo "$tags" | jq -r '.[] | select(.ref == "refs/tags/v2.5") | .object.sha')
+          if [ -n "$published_sha" ] && [ "$published_sha" != "$SOURCE_SHA" ]; then
+            echo "::error::v2.5 already identifies another commit. Create a new version instead of replacing its APK."
+            exit 1
+          fi
       - uses: actions/setup-node@v5
         with:
           node-version: 20
