@@ -6,11 +6,11 @@ A fast, offline medicine price reference built with Expo and React Native.
 
 - Empty on a fresh installation, ready for an import or manual entry
 - Arabic and English search
-- Swipe, category strip, and previous/next category controls
+- Category strip and previous/next category controls (no gesture competing with vertical scrolling)
 - Official and customer-requested prices in IQD
 - Configurable currency name, with IQD as the default
 - Large-text and customer price views
-- Full-card tap targets, floating medicine details, and longer descriptions
+- Full-card tap targets, full-screen medicine details, and longer descriptions
 - Add, edit, favorite, and one-file JSON import/export
 - Imports the original web app's v1 backups; v2 exports remain importable by the web app
 - Merge or exactly replace medicines while preserving category-section order

@@ -7,7 +7,10 @@ type MedicineRow = Omit<Medicine, 'favorite'> & { favorite: number };
 let databasePromise: ReturnType<typeof SQLite.openDatabaseAsync> | undefined;
 
 function database() {
-  databasePromise ??= SQLite.openDatabaseAsync('pharmacy-pocket.db');
+  databasePromise ??= SQLite.openDatabaseAsync('pharmacy-pocket.db').catch((error) => {
+    databasePromise = undefined;
+    throw error;
+  });
   return databasePromise;
 }
 
@@ -72,7 +75,10 @@ export async function toggleFavorite(id: string, favorite: boolean) {
 }
 
 export async function mergeMedicines(items: Medicine[]) {
-  for (const item of items) await saveMedicine(item);
+  const db = await database();
+  await db.withTransactionAsync(async () => {
+    for (const item of items) await saveMedicine(item);
+  });
 }
 
 export async function replaceMedicines(items: Medicine[]) {

@@ -23,10 +23,11 @@ export default function EditMedicineScreen() {
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
+    if (saving) return;
     const officialNumber = Number(official);
     const discountedNumber = discounted.trim() ? Number(discounted) : null;
-    if (!name.trim() || !Number.isInteger(officialNumber) || officialNumber < 0 || (discountedNumber !== null && (!Number.isInteger(discountedNumber) || discountedNumber < 0))) {
-      Alert.alert('Check the details', 'Enter a medicine name and whole-number IQD prices.');
+    if (!name.trim() || !official.trim() || !Number.isSafeInteger(officialNumber) || officialNumber < 0 || (discountedNumber !== null && (!Number.isSafeInteger(discountedNumber) || discountedNumber < 0))) {
+      Alert.alert('Check the details', `Enter a medicine name and whole-number ${currency} prices.`);
       return;
     }
     const item: Medicine = {
