@@ -72,12 +72,4 @@ export function isMedicine(value: unknown): value is Medicine {
 
 const priceFormatter = new Intl.NumberFormat('en-US');
 export const formatPrice = (value: number) => priceFormatter.format(value);
-const addedDateFormatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-
-export function formatAddedDate(value: number | undefined) {
-  // Some legacy records have no date; malformed imported dates must not crash a card.
-  if (value === undefined || !Number.isSafeInteger(value) || value < 0 || value > 8.64e15) return 'Unknown';
-  return addedDateFormatter.format(new Date(value));
-}
-
 export const hasArabic = (value: string) => /[\u0600-\u06FF]/.test(value);
