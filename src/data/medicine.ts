@@ -9,7 +9,32 @@ export type Medicine = {
   discounted: number | null;
   revision: number;
   favorite?: boolean;
+  createdAt?: number;
 };
+
+export type MedicineSort = 'name-asc' | 'name-desc' | 'date-desc' | 'date-asc' | 'price-asc' | 'price-desc';
+
+export const medicineSortOptions: { id: MedicineSort; label: string }[] = [
+  { id: 'name-asc', label: 'A–Z' },
+  { id: 'name-desc', label: 'Z–A' },
+  { id: 'date-desc', label: 'Newest' },
+  { id: 'date-asc', label: 'Oldest' },
+  { id: 'price-asc', label: 'Price ↑' },
+  { id: 'price-desc', label: 'Price ↓' },
+];
+
+export function compareMedicines(left: Medicine, right: Medicine, sort: MedicineSort) {
+  if (sort === 'name-asc' || sort === 'name-desc') {
+    const result = left.name.localeCompare(right.name, ['ar', 'en'], { sensitivity: 'base', numeric: true });
+    return sort === 'name-asc' ? result : -result;
+  }
+  if (sort === 'price-asc' || sort === 'price-desc') {
+    const result = left.official - right.official || left.name.localeCompare(right.name, ['ar', 'en'], { sensitivity: 'base' });
+    return sort === 'price-asc' ? result : -result;
+  }
+  const result = (left.createdAt ?? 0) - (right.createdAt ?? 0);
+  return sort === 'date-asc' ? result : -result;
+}
 
 export function normalize(value: string) {
   return value
@@ -29,6 +54,7 @@ export function isMedicine(value: unknown): value is Medicine {
     ) &&
     Boolean(item.id && item.name.trim() && item.category) &&
     (item.description === undefined || typeof item.description === 'string') &&
+    (item.createdAt === undefined || (Number.isSafeInteger(item.createdAt) && item.createdAt >= 0)) &&
     Number.isSafeInteger(item.official) &&
     item.official >= 0 &&
     Number.isSafeInteger(item.revision) &&

@@ -13,7 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { normalize, isMedicine } = require('../src/data/medicine.ts');
+const { compareMedicines, normalize, isMedicine } = require('../src/data/medicine.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
 test('writes execute serially, including rapid repeated favorite toggles', async () => {
@@ -61,6 +61,17 @@ test('shared validation rejects unsafe imported prices and revisions', () => {
     assert.equal(isMedicine(invalid), false);
     assert.throws(() => parseBackup(createBackup([invalid])));
   }
+});
+
+test('medicine sorting supports names, dates, and prices in both directions', () => {
+  const alpha = { id: 'a', name: 'Alpha', category: 'syrups', subcategory: 'General', note: '', official: 3000, discounted: null, revision: 0, createdAt: 10 };
+  const beta = { ...alpha, id: 'b', name: 'Beta', official: 1000, createdAt: 20 };
+  assert.deepEqual([beta, alpha].sort((a, b) => compareMedicines(a, b, 'name-asc')).map(item => item.id), ['a', 'b']);
+  assert.deepEqual([alpha, beta].sort((a, b) => compareMedicines(a, b, 'name-desc')).map(item => item.id), ['b', 'a']);
+  assert.deepEqual([alpha, beta].sort((a, b) => compareMedicines(a, b, 'date-desc')).map(item => item.id), ['b', 'a']);
+  assert.deepEqual([beta, alpha].sort((a, b) => compareMedicines(a, b, 'date-asc')).map(item => item.id), ['a', 'b']);
+  assert.deepEqual([alpha, beta].sort((a, b) => compareMedicines(a, b, 'price-asc')).map(item => item.id), ['b', 'a']);
+  assert.deepEqual([beta, alpha].sort((a, b) => compareMedicines(a, b, 'price-desc')).map(item => item.id), ['a', 'b']);
 });
 
 test('navigation and scroll regression guards', () => {

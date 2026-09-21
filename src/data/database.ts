@@ -2,7 +2,7 @@ import * as SQLite from 'expo-sqlite';
 
 import type { Medicine } from './medicine';
 
-type MedicineRow = Omit<Medicine, 'favorite'> & { favorite: number };
+type MedicineRow = Omit<Medicine, 'favorite' | 'createdAt'> & { favorite: number; created_at: number };
 
 let databasePromise: ReturnType<typeof SQLite.openDatabaseAsync> | undefined;
 
@@ -29,19 +29,24 @@ export async function initializeDatabase() {
       discounted INTEGER,
       revision INTEGER NOT NULL DEFAULT 0,
       favorite INTEGER NOT NULL DEFAULT 0,
-      sort_order INTEGER NOT NULL
+      sort_order INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT 0
     );
   `);
   const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(medicines)');
   if (!columns.some((column) => column.name === 'description')) {
     await db.execAsync("ALTER TABLE medicines ADD COLUMN description TEXT NOT NULL DEFAULT ''");
   }
+  if (!columns.some((column) => column.name === 'created_at')) {
+    await db.execAsync('ALTER TABLE medicines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0');
+  }
+  await db.runAsync("UPDATE medicines SET created_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 + sort_order WHERE created_at = 0");
 }
 
 export async function getMedicines(): Promise<Medicine[]> {
   const db = await database();
   const rows = await db.getAllAsync<MedicineRow>('SELECT * FROM medicines ORDER BY sort_order');
-  return rows.map((row) => ({ ...row, favorite: Boolean(row.favorite) }));
+  return rows.map(({ created_at, ...row }) => ({ ...row, createdAt: created_at, favorite: Boolean(row.favorite) }));
 }
 
 export async function saveMedicine(item: Medicine) {
@@ -53,8 +58,8 @@ export async function saveMedicine(item: Medicine) {
   const last = await db.getFirstAsync<{ value: number }>('SELECT COALESCE(MAX(sort_order), -1) AS value FROM medicines');
   await db.runAsync(
     `INSERT OR REPLACE INTO medicines
-     (id, category, subcategory, name, note, description, official, discounted, revision, favorite, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (id, category, subcategory, name, note, description, official, discounted, revision, favorite, sort_order, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     item.id,
     item.category,
     item.subcategory,
@@ -66,6 +71,7 @@ export async function saveMedicine(item: Medicine) {
     item.revision,
     existing?.favorite ?? Number(item.favorite ?? false),
     existing?.sort_order ?? (last?.value ?? -1) + 1,
+    item.createdAt ?? Date.now(),
   );
 }
 
@@ -88,8 +94,8 @@ export async function replaceMedicines(items: Medicine[]) {
     for (const [index, item] of items.entries()) {
       await db.runAsync(
         `INSERT INTO medicines
-         (id, category, subcategory, name, note, description, official, discounted, revision, favorite, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, category, subcategory, name, note, description, official, discounted, revision, favorite, sort_order, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         item.id,
         item.category,
         item.subcategory,
@@ -101,6 +107,7 @@ export async function replaceMedicines(items: Medicine[]) {
         item.revision,
         Number(item.favorite ?? false),
         index,
+        item.createdAt ?? Date.now() + index,
       );
     }
   });
