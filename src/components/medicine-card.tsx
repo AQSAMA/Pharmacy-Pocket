@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import React, { memo } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { formatPrice, hasArabic, type Medicine } from '@/data/medicine';
+import { formatAddedDate, formatPrice, hasArabic, type Medicine } from '@/data/medicine';
 
 type Props = { item: Medicine; large: boolean; currency: string; first: boolean; last: boolean; onFavorite(item: Medicine): Promise<void> };
 
@@ -31,6 +31,7 @@ function MedicineCardComponent({ item, large, currency, first, last, onFavorite 
           <Text style={{ color: '#a66c14', fontSize: large ? 28 : 22, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{formatPrice(item.discounted)}</Text>
         </View> : null}
       </View>
+      <Text style={{ color: '#60766d', fontSize: large ? 15 : 12 }}>Added {formatAddedDate(item.createdAt)}</Text>
     </Pressable>
   );
 }
