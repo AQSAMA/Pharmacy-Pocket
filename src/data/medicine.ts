@@ -36,6 +36,12 @@ export function compareMedicines(left: Medicine, right: Medicine, sort: Medicine
   return sort === 'date-asc' ? result : -result;
 }
 
+export function resolveCreatedAt(supplied: number | undefined, existing: number | undefined, now = Date.now()) {
+  if (typeof supplied === 'number' && Number.isSafeInteger(supplied) && supplied >= 0) return supplied;
+  if (typeof existing === 'number' && Number.isSafeInteger(existing) && existing >= 0) return existing;
+  return now;
+}
+
 export function normalize(value: string) {
   return value
     .normalize('NFKD')

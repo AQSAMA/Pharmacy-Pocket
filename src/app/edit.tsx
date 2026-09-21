@@ -5,6 +5,7 @@ import { Alert, KeyboardAvoidingView, Pressable, ScrollView, Text, View } from '
 import { FormField } from '@/components/form-field';
 import { categories } from '@/data/categories';
 import type { Medicine } from '@/data/medicine';
+import { listSubcategories, buildMedicineSearchIndex, subcategoryKey, subcategoryLabel } from '@/data/medicine-query';
 import { useMedicines } from '@/data/medicine-store';
 
 const makeId = () => `med-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -15,19 +16,14 @@ export default function EditMedicineScreen() {
   const existing = useMemo(() => items.find((item) => item.id === params.id), [items, params.id]);
   const [name, setName] = useState(existing?.name ?? '');
   const [category, setCategory] = useState(existing?.category ?? params.category ?? 'syrups');
-  const [subcategory, setSubcategory] = useState(existing?.subcategory ?? 'General');
+  const [subcategory, setSubcategory] = useState(subcategoryLabel(existing?.subcategory));
   const [official, setOfficial] = useState(existing ? String(existing.official) : '');
   const [discounted, setDiscounted] = useState(existing?.discounted == null ? '' : String(existing.discounted));
   const [note, setNote] = useState(existing?.note ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
   const [saving, setSaving] = useState(false);
   const existingSubcategories = useMemo(() => {
-    const values = items
-      .filter((item) => item.category === category)
-      .map((item) => item.subcategory.trim())
-      .filter(Boolean);
-    return [...new Map(values.map((value) => [value.toLocaleLowerCase(), value])).values()]
-      .sort((left, right) => left.localeCompare(right, ['ar', 'en'], { sensitivity: 'base' }));
+    return listSubcategories(buildMedicineSearchIndex(items), category);
   }, [category, items]);
 
   const submit = async () => {
@@ -42,7 +38,7 @@ export default function EditMedicineScreen() {
       id: existing?.id ?? makeId(),
       name: name.trim(),
       category,
-      subcategory: subcategory.trim() || 'General',
+      subcategory: subcategoryLabel(subcategory),
       official: officialNumber,
       discounted: discountedNumber,
       note: note.trim(),
@@ -75,7 +71,7 @@ export default function EditMedicineScreen() {
       {existingSubcategories.length ? <View style={{ gap: 8 }}>
         <Text selectable style={{ color: '#63776f', fontSize: 13 }}>Or select an existing subcategory</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 7 }}>
-          {existingSubcategories.map((value) => <Pressable key={value} onPress={() => setSubcategory(value)} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: subcategory === value ? '#dceee4' : '#ffffff', borderWidth: 1, borderColor: subcategory === value ? '#83b39e' : '#d7e2dd' }}><Text style={{ color: '#315b49', fontWeight: '600' }}>{value}</Text></Pressable>)}
+          {existingSubcategories.map((option) => <Pressable key={option.key} onPress={() => setSubcategory(option.label)} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: subcategoryKey(subcategory) === option.key ? '#dceee4' : '#ffffff', borderWidth: 1, borderColor: subcategoryKey(subcategory) === option.key ? '#83b39e' : '#d7e2dd' }}><Text style={{ color: '#315b49', fontWeight: '600' }}>{option.label}</Text></Pressable>)}
         </ScrollView>
       </View> : null}
       <View style={{ flexDirection: 'row', gap: 11 }}>

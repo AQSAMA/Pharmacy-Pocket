@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import type { Medicine } from './medicine';
+import { resolveCreatedAt, type Medicine } from './medicine';
 
 type MedicineRow = Omit<Medicine, 'favorite' | 'createdAt'> & { favorite: number; created_at: number };
 
@@ -51,8 +51,8 @@ export async function getMedicines(): Promise<Medicine[]> {
 
 export async function saveMedicine(item: Medicine) {
   const db = await database();
-  const existing = await db.getFirstAsync<{ sort_order: number; favorite: number }>(
-    'SELECT sort_order, favorite FROM medicines WHERE id = ?',
+  const existing = await db.getFirstAsync<{ sort_order: number; favorite: number; created_at: number }>(
+    'SELECT sort_order, favorite, created_at FROM medicines WHERE id = ?',
     item.id,
   );
   const last = await db.getFirstAsync<{ value: number }>('SELECT COALESCE(MAX(sort_order), -1) AS value FROM medicines');
@@ -71,7 +71,7 @@ export async function saveMedicine(item: Medicine) {
     item.revision,
     existing?.favorite ?? Number(item.favorite ?? false),
     existing?.sort_order ?? (last?.value ?? -1) + 1,
-    item.createdAt ?? Date.now(),
+    resolveCreatedAt(item.createdAt, existing?.created_at),
   );
 }
 

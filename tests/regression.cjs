@@ -13,7 +13,8 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { compareMedicines, normalize, isMedicine } = require('../src/data/medicine.ts');
+const { compareMedicines, normalize, isMedicine, resolveCreatedAt } = require('../src/data/medicine.ts');
+const { buildMedicineSearchIndex, filterAndSortMedicines, getMedicineSuggestions, listSubcategories, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
 test('writes execute serially, including rapid repeated favorite toggles', async () => {
@@ -72,6 +73,72 @@ test('medicine sorting supports names, dates, and prices in both directions', ()
   assert.deepEqual([beta, alpha].sort((a, b) => compareMedicines(a, b, 'date-asc')).map(item => item.id), ['a', 'b']);
   assert.deepEqual([alpha, beta].sort((a, b) => compareMedicines(a, b, 'price-asc')).map(item => item.id), ['b', 'a']);
   assert.deepEqual([beta, alpha].sort((a, b) => compareMedicines(a, b, 'price-desc')).map(item => item.id), ['a', 'b']);
+});
+
+test('subcategory keys normalize blanks, case, whitespace, and Arabic variants without reserving a label', () => {
+  const base = { name: 'Medicine', category: 'syrups', note: '', official: 1000, discounted: null, revision: 0 };
+  const items = [
+    { ...base, id: 'blank', subcategory: '   ' },
+    { ...base, id: 'general', subcategory: ' general ' },
+    { ...base, id: 'all-label', subcategory: 'all' },
+    { ...base, id: 'arabic-a', subcategory: ' أَقْرَاص ' },
+    { ...base, id: 'arabic-b', subcategory: 'اقراص' },
+  ];
+  const index = buildMedicineSearchIndex(items);
+  const options = listSubcategories(index, 'syrups');
+  assert.equal(options.filter(option => option.key === subcategoryKey('General')).length, 1);
+  assert.equal(options.filter(option => option.key === subcategoryKey('اقراص')).length, 1);
+  assert.ok(options.some(option => option.label === 'all'));
+  assert.deepEqual(
+    filterAndSortMedicines(index, { category: 'syrups', subcategoryKey: subcategoryKey('اقراص'), favoritesOnly: false }, '', 'name-asc').map(item => item.id),
+    ['arabic-a', 'arabic-b'],
+  );
+});
+
+test('repeated legacy merges retain the first creation timestamp and explicit timestamps win', () => {
+  const firstImport = resolveCreatedAt(undefined, undefined, 1000);
+  const repeatedImport = resolveCreatedAt(undefined, firstImport, 2000);
+  assert.equal(firstImport, 1000);
+  assert.equal(repeatedImport, 1000);
+  assert.equal(resolveCreatedAt(500, repeatedImport, 3000), 500);
+  assert.equal(resolveCreatedAt(-1, repeatedImport, 3000), 1000);
+  const database = read('src/data/database.ts');
+  assert.match(database, /existing\?\.favorite \?\?/);
+  assert.match(database, /resolveCreatedAt\(item\.createdAt, existing\?\.created_at\)/);
+});
+
+test('all sort modes order one global result across subcategories', () => {
+  const base = { category: 'syrups', note: '', discounted: null, revision: 0 };
+  const items = [
+    { ...base, id: 'c', name: 'Charlie', subcategory: 'Third', official: 2000, createdAt: 20 },
+    { ...base, id: 'a', name: 'Alpha', subcategory: 'First', official: 3000, createdAt: 10 },
+    { ...base, id: 'b', name: 'Beta', subcategory: 'Second', official: 1000, createdAt: 30 },
+  ];
+  const index = buildMedicineSearchIndex(items);
+  const filters = { category: 'all', subcategoryKey: null, favoritesOnly: false };
+  const ids = sort => filterAndSortMedicines(index, filters, '', sort).map(item => item.id);
+  assert.deepEqual(ids('name-asc'), ['a', 'b', 'c']);
+  assert.deepEqual(ids('name-desc'), ['c', 'b', 'a']);
+  assert.deepEqual(ids('date-asc'), ['a', 'c', 'b']);
+  assert.deepEqual(ids('date-desc'), ['b', 'c', 'a']);
+  assert.deepEqual(ids('price-asc'), ['b', 'c', 'a']);
+  assert.deepEqual(ids('price-desc'), ['a', 'c', 'b']);
+});
+
+test('suggestions reuse normalized filters and exclude non-favorites', () => {
+  const base = { name: 'Aspirin', note: '', official: 1000, discounted: null, revision: 0, favorite: true };
+  const items = [
+    { ...base, id: 'kept', category: 'tablets', subcategory: ' Pain ' },
+    { ...base, id: 'duplicate', name: 'ASPIRIN', category: 'tablets', subcategory: 'pain' },
+    { ...base, id: 'not-favorite', name: 'Aspirin Plus', category: 'tablets', subcategory: 'Pain', favorite: false },
+    { ...base, id: 'wrong-category', name: 'Aspirin Syrup', category: 'syrups', subcategory: 'Pain' },
+  ];
+  const suggestions = getMedicineSuggestions(
+    buildMedicineSearchIndex(items),
+    { category: 'tablets', subcategoryKey: subcategoryKey('pain'), favoritesOnly: true },
+    'asp',
+  );
+  assert.deepEqual(suggestions, ['Aspirin']);
 });
 
 test('navigation and scroll regression guards', () => {

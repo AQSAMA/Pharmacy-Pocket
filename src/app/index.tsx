@@ -6,76 +6,64 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloatingSearch } from '@/components/floating-search';
 import { MedicineCard } from '@/components/medicine-card';
 import { categories, categoryById } from '@/data/categories';
-import { compareMedicines, medicineSortOptions, normalize, type Medicine, type MedicineSort } from '@/data/medicine';
+import { medicineSortOptions, type Medicine, type MedicineSort } from '@/data/medicine';
+import { buildMedicineSearchIndex, filterAndSortMedicines, GENERAL_SUBCATEGORY_KEY, getMedicineSuggestions, listSubcategories, subcategoryKey, subcategoryLabel, type MedicineFilters } from '@/data/medicine-query';
 import { useMedicines } from '@/data/medicine-store';
 
 type ListRow = { key: string; kind: 'header'; section: MedicineSection } | { key: string; kind: 'medicine'; item: Medicine; first: boolean; last: boolean };
 
-type MedicineSection = { key: string; title: string; category: string; data: Medicine[] };
+type MedicineSection = { key: string; groupKey: string; title: string; category: string; data: Medicine[] };
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { items, ready, largeText, currency, setLargeText, favorite } = useMedicines();
   const [category, setCategory] = useState('all');
-  const [subcategory, setSubcategory] = useState('all');
+  const [selectedSubcategoryKey, setSelectedSubcategoryKey] = useState<string | null>(null);
   const [sort, setSort] = useState<MedicineSort>('name-asc');
   const [query, setQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const list = useRef<FlatList<ListRow>>(null);
   const deferredQuery = useDeferredValue(query);
-  useEffect(() => { list.current?.scrollToOffset({ offset: 0, animated: false }); }, [category, subcategory, sort, deferredQuery, favoritesOnly]);
+  const searchIndex = useMemo(() => buildMedicineSearchIndex(items), [items]);
+  useEffect(() => { list.current?.scrollToOffset({ offset: 0, animated: false }); }, [category, selectedSubcategoryKey, sort, deferredQuery, favoritesOnly]);
 
   const subcategories = useMemo(() => {
-    const values = items
-      .filter((item) => category === 'all' || item.category === category)
-      .map((item) => item.subcategory.trim() || 'General');
-    return [...new Map(values.map((value) => [normalize(value), value])).values()]
-      .sort((left, right) => left.localeCompare(right, ['ar', 'en'], { sensitivity: 'base' }));
-  }, [category, items]);
+    return listSubcategories(searchIndex, category);
+  }, [category, searchIndex]);
 
   useEffect(() => {
-    if (subcategory !== 'all' && !subcategories.includes(subcategory)) setSubcategory('all');
-  }, [subcategory, subcategories]);
+    if (selectedSubcategoryKey !== null && !subcategories.some((option) => option.key === selectedSubcategoryKey)) setSelectedSubcategoryKey(null);
+  }, [selectedSubcategoryKey, subcategories]);
+
+  const filters = useMemo<MedicineFilters>(() => ({ category, subcategoryKey: selectedSubcategoryKey, favoritesOnly }), [category, favoritesOnly, selectedSubcategoryKey]);
+  const visibleMedicines = useMemo(() => filterAndSortMedicines(searchIndex, filters, deferredQuery, sort), [deferredQuery, filters, searchIndex, sort]);
 
   const sections = useMemo(() => {
-    const needle = normalize(deferredQuery.trim());
-    const groups = new Map<string, MedicineSection>();
-    for (const item of items) {
-      if (category !== 'all' && item.category !== category) continue;
-      if (subcategory !== 'all' && item.subcategory !== subcategory) continue;
-      if (favoritesOnly && !item.favorite) continue;
-      if (needle && !normalize(`${item.name} ${item.note} ${item.description ?? ''} ${item.subcategory}`).includes(needle)) continue;
-      const key = JSON.stringify([item.category, item.subcategory]);
-      const title = item.subcategory === 'General' ? categoryById(item.category).label : item.subcategory;
-      const section = groups.get(key) ?? { key, title, category: item.category, data: [] };
-      section.data.push(item);
-      groups.set(key, section);
+    const runs: MedicineSection[] = [];
+    for (const item of visibleMedicines) {
+      const groupKey = JSON.stringify([item.category, subcategoryKey(item.subcategory)]);
+      const current = runs[runs.length - 1];
+      if (current?.groupKey === groupKey) {
+        current.data.push(item);
+        continue;
+      }
+      const label = subcategoryLabel(item.subcategory);
+      runs.push({ key: `run:${runs.length}:${groupKey}`, groupKey, title: subcategoryKey(item.subcategory) === GENERAL_SUBCATEGORY_KEY ? categoryById(item.category).label : label, category: item.category, data: [item] });
     }
-    return [...groups.values()].map((section) => ({ ...section, data: [...section.data].sort((left, right) => compareMedicines(left, right, sort)) }));
-  }, [items, category, subcategory, sort, deferredQuery, favoritesOnly]);
+    return runs;
+  }, [visibleMedicines]);
 
-  const suggestions = useMemo(() => {
-    const needle = normalize(query.trim());
-    if (!needle) return [];
-    return items
-      .filter((item) => (category === 'all' || item.category === category) && (subcategory === 'all' || item.subcategory === subcategory))
-      .map((item) => ({ name: item.name, normalized: normalize(item.name) }))
-      .filter((item) => item.normalized.includes(needle))
-      .sort((left, right) => Number(!left.normalized.startsWith(needle)) - Number(!right.normalized.startsWith(needle)) || left.name.localeCompare(right.name, ['ar', 'en'], { sensitivity: 'base' }))
-      .filter((item, index, values) => values.findIndex((candidate) => candidate.normalized === item.normalized) === index)
-      .slice(0, 5)
-      .map((item) => item.name);
-  }, [category, items, query, subcategory]);
+  const suggestions = useMemo(() => getMedicineSuggestions(searchIndex, filters, query), [filters, query, searchIndex]);
 
-  const visibleCount = useMemo(() => sections.reduce((count, section) => count + section.data.length, 0), [sections]);
+  const visibleCount = visibleMedicines.length;
   const stepCategory = useCallback((direction: number) => {
     const current = categories.findIndex((item) => item.id === category);
     setCategory(categories[(current + direction + categories.length) % categories.length].id);
-    setSubcategory('all');
+    setSelectedSubcategoryKey(null);
   }, [category]);
   const selectCategory = useCallback((next: string) => {
     setCategory(next);
-    setSubcategory('all');
+    setSelectedSubcategoryKey(null);
   }, []);
   const rows = useMemo<ListRow[]>(() => sections.flatMap((section) => [
     { key: 'header:' + section.key, kind: 'header' as const, section },
@@ -135,8 +123,8 @@ export default function HomeScreen() {
         {categories.map((item) => <Pressable key={item.id} onPress={() => selectCategory(item.id)} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 15, borderRadius: 11, backgroundColor: category === item.id ? '#103e3b' : '#eff4f1' }}><Text style={{ color: category === item.id ? '#ffffff' : '#536c62', fontSize: 16, writingDirection: 'rtl' }}>{item.arabic}</Text></Pressable>)}
       </ScrollView>
       {subcategories.length ? <ScrollView horizontal style={{ flexGrow: 0, flexShrink: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6 }}>
-        <Pressable onPress={() => setSubcategory('all')} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 10, backgroundColor: subcategory === 'all' ? '#315b49' : '#f4f7f6' }}><Text style={{ color: subcategory === 'all' ? '#ffffff' : '#5d736a', fontSize: 14 }}>All subcategories</Text></Pressable>
-        {subcategories.map((value) => <Pressable key={value} onPress={() => setSubcategory(value)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 10, backgroundColor: subcategory === value ? '#315b49' : '#f4f7f6' }}><Text style={{ color: subcategory === value ? '#ffffff' : '#5d736a', fontSize: 14 }}>{value}</Text></Pressable>)}
+        <Pressable onPress={() => setSelectedSubcategoryKey(null)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 10, backgroundColor: selectedSubcategoryKey === null ? '#315b49' : '#f4f7f6' }}><Text style={{ color: selectedSubcategoryKey === null ? '#ffffff' : '#5d736a', fontSize: 14 }}>All subcategories</Text></Pressable>
+        {subcategories.map((option) => <Pressable key={option.key} onPress={() => setSelectedSubcategoryKey(option.key)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 10, backgroundColor: selectedSubcategoryKey === option.key ? '#315b49' : '#f4f7f6' }}><Text style={{ color: selectedSubcategoryKey === option.key ? '#ffffff' : '#5d736a', fontSize: 14 }}>{option.label}</Text></Pressable>)}
       </ScrollView> : null}
       <View style={{ flexDirection: 'row', gap: 7, paddingHorizontal: 10 }}>
         <Pressable accessibilityLabel="Previous category" onPress={() => stepCategory(-1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>‹</Text></Pressable>
