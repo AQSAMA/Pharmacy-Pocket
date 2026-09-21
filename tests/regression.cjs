@@ -13,9 +13,19 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { compareMedicines, normalize, isMedicine, resolveCreatedAt } = require('../src/data/medicine.ts');
+const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, getMedicineSuggestions, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+
+test('added dates render saved timestamps and tolerate missing or invalid legacy dates', () => {
+  const timestamp = Date.UTC(2026, 8, 21, 12);
+  const formatter = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  assert.equal(formatAddedDate(timestamp), formatter.format(new Date(timestamp)));
+  assert.equal(formatAddedDate(0), formatter.format(new Date(0)));
+  for (const value of [undefined, NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER]) {
+    assert.equal(formatAddedDate(value), 'Unknown');
+  }
+});
 
 test('writes execute serially, including rapid repeated favorite toggles', async () => {
   const enqueue = createSerialQueue();
