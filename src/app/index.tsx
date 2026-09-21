@@ -7,7 +7,7 @@ import { FloatingSearch } from '@/components/floating-search';
 import { MedicineCard } from '@/components/medicine-card';
 import { categories, categoryById } from '@/data/categories';
 import { medicineSortOptions, type Medicine, type MedicineSort } from '@/data/medicine';
-import { buildMedicineSearchIndex, filterAndSortMedicines, GENERAL_SUBCATEGORY_KEY, getMedicineSuggestions, listSubcategories, subcategoryKey, subcategoryLabel, type MedicineFilters } from '@/data/medicine-query';
+import { buildMedicineSearchIndex, filterSortedMedicines, GENERAL_SUBCATEGORY_KEY, getMedicineSuggestions, listSubcategories, sortMedicineSearchIndex, subcategoryKey, subcategoryLabel, type MedicineFilters } from '@/data/medicine-query';
 import { useMedicines } from '@/data/medicine-store';
 
 type ListRow = { key: string; kind: 'header'; section: MedicineSection } | { key: string; kind: 'medicine'; item: Medicine; first: boolean; last: boolean };
@@ -25,6 +25,7 @@ export default function HomeScreen() {
   const list = useRef<FlatList<ListRow>>(null);
   const deferredQuery = useDeferredValue(query);
   const searchIndex = useMemo(() => buildMedicineSearchIndex(items), [items]);
+  const sortedIndex = useMemo(() => sortMedicineSearchIndex(searchIndex, sort), [searchIndex, sort]);
   useEffect(() => { list.current?.scrollToOffset({ offset: 0, animated: false }); }, [category, selectedSubcategoryKey, sort, deferredQuery, favoritesOnly]);
 
   const subcategories = useMemo(() => {
@@ -36,19 +37,19 @@ export default function HomeScreen() {
   }, [selectedSubcategoryKey, subcategories]);
 
   const filters = useMemo<MedicineFilters>(() => ({ category, subcategoryKey: selectedSubcategoryKey, favoritesOnly }), [category, favoritesOnly, selectedSubcategoryKey]);
-  const visibleMedicines = useMemo(() => filterAndSortMedicines(searchIndex, filters, deferredQuery, sort), [deferredQuery, filters, searchIndex, sort]);
+  const visibleMedicines = useMemo(() => filterSortedMedicines(sortedIndex, filters, deferredQuery), [deferredQuery, filters, sortedIndex]);
 
   const sections = useMemo(() => {
     const runs: MedicineSection[] = [];
     for (const item of visibleMedicines) {
-      const groupKey = JSON.stringify([item.category, subcategoryKey(item.subcategory)]);
+      const key = subcategoryKey(item.subcategory);
       const current = runs[runs.length - 1];
-      if (current?.groupKey === groupKey) {
+      if (current?.category === item.category && current.groupKey === key) {
         current.data.push(item);
         continue;
       }
       const label = subcategoryLabel(item.subcategory);
-      runs.push({ key: `run:${runs.length}:${groupKey}`, groupKey, title: subcategoryKey(item.subcategory) === GENERAL_SUBCATEGORY_KEY ? categoryById(item.category).label : label, category: item.category, data: [item] });
+      runs.push({ key: `run:${runs.length}:${item.category}:${key}`, groupKey: key, title: key === GENERAL_SUBCATEGORY_KEY ? categoryById(item.category).label : label, category: item.category, data: [item] });
     }
     return runs;
   }, [visibleMedicines]);

@@ -54,12 +54,21 @@ function matchesFilters(entry: MedicineSearchEntry, filters: MedicineFilters) {
 }
 
 export function filterAndSortMedicines(index: MedicineSearchEntry[], filters: MedicineFilters, query: string, sort: MedicineSort) {
+  return filterSortedMedicines(sortMedicineSearchIndex(index, sort), filters, query);
+}
+
+// Sort when the data or sort option changes, not on each category chip tap or keystroke.
+export function sortMedicineSearchIndex(index: MedicineSearchEntry[], sort: MedicineSort) {
+  return [...index].sort((left, right) => compareMedicines(left.item, right.item, sort));
+}
+
+export function filterSortedMedicines(sortedIndex: MedicineSearchEntry[], filters: MedicineFilters, query: string) {
   const needle = normalize(query.trim());
   const result: Medicine[] = [];
-  for (const entry of index) {
+  for (const entry of sortedIndex) {
     if (matchesFilters(entry, filters) && (!needle || entry.searchText.includes(needle))) result.push(entry.item);
   }
-  return result.sort((left, right) => compareMedicines(left, right, sort));
+  return result;
 }
 
 export function getMedicineSuggestions(index: MedicineSearchEntry[], filters: MedicineFilters, query: string, limit = 5) {

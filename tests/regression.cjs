@@ -14,7 +14,7 @@ require.extensions['.ts'] = (module, filename) => {
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt } = require('../src/data/medicine.ts');
-const { buildMedicineSearchIndex, filterAndSortMedicines, getMedicineSuggestions, listSubcategories, subcategoryKey } = require('../src/data/medicine-query.ts');
+const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, getMedicineSuggestions, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
 test('writes execute serially, including rapid repeated favorite toggles', async () => {
@@ -123,6 +123,20 @@ test('all sort modes order one global result across subcategories', () => {
   assert.deepEqual(ids('date-desc'), ['b', 'c', 'a']);
   assert.deepEqual(ids('price-asc'), ['b', 'c', 'a']);
   assert.deepEqual(ids('price-desc'), ['a', 'c', 'b']);
+});
+
+test('switching subcategories preserves the selected global sort without rebuilding the index', () => {
+  const items = [
+    { id: 'z', name: 'Zulu', category: 'tablets', subcategory: ' Pain ', note: '', official: 3000, discounted: null, revision: 0 },
+    { id: 'a', name: 'Alpha', category: 'tablets', subcategory: 'pain', note: '', official: 1000, discounted: null, revision: 0 },
+    { id: 'm', name: 'Middle', category: 'tablets', subcategory: 'Other', note: '', official: 2000, discounted: null, revision: 0 },
+  ];
+  const index = buildMedicineSearchIndex(items);
+  const sorted = sortMedicineSearchIndex(index, 'name-desc');
+  const filters = { category: 'tablets', subcategoryKey: subcategoryKey('pain'), favoritesOnly: false };
+  assert.deepEqual(filterSortedMedicines(sorted, filters, '').map(item => item.id), ['z', 'a']);
+  assert.deepEqual(filterSortedMedicines(sorted, { ...filters, subcategoryKey: null }, '').map(item => item.id), ['z', 'm', 'a']);
+  assert.deepEqual(index.map(entry => entry.item.id), ['z', 'a', 'm']);
 });
 
 test('suggestions reuse normalized filters and exclude non-favorites', () => {
