@@ -16,6 +16,10 @@ function database() {
 
 export async function initializeDatabase() {
   const db = await database();
+  // Existing installations migrate once; subsequent launches avoid schema reads
+  // and a full-table timestamp update before the first screen can appear.
+  const version = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  if ((version?.user_version ?? 0) >= 1) return;
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS medicines (
@@ -41,6 +45,7 @@ export async function initializeDatabase() {
     await db.execAsync('ALTER TABLE medicines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0');
   }
   await db.runAsync("UPDATE medicines SET created_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000 + sort_order WHERE created_at = 0");
+  await db.execAsync('PRAGMA user_version = 1');
 }
 
 export async function getMedicines(): Promise<Medicine[]> {
