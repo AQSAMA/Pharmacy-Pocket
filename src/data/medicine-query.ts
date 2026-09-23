@@ -87,16 +87,3 @@ export function filterSortedMedicines(sortedIndex: MedicineSearchEntry[], filter
   return result;
 }
 
-export function getMedicineSuggestions(index: MedicineSearchEntry[], filters: MedicineFilters, query: string, limit = 5) {
-  const needle = normalize(query.trim());
-  if (!needle || limit <= 0) return [];
-  const suggestions = new Map<string, { name: string; startsWithQuery: boolean }>();
-  for (const entry of index) {
-    if (!matchesFilters(entry, filters) || !entry.nameKey.includes(needle) || suggestions.has(entry.nameKey)) continue;
-    suggestions.set(entry.nameKey, { name: entry.item.name, startsWithQuery: entry.nameKey.startsWith(needle) });
-  }
-  return [...suggestions.values()]
-    .sort((left, right) => Number(!left.startsWithQuery) - Number(!right.startsWithQuery) || left.name.localeCompare(right.name, ['ar', 'en'], { sensitivity: 'base' }))
-    .slice(0, limit)
-    .map((entry) => entry.name);
-}
