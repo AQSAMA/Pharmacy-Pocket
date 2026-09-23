@@ -19,9 +19,10 @@ export default function HomeScreen() {
   const { items, ready, largeText, currency, setLargeText, favorite } = useMedicines();
   const [category, setCategory] = useState('all');
   const [selectedSubcategoryKey, setSelectedSubcategoryKey] = useState<string | null>(null);
-  const [sort, setSort] = useState<MedicineSort>('name-asc');
+  const [sort, setSort] = useState<MedicineSort>('default');
   const [query, setQuery] = useState('');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const list = useRef<FlatList<ListRow>>(null);
   const deferredQuery = useDeferredValue(query);
   const searchIndex = useMemo(() => buildMedicineSearchIndex(items), [items]);
@@ -57,6 +58,7 @@ export default function HomeScreen() {
   const suggestions = useMemo(() => getMedicineSuggestions(searchIndex, filters, query), [filters, query, searchIndex]);
 
   const visibleCount = visibleMedicines.length;
+  const activeControlCount = Number(favoritesOnly) + Number(sort !== 'default');
   const stepCategory = useCallback((direction: number) => {
     const current = categories.findIndex((item) => item.id === category);
     setCategory(categories[(current + direction + categories.length) % categories.length].id);
@@ -94,27 +96,28 @@ export default function HomeScreen() {
       keyExtractor={(item) => item.key}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
-      initialNumToRender={14}
-      maxToRenderPerBatch={14}
-      updateCellsBatchingPeriod={32}
-      windowSize={21}
+      initialNumToRender={10}
+      maxToRenderPerBatch={10}
+      updateCellsBatchingPeriod={24}
+      windowSize={15}
       removeClippedSubviews={false}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 16 }}
-      ListHeaderComponent={<View style={{ paddingTop: 11, paddingHorizontal: 16, gap: 11 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 66 }}>
-          <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 14, backgroundColor: pressed ? '#dceae3' : '#ffffff', alignItems: 'center', justifyContent: 'center' })}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
+      ListHeaderComponent={<View style={{ paddingTop: 10, paddingHorizontal: 16, gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+          <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 16, borderCurve: 'continuous', backgroundColor: pressed ? '#dceae3' : '#ffffff', alignItems: 'center', justifyContent: 'center' })}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
+          <FloatingSearch query={query} onChangeQuery={setQuery} suggestions={suggestions} />
         </View>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={{ color: '#71827a', fontSize: 13 }}>{visibleCount} medicines</Text>
-          <View style={{ flexDirection: 'row', gap: 7 }}>
-            <Pressable onPress={() => setFavoritesOnly((value) => !value)} style={{ backgroundColor: favoritesOnly ? '#dceee4' : '#ffffff', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9 }}><Text style={{ color: '#315b49', fontWeight: '600' }}>☆ Favorites</Text></Pressable>
-            <Pressable onPress={() => setLargeText(!largeText)} style={{ backgroundColor: largeText ? '#dceee4' : '#ffffff', borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9 }}><Text style={{ color: '#315b49', fontWeight: '600' }}>T Large</Text></Pressable>
-          </View>
+        <View style={{ minHeight: 40, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+          <Text style={{ color: '#71827a', fontSize: 13, fontVariant: ['tabular-nums'] }}>{visibleCount} medicines</Text>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: controlsOpen }} onPress={() => setControlsOpen((value) => !value)} style={({ pressed }) => ({ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: controlsOpen ? '#103e3b' : pressed ? '#e5eee9' : '#ffffff' })}><Text style={{ color: controlsOpen ? '#ffffff' : '#315b49', fontSize: 13, fontWeight: '700' }}>{'Filters & sort' + (activeControlCount ? ' · ' + activeControlCount : '')}</Text></Pressable>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingBottom: 8 }}>
+        {controlsOpen ? <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 6, paddingBottom: 2 }}>
+          <Pressable onPress={() => setFavoritesOnly((value) => !value)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: favoritesOnly ? '#dceee4' : '#ffffff' }}><Text style={{ color: '#315b49', fontSize: 13, fontWeight: '700' }}>☆ Favorites</Text></Pressable>
+          <Pressable onPress={() => setLargeText(!largeText)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: largeText ? '#dceee4' : '#ffffff' }}><Text style={{ color: '#315b49', fontSize: 13, fontWeight: '700' }}>T Large</Text></Pressable>
           {medicineSortOptions.map((option) => <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected: sort === option.id }} onPress={() => setSort(option.id)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: sort === option.id ? '#103e3b' : '#ffffff' }}><Text style={{ color: sort === option.id ? '#ffffff' : '#536c62', fontSize: 13, fontWeight: '700' }}>{option.label}</Text></Pressable>)}
-        </ScrollView>
+          {activeControlCount ? <Pressable accessibilityRole="button" onPress={() => { setFavoritesOnly(false); setSort('default'); }} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#f0e9e3' }}><Text style={{ color: '#795f4c', fontSize: 13, fontWeight: '700' }}>Reset</Text></Pressable> : null}
+        </ScrollView> : null}
       </View>}
       renderItem={renderRow}
       ListEmptyComponent={<View style={{ alignItems: 'center', padding: 48, gap: 11 }}><Text style={{ fontSize: 30 }}>{items.length ? '⌕' : '＋'}</Text><Text selectable style={{ color: '#24443a', fontSize: 18, fontWeight: '700' }}>{items.length ? 'No medicines found' : 'Your pocket is empty'}</Text><Text selectable style={{ color: '#71827a', textAlign: 'center', lineHeight: 21 }}>{items.length ? 'Try a shorter name or another category.' : 'Import your web app JSON from Settings, or add your first medicine.'}</Text>{!items.length ? <Pressable onPress={() => router.push('/settings')} style={{ backgroundColor: '#103e3b', borderRadius: 12, paddingHorizontal: 18, minHeight: 46, justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontWeight: '700' }}>Import JSON</Text></Pressable> : null}</View>}
@@ -133,7 +136,6 @@ export default function HomeScreen() {
         <Pressable accessibilityLabel="Next category" onPress={() => stepCategory(1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>›</Text></Pressable>
       </View>
     </View>
-    <FloatingSearch query={query} onChangeQuery={setQuery} suggestions={suggestions} top={insets.top + 8} />
   </View>;
 }
 
