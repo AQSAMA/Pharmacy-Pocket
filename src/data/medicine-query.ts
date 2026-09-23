@@ -13,7 +13,6 @@ export function subcategoryKey(value: string | null | undefined) {
 
 export type MedicineSearchEntry = {
   item: Medicine;
-  nameKey: string;
   searchText: string;
   subcategoryKey: string;
 };
@@ -29,7 +28,6 @@ export type SubcategoryOption = { key: string; label: string };
 export function buildMedicineSearchIndex(items: Medicine[]): MedicineSearchEntry[] {
   return items.map((item) => ({
     item,
-    nameKey: normalize(item.name),
     searchText: normalize(`${item.name} ${item.note} ${item.description ?? ''} ${subcategoryLabel(item.subcategory)}`),
     subcategoryKey: subcategoryKey(item.subcategory),
   }));
