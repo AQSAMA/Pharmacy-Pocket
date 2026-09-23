@@ -142,14 +142,14 @@ test('default view uses full category counts and newest-first order within each 
     { ...base, id: 'b-new', category: 'b', createdAt: 50, favorite: true },
     { ...base, id: 'a-new', category: 'a', createdAt: 30, favorite: false },
     { ...base, id: 'a-mid', category: 'a', createdAt: 20, favorite: false },
-    { ...base, id: 'b-old', category: 'b', createdAt: 40, favorite: false },
+    { ...base, id: 'b-old', category: 'b', createdAt: 40, favorite: true },
     { ...base, id: 'c-only', category: 'c', createdAt: 60, favorite: true },
   ];
   const sorted = sortMedicineSearchIndex(buildMedicineSearchIndex(items), 'default');
   assert.deepEqual(sorted.map(entry => entry.item.id), ['a-new', 'a-mid', 'a-old', 'b-new', 'b-old', 'c-only']);
   assert.deepEqual(
     filterSortedMedicines(sorted, { category: 'all', subcategoryKey: null, favoritesOnly: true }, '').map(item => item.id),
-    ['a-old', 'b-new', 'c-only'],
+    ['a-old', 'b-new', 'b-old', 'c-only'],
   );
 });
 
@@ -191,6 +191,8 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /paddingTop: insets.top/);
   assert.match(home, /useState<MedicineSort>\('default'\)/);
   assert.match(home, /Filters & sort/);
+  assert.match(home, /accessibilityState=\{\{ checked: favoritesOnly \}\}/);
+  assert.match(home, /accessibilityState=\{\{ checked: largeText \}\}/);
   assert.doesNotMatch(home, /position: 'absolute'/);
   const search = read('src/components/floating-search.tsx');
   assert.doesNotMatch(search, /Animated|position: 'absolute'/);
