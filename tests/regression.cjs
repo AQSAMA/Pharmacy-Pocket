@@ -14,7 +14,7 @@ require.extensions['.ts'] = (module, filename) => {
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
-const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, getMedicineSuggestions, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
+const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 
 test('added dates render saved timestamps and tolerate missing or invalid legacy dates', () => {
@@ -167,22 +167,6 @@ test('switching subcategories preserves the selected global sort without rebuild
   assert.deepEqual(index.map(entry => entry.item.id), ['z', 'a', 'm']);
 });
 
-test('suggestions reuse normalized filters and exclude non-favorites', () => {
-  const base = { name: 'Aspirin', note: '', official: 1000, discounted: null, revision: 0, favorite: true };
-  const items = [
-    { ...base, id: 'kept', category: 'tablets', subcategory: ' Pain ' },
-    { ...base, id: 'duplicate', name: 'ASPIRIN', category: 'tablets', subcategory: 'pain' },
-    { ...base, id: 'not-favorite', name: 'Aspirin Plus', category: 'tablets', subcategory: 'Pain', favorite: false },
-    { ...base, id: 'wrong-category', name: 'Aspirin Syrup', category: 'syrups', subcategory: 'Pain' },
-  ];
-  const suggestions = getMedicineSuggestions(
-    buildMedicineSearchIndex(items),
-    { category: 'tablets', subcategoryKey: subcategoryKey('pain'), favoritesOnly: true },
-    'asp',
-  );
-  assert.deepEqual(suggestions, ['Aspirin']);
-});
-
 test('navigation and scroll regression guards', () => {
   const home = read('src/app/index.tsx');
   assert.match(home, /<FlatList/);
@@ -191,12 +175,22 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /paddingTop: insets.top/);
   assert.match(home, /useState<MedicineSort>\('default'\)/);
   assert.match(home, /Filters & sort/);
+  assert.match(home, /searchDock/);
+  assert.match(home, /breadcrumbRow/);
+  assert.match(home, /<View accessible accessibilityLabel=\{`\$\{row\.section\.data\.length\} medicines`\}/);
+  assert.match(home, /direction: 'ltr'/);
+  assert.doesNotMatch(home, /getMedicineSuggestions/);
+  assert.doesNotMatch(read('src/data/medicine-query.ts'), /getMedicineSuggestions|nameKey/);
+  assert.doesNotMatch(home, /width: 5, height: 19/);
   assert.match(home, /accessibilityState=\{\{ checked: favoritesOnly \}\}/);
   assert.match(home, /accessibilityState=\{\{ checked: largeText \}\}/);
   assert.doesNotMatch(home, /position: 'absolute'/);
   const search = read('src/components/floating-search.tsx');
   assert.doesNotMatch(search, /Animated|position: 'absolute'/);
   assert.match(search, /flex: expanded \? 1 : 0/);
+  assert.doesNotMatch(search, /suggestions/);
+  assert.match(search, /filter active/);
+  assert.match(search, /Boolean\(query\.trim\(\)\)/);
   const layout = read('src/app/_layout.tsx');
   assert.doesNotMatch(layout, /formSheet|sheetAllowedDetents/);
   assert.match(layout, /presentation: 'card', animation: 'none'/);
