@@ -59,7 +59,23 @@ export function filterAndSortMedicines(index: MedicineSearchEntry[], filters: Me
 
 // Sort when the data or sort option changes, not on each category chip tap or keystroke.
 export function sortMedicineSearchIndex(index: MedicineSearchEntry[], sort: MedicineSort) {
-  return [...index].sort((left, right) => compareMedicines(left.item, right.item, sort));
+  if (sort !== 'default') return [...index].sort((left, right) => compareMedicines(left.item, right.item, sort));
+
+  const categoryCounts = new Map<string, number>();
+  const categoryOrder = new Map<string, number>();
+  for (const entry of index) {
+    categoryCounts.set(entry.item.category, (categoryCounts.get(entry.item.category) ?? 0) + 1);
+    if (!categoryOrder.has(entry.item.category)) categoryOrder.set(entry.item.category, categoryOrder.size);
+  }
+
+  return [...index].sort((left, right) => {
+    if (left.item.category !== right.item.category) {
+      const countDifference = (categoryCounts.get(right.item.category) ?? 0) - (categoryCounts.get(left.item.category) ?? 0);
+      if (countDifference) return countDifference;
+      return (categoryOrder.get(left.item.category) ?? 0) - (categoryOrder.get(right.item.category) ?? 0);
+    }
+    return compareMedicines(left.item, right.item, 'date-desc');
+  });
 }
 
 export function filterSortedMedicines(sortedIndex: MedicineSearchEntry[], filters: MedicineFilters, query: string) {
