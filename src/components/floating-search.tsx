@@ -9,6 +9,7 @@ type Props = {
 export function FloatingSearch({ query, onChangeQuery }: Props) {
   const [expanded, setExpanded] = useState(false);
   const input = useRef<TextInput>(null);
+  const hasActiveQuery = Boolean(query.trim());
 
   useEffect(() => {
     if (expanded) requestAnimationFrame(() => input.current?.focus());
@@ -24,6 +25,6 @@ export function FloatingSearch({ query, onChangeQuery }: Props) {
       <Pressable accessibilityRole="button" accessibilityLabel="Close search" onPress={collapse} hitSlop={8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontSize: 22 }}>‹</Text></Pressable>
       <TextInput ref={input} value={query} onChangeText={onChangeQuery} placeholder="Search medicines…" placeholderTextColor="rgba(255,255,255,0.72)" autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={collapse} style={{ flex: 1, color: '#ffffff', fontSize: 16, paddingVertical: 0 }} />
       {query ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search text" onPress={() => { onChangeQuery(''); input.current?.focus(); }} hitSlop={8} style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}><Text style={{ color: '#ffffff', fontSize: 18 }}>×</Text></Pressable> : null}
-    </View> : <Pressable accessibilityRole="button" accessibilityLabel={query ? "Search medicines, filter active" : "Search medicines"} onPress={() => setExpanded(true)} style={({ pressed }) => ({ width: 48, height: 48, borderRadius: 15, borderCurve: 'continuous', backgroundColor: query ? '#176455' : pressed ? '#315b49' : '#103e3b', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(18, 63, 52, 0.14)' })}><Text style={{ color: '#ffffff', fontSize: 23 }}>⌕</Text></Pressable>}
+    </View> : <Pressable accessibilityRole="button" accessibilityLabel={hasActiveQuery ? "Search medicines, filter active" : "Search medicines"} onPress={() => setExpanded(true)} style={({ pressed }) => ({ width: 48, height: 48, borderRadius: 15, borderCurve: 'continuous', backgroundColor: hasActiveQuery ? '#176455' : pressed ? '#315b49' : '#103e3b', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(18, 63, 52, 0.14)' })}><Text style={{ color: '#ffffff', fontSize: 23 }}>⌕</Text></Pressable>}
   </View>;
 }
