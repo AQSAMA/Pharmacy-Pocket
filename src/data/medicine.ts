@@ -12,9 +12,10 @@ export type Medicine = {
   createdAt?: number;
 };
 
-export type MedicineSort = 'name-asc' | 'name-desc' | 'date-desc' | 'date-asc' | 'price-asc' | 'price-desc';
+export type MedicineSort = 'default' | 'name-asc' | 'name-desc' | 'date-desc' | 'date-asc' | 'price-asc' | 'price-desc';
 
 export const medicineSortOptions: { id: MedicineSort; label: string }[] = [
+  { id: 'default', label: 'Default' },
   { id: 'name-asc', label: 'A–Z' },
   { id: 'name-desc', label: 'Z–A' },
   { id: 'date-desc', label: 'Newest' },
@@ -33,7 +34,8 @@ export function compareMedicines(left: Medicine, right: Medicine, sort: Medicine
     return sort === 'price-asc' ? result : -result;
   }
   const result = (left.createdAt ?? 0) - (right.createdAt ?? 0);
-  return sort === 'date-asc' ? result : -result;
+  const direction = sort === 'date-asc' ? result : -result;
+  return direction || left.name.localeCompare(right.name, ['ar', 'en'], { sensitivity: 'base', numeric: true });
 }
 
 export function resolveCreatedAt(supplied: number | undefined, existing: number | undefined, now = Date.now()) {
