@@ -135,6 +135,24 @@ test('all sort modes order one global result across subcategories', () => {
   assert.deepEqual(ids('price-desc'), ['a', 'c', 'b']);
 });
 
+test('default view uses full category counts and newest-first order within each category', () => {
+  const base = { name: 'Medicine', subcategory: 'General', note: '', official: 1000, discounted: null, revision: 0 };
+  const items = [
+    { ...base, id: 'a-old', category: 'a', createdAt: 10, favorite: true },
+    { ...base, id: 'b-new', category: 'b', createdAt: 50, favorite: true },
+    { ...base, id: 'a-new', category: 'a', createdAt: 30, favorite: false },
+    { ...base, id: 'a-mid', category: 'a', createdAt: 20, favorite: false },
+    { ...base, id: 'b-old', category: 'b', createdAt: 40, favorite: false },
+    { ...base, id: 'c-only', category: 'c', createdAt: 60, favorite: true },
+  ];
+  const sorted = sortMedicineSearchIndex(buildMedicineSearchIndex(items), 'default');
+  assert.deepEqual(sorted.map(entry => entry.item.id), ['a-new', 'a-mid', 'a-old', 'b-new', 'b-old', 'c-only']);
+  assert.deepEqual(
+    filterSortedMedicines(sorted, { category: 'all', subcategoryKey: null, favoritesOnly: true }, '').map(item => item.id),
+    ['a-old', 'b-new', 'c-only'],
+  );
+});
+
 test('switching subcategories preserves the selected global sort without rebuilding the index', () => {
   const items = [
     { id: 'z', name: 'Zulu', category: 'tablets', subcategory: ' Pain ', note: '', official: 3000, discounted: null, revision: 0 },
@@ -171,7 +189,12 @@ test('navigation and scroll regression guards', () => {
   assert.doesNotMatch(home, /GestureDetector|PanResponder|stickySectionHeadersEnabled/);
   assert.match(home, /removeClippedSubviews=\{false\}/);
   assert.match(home, /paddingTop: insets.top/);
+  assert.match(home, /useState<MedicineSort>\('default'\)/);
+  assert.match(home, /Filters & sort/);
   assert.doesNotMatch(home, /position: 'absolute'/);
+  const search = read('src/components/floating-search.tsx');
+  assert.doesNotMatch(search, /Animated|position: 'absolute'/);
+  assert.match(search, /flex: expanded \? 1 : 0/);
   const layout = read('src/app/_layout.tsx');
   assert.doesNotMatch(layout, /formSheet|sheetAllowedDetents/);
   assert.match(layout, /presentation: 'card', animation: 'none'/);
