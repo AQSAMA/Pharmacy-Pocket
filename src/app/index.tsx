@@ -89,7 +89,7 @@ export default function HomeScreen() {
             <Text numberOfLines={1} ellipsizeMode="tail" style={styles.breadcrumbText}>{row.section.title}</Text>
           </View>
           <Text accessibilityElementsHidden importantForAccessibility="no" style={styles.breadcrumbSeparator}>/</Text>
-          <View accessibilityLabel={`${row.section.data.length} medicines`} style={[styles.breadcrumbChip, styles.countChip]}>
+          <View accessible accessibilityLabel={`${row.section.data.length} medicines`} style={[styles.breadcrumbChip, styles.countChip]}>
             <Text style={styles.countText}>{row.section.data.length}</Text>
           </View>
         </View>
