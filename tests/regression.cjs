@@ -179,7 +179,7 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /breadcrumbRow/);
   assert.match(home, /direction: 'ltr'/);
   assert.doesNotMatch(home, /getMedicineSuggestions/);
-  assert.doesNotMatch(read('src/data/medicine-query.ts'), /getMedicineSuggestions/);
+  assert.doesNotMatch(read('src/data/medicine-query.ts'), /getMedicineSuggestions|nameKey/);
   assert.doesNotMatch(home, /width: 5, height: 19/);
   assert.match(home, /accessibilityState=\{\{ checked: favoritesOnly \}\}/);
   assert.match(home, /accessibilityState=\{\{ checked: largeText \}\}/);
