@@ -177,6 +177,7 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /Filters & sort/);
   assert.match(home, /searchDock/);
   assert.match(home, /breadcrumbRow/);
+  assert.match(home, /<View accessible accessibilityLabel=\{`\$\{row\.section\.data\.length\} medicines`\}/);
   assert.match(home, /direction: 'ltr'/);
   assert.doesNotMatch(home, /getMedicineSuggestions/);
   assert.doesNotMatch(read('src/data/medicine-query.ts'), /getMedicineSuggestions|nameKey/);
@@ -189,6 +190,7 @@ test('navigation and scroll regression guards', () => {
   assert.match(search, /flex: expanded \? 1 : 0/);
   assert.doesNotMatch(search, /suggestions/);
   assert.match(search, /filter active/);
+  assert.match(search, /Boolean\(query\.trim\(\)\)/);
   const layout = read('src/app/_layout.tsx');
   assert.doesNotMatch(layout, /formSheet|sheetAllowedDetents/);
   assert.match(layout, /presentation: 'card', animation: 'none'/);
