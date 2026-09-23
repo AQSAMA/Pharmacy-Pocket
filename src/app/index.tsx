@@ -7,7 +7,7 @@ import { FloatingSearch } from '@/components/floating-search';
 import { MedicineCard } from '@/components/medicine-card';
 import { categories, categoryById } from '@/data/categories';
 import { medicineSortOptions, type Medicine, type MedicineSort } from '@/data/medicine';
-import { buildMedicineSearchIndex, filterSortedMedicines, GENERAL_SUBCATEGORY_KEY, getMedicineSuggestions, listSubcategories, sortMedicineSearchIndex, subcategoryKey, subcategoryLabel, type MedicineFilters } from '@/data/medicine-query';
+import { buildMedicineSearchIndex, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey, subcategoryLabel, type MedicineFilters } from '@/data/medicine-query';
 import { useMedicines } from '@/data/medicine-store';
 
 type ListRow = { key: string; kind: 'header'; section: MedicineSection } | { key: string; kind: 'medicine'; item: Medicine; first: boolean; last: boolean };
@@ -49,13 +49,16 @@ export default function HomeScreen() {
         current.data.push(item);
         continue;
       }
-      const label = subcategoryLabel(item.subcategory);
-      runs.push({ key: `run:${runs.length}:${item.category}:${key}`, groupKey: key, title: key === GENERAL_SUBCATEGORY_KEY ? categoryById(item.category).label : label, category: item.category, data: [item] });
+      runs.push({
+        key: `run:${runs.length}:${item.category}:${key}`,
+        groupKey: key,
+        title: subcategoryLabel(item.subcategory),
+        category: item.category,
+        data: [item],
+      });
     }
     return runs;
   }, [visibleMedicines]);
-
-  const suggestions = useMemo(() => getMedicineSuggestions(searchIndex, filters, query), [filters, query, searchIndex]);
 
   const visibleCount = visibleMedicines.length;
   const activeControlCount = Number(favoritesOnly) + Number(sort !== 'default');
@@ -76,11 +79,20 @@ export default function HomeScreen() {
   const renderRow = useCallback(({ item: row }: ListRenderItemInfo<ListRow>) => {
     if (row.kind === 'header') {
       const selected = categoryById(row.section.category);
-      return <View style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 9, flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <View style={{ width: 5, height: 19, borderRadius: 4, backgroundColor: selected.color }} />
-        <Text style={{ color: '#203b34', fontSize: 15, fontWeight: '800', flex: 1 }}>{row.section.title}</Text>
-        <Text style={{ color: '#81928b', fontSize: 12 }}>{row.section.data.length}</Text>
-        <Text style={{ color: '#81928b', fontSize: 13, writingDirection: 'rtl' }}>{selected.arabic}</Text>
+      return <View style={styles.sectionHeader}>
+        <View style={styles.breadcrumbRow}>
+          <View style={[styles.breadcrumbChip, { borderColor: selected.color }]}>
+            <Text numberOfLines={1} style={[styles.breadcrumbText, styles.categoryBreadcrumbText]}>{selected.arabic}</Text>
+          </View>
+          <Text accessibilityElementsHidden importantForAccessibility="no" style={styles.breadcrumbSeparator}>/</Text>
+          <View style={[styles.breadcrumbChip, styles.subcategoryChip]}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={styles.breadcrumbText}>{row.section.title}</Text>
+          </View>
+          <Text accessibilityElementsHidden importantForAccessibility="no" style={styles.breadcrumbSeparator}>/</Text>
+          <View accessibilityLabel={`${row.section.data.length} medicines`} style={[styles.breadcrumbChip, styles.countChip]}>
+            <Text style={styles.countText}>{row.section.data.length}</Text>
+          </View>
+        </View>
       </View>;
     }
     return <View style={styles.cardContainer}><MedicineCard item={row.item} large={largeText} currency={currency} first={row.first} last={row.last} onFavorite={favorite} /></View>;
@@ -89,6 +101,12 @@ export default function HomeScreen() {
   if (!ready) return <View style={{ flex: 1, backgroundColor: '#f4f7f6', justifyContent: 'center' }}><ActivityIndicator color="#126052" size="large" /></View>;
 
   return <View style={[styles.screen, { paddingTop: insets.top }]}>
+    <View style={styles.searchDock}>
+      <View style={styles.searchToolbar}>
+        <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => [styles.settingsButton, { backgroundColor: pressed ? '#dceae3' : '#ffffff' }]}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
+        <FloatingSearch query={query} onChangeQuery={setQuery} />
+      </View>
+    </View>
     <FlatList
       ref={list}
       style={{ flex: 1 }}
@@ -103,11 +121,7 @@ export default function HomeScreen() {
       removeClippedSubviews={false}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 16 }}
-      ListHeaderComponent={<View style={{ paddingTop: 10, paddingHorizontal: 16, gap: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-          <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => ({ width: 52, height: 52, borderRadius: 16, borderCurve: 'continuous', backgroundColor: pressed ? '#dceae3' : '#ffffff', alignItems: 'center', justifyContent: 'center' })}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
-          <FloatingSearch query={query} onChangeQuery={setQuery} suggestions={suggestions} />
-        </View>
+      ListHeaderComponent={<View style={styles.listHeader}>
         <View style={{ minHeight: 40, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
           <Text style={{ color: '#71827a', fontSize: 13, fontVariant: ['tabular-nums'] }}>{visibleCount} medicines</Text>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: controlsOpen }} onPress={() => setControlsOpen((value) => !value)} style={({ pressed }) => ({ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: controlsOpen ? '#103e3b' : pressed ? '#e5eee9' : '#ffffff' })}><Text style={{ color: controlsOpen ? '#ffffff' : '#315b49', fontSize: 13, fontWeight: '700' }}>{'Filters & sort' + (activeControlCount ? ' · ' + activeControlCount : '')}</Text></Pressable>
@@ -141,5 +155,54 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#f4f7f6' },
+  searchDock: {
+    backgroundColor: '#f4f7f6',
+    paddingTop: 8,
+    paddingBottom: 6,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e8e4',
+  },
+  searchToolbar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  settingsButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listHeader: { paddingTop: 6, paddingHorizontal: 16, gap: 8 },
+  sectionHeader: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 9 },
+  breadcrumbRow: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 6,
+    direction: 'ltr',
+  },
+  breadcrumbChip: {
+    minHeight: 30,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#d9e4df',
+    backgroundColor: '#ffffff',
+  },
+  subcategoryChip: { flexShrink: 1, backgroundColor: '#f8faf9' },
+  breadcrumbText: {
+    color: '#24443a',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'left',
+    writingDirection: 'auto',
+  },
+  categoryBreadcrumbText: { writingDirection: 'rtl' },
+  breadcrumbSeparator: { color: '#91a099', fontSize: 15, fontWeight: '700' },
+  countChip: { minWidth: 34, alignItems: 'center', backgroundColor: '#eaf3ee' },
+  countText: { color: '#315b49', fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   cardContainer: { marginHorizontal: 16 },
 });
