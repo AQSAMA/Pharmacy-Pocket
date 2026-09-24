@@ -165,8 +165,13 @@ fun HomeScreen(
         (if (selectedSubcategory != null) 1 else 0) +
         (if (query.isNotBlank()) 1 else 0)
 
-    LaunchedEffect(category, selectedSubcategory, sort, query, favoritesOnly) {
-        if (listState.firstVisibleItemIndex > 0) listState.scrollToItem(0)
+    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly"
+    var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
+    LaunchedEffect(filterKey) {
+        if (filterKey != lastFilterKey) {
+            lastFilterKey = filterKey
+            if (listState.firstVisibleItemIndex > 0) listState.scrollToItem(0)
+        }
     }
 
     fun selectCategory(next: String) {
