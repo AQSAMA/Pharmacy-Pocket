@@ -162,7 +162,7 @@ export default function HomeScreen() {
     />
     <View style={{ paddingBottom: Math.max(insets.bottom, 9), paddingTop: 9, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#dce5e1', gap: 7 }}>
       <ScrollView horizontal style={{ flexGrow: 0, flexShrink: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6 }}>
-        {categories.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => selectCategory(item.id)} style={[styles.categoryChip, category === item.id && styles.categoryChipActive]}><Text style={[styles.categoryChipLabel, category === item.id && styles.categoryChipLabelActive]}>{item.arabic}</Text><View style={[styles.categoryCount, category === item.id && styles.categoryCountActive]}><Text style={[styles.categoryCountText, category === item.id && styles.categoryCountTextActive]}>{categoryCounts.get(item.id) ?? 0}</Text></View></Pressable>)}
+        {categories.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => selectCategory(item.id)} style={[styles.categoryChip, category === item.id && styles.categoryChipActive]}>{item.id !== 'all' ? <View style={[styles.categoryDot, { backgroundColor: item.color }]} /> : null}<Text style={[styles.categoryChipLabel, category === item.id && styles.categoryChipLabelActive]}>{item.arabic}</Text><View style={[styles.categoryCount, category === item.id && styles.categoryCountActive]}><Text style={[styles.categoryCountText, category === item.id && styles.categoryCountTextActive]}>{categoryCounts.get(item.id) ?? 0}</Text></View></Pressable>)}
       </ScrollView>
       {subcategories.length ? <ScrollView horizontal style={{ flexGrow: 0, flexShrink: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6 }}>
         <Pressable onPress={() => { selectionHaptic(); setSelectedSubcategoryKey(null); }} style={[styles.subcategoryChipButton, selectedSubcategoryKey === null && styles.subcategoryChipButtonActive]}><Text style={[styles.subcategoryChipText, selectedSubcategoryKey === null && styles.subcategoryChipTextActive]}>All subcategories</Text></Pressable>
@@ -254,6 +254,7 @@ const styles = StyleSheet.create({
   cardContainer: { marginHorizontal: 16 },
   categoryChip: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 13, borderRadius: 13, backgroundColor: '#eff4f1' },
   categoryChipActive: { backgroundColor: '#103e3b' },
+  categoryDot: { width: 9, height: 9, borderRadius: 5 },
   categoryChipLabel: { color: '#536c62', fontSize: 15, writingDirection: 'auto', fontWeight: '600' },
   categoryChipLabelActive: { color: '#ffffff' },
   categoryCount: { minWidth: 24, height: 24, paddingHorizontal: 6, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' },
