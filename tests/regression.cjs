@@ -249,7 +249,11 @@ test('navigation and scroll regression guards', () => {
   assert.match(categoryManager, /Save category/);
   assert.match(categoryManager, /CATEGORY_COLORS/);
   assert.match(categoryManager, /tintCategoryColor/);
-  assert.match(read('src/app/settings.tsx'), /Manage categories/);
+  const settings = read('src/app/settings.tsx');
+  assert.match(settings, /Manage categories/);
+  assert.match(settings, /accessibilityLabel=\{label\}/);
+  assert.match(read('src/app/edit.tsx'), /minHeight: 48, justifyContent: 'center'/);
+  assert.match(read('src/app/medicine\/\[id\]\.tsx'), /favoriteButton: \{ minHeight: 48/);
   const card = read('src/components/medicine-card.tsx');
   assert.match(card, /onFavorite\(item\)\.catch/);
   assert.match(card, /width: 48, height: 48/);
