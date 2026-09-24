@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { FormField } from '@/components/form-field';
+import { actionHaptic, confirmHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
 import { categories } from '@/data/categories';
 import type { Medicine } from '@/data/medicine';
 import { listSubcategories, buildMedicineSearchIndex, subcategoryKey, subcategoryLabel } from '@/data/medicine-query';
@@ -31,6 +32,7 @@ export default function EditMedicineScreen() {
     const officialNumber = Number(official);
     const discountedNumber = discounted.trim() ? Number(discounted) : null;
     if (!name.trim() || !official.trim() || !Number.isSafeInteger(officialNumber) || officialNumber < 0 || (discountedNumber !== null && (!Number.isSafeInteger(discountedNumber) || discountedNumber < 0))) {
+      rejectHaptic();
       Alert.alert('Check the details', `Enter a medicine name and whole-number ${currency} prices.`);
       return;
     }
@@ -47,11 +49,14 @@ export default function EditMedicineScreen() {
       favorite: existing?.favorite,
       createdAt: existing?.createdAt ?? Date.now(),
     };
+    actionHaptic();
     setSaving(true);
     try {
       await save(item);
+      confirmHaptic();
       router.back();
     } catch {
+      rejectHaptic();
       Alert.alert('Could not save', 'The medicine remains open. Please try again.');
     } finally {
       setSaving(false);
@@ -64,14 +69,14 @@ export default function EditMedicineScreen() {
       <View style={{ gap: 8 }}>
         <Text selectable style={{ color: '#37544a', fontWeight: '700', fontSize: 14 }}>Category</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
-          {categories.slice(1).map((item) => <Pressable key={item.id} onPress={() => setCategory(item.id)} style={{ paddingHorizontal: 14, minHeight: 44, justifyContent: 'center', borderRadius: 11, backgroundColor: category === item.id ? '#103e3b' : '#e7eeea' }}><Text style={{ color: category === item.id ? '#ffffff' : '#435f55', fontWeight: '600' }}>{item.arabic}</Text></Pressable>)}
+          {categories.slice(1).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => { selectionHaptic(); setCategory(item.id); }} style={{ paddingHorizontal: 14, minHeight: 48, justifyContent: 'center', borderRadius: 13, backgroundColor: category === item.id ? '#103e3b' : '#e7eeea' }}><Text style={{ color: category === item.id ? '#ffffff' : '#435f55', fontWeight: '700' }}>{item.arabic}</Text></Pressable>)}
         </ScrollView>
       </View>
       <FormField label="Subcategory" value={subcategory} onChangeText={setSubcategory} />
       {existingSubcategories.length ? <View style={{ gap: 8 }}>
         <Text selectable style={{ color: '#63776f', fontSize: 13 }}>Or select an existing subcategory</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 7 }}>
-          {existingSubcategories.map((option) => <Pressable key={option.key} onPress={() => setSubcategory(option.label)} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: subcategoryKey(subcategory) === option.key ? '#dceee4' : '#ffffff', borderWidth: 1, borderColor: subcategoryKey(subcategory) === option.key ? '#83b39e' : '#d7e2dd' }}><Text style={{ color: '#315b49', fontWeight: '600' }}>{option.label}</Text></Pressable>)}
+          {existingSubcategories.map((option) => <Pressable key={option.key} accessibilityRole="button" accessibilityState={{ selected: subcategoryKey(subcategory) === option.key }} onPress={() => { selectionHaptic(); setSubcategory(option.label); }} style={{ minHeight: 46, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: subcategoryKey(subcategory) === option.key ? '#dceee4' : '#ffffff', borderWidth: 1, borderColor: subcategoryKey(subcategory) === option.key ? '#83b39e' : '#d7e2dd' }}><Text style={{ color: '#315b49', fontWeight: '600' }}>{option.label}</Text></Pressable>)}
         </ScrollView>
       </View> : null}
       <View style={{ flexDirection: 'row', gap: 11 }}>
@@ -81,7 +86,7 @@ export default function EditMedicineScreen() {
       <FormField label="Supplied note" value={note} onChangeText={setNote} multiline numberOfLines={3} style={{ minHeight: 88, textAlignVertical: 'top' }} />
       <FormField label="Description" value={description} onChangeText={setDescription} multiline numberOfLines={5} placeholder="Details shown on the medicine page" style={{ minHeight: 116, textAlignVertical: 'top' }} />
       <Text selectable style={{ color: '#7b8984', fontSize: 13, lineHeight: 19 }}>Prices use {currency}. A blank discounted price means no second price was supplied.</Text>
-      <Pressable disabled={saving} onPress={() => void submit()} style={({ pressed }) => ({ minHeight: 52, borderRadius: 13, backgroundColor: '#103e3b', alignItems: 'center', justifyContent: 'center', opacity: saving || pressed ? 0.65 : 1 })}>
+      <Pressable accessibilityRole="button" accessibilityState={{ disabled: saving }} disabled={saving} onPress={() => void submit()} style={({ pressed }) => ({ minHeight: 54, borderRadius: 15, backgroundColor: '#103e3b', alignItems: 'center', justifyContent: 'center', opacity: saving || pressed ? 0.65 : 1 })}>
         <Text style={{ color: '#ffffff', fontSize: 17, fontWeight: '800' }}>{saving ? 'Saving…' : 'Save medicine'}</Text>
       </Pressable>
     </ScrollView>
