@@ -28,10 +28,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up current Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
 
       - name: Install Android SDK packages
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0"
+          yes | sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
