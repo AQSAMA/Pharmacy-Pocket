@@ -76,7 +76,7 @@ export default function EditMedicineScreen() {
       {existingSubcategories.length ? <View style={{ gap: 8 }}>
         <Text selectable style={{ color: '#63776f', fontSize: 13 }}>Or select an existing subcategory</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 7 }}>
-          {existingSubcategories.map((option) => <Pressable key={option.key} accessibilityRole="button" accessibilityState={{ selected: subcategoryKey(subcategory) === option.key }} onPress={() => { selectionHaptic(); setSubcategory(option.label); }} style={{ minHeight: 46, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: subcategoryKey(subcategory) === option.key ? '#dceee4' : '#ffffff', borderWidth: 1, borderColor: subcategoryKey(subcategory) === option.key ? '#83b39e' : '#d7e2dd' }}><Text style={{ color: '#315b49', fontWeight: '600' }}>{option.label}</Text></Pressable>)}
+          {existingSubcategories.map((option) => <Pressable key={option.key} accessibilityRole="button" accessibilityState={{ selected: subcategoryKey(subcategory) === option.key }} onPress={() => { selectionHaptic(); setSubcategory(option.label); }} style={{ minHeight: 48, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: subcategoryKey(subcategory) === option.key ? '#dceee4' : '#ffffff', borderWidth: 1, borderColor: subcategoryKey(subcategory) === option.key ? '#83b39e' : '#d7e2dd' }}><Text style={{ color: '#315b49', fontWeight: '600' }}>{option.label}</Text></Pressable>)}
         </ScrollView>
       </View> : null}
       <View style={{ flexDirection: 'row', gap: 11 }}>
