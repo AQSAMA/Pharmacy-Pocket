@@ -7,6 +7,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 
 import { actionHaptic, confirmHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
 import { createBackup, parseBackup, type ParsedBackup } from '@/data/backup';
+import { assertCategoryDefinitionLimit, categories as defaultCategories, mergeCategoryDefinitions } from '@/data/categories';
 import { useMedicines } from '@/data/medicine-store';
 
 function SettingButton({ icon, label, description, onPress }: { icon: string; label: string; description: string; onPress(): void }) {
@@ -43,6 +44,15 @@ export default function SettingsScreen() {
   };
 
   const applyImport = (data: ParsedBackup, mode: 'merge' | 'replace') => {
+    try {
+      const base = mode === 'replace' ? defaultCategories : categories;
+      const projected = mergeCategoryDefinitions(base, data.categories);
+      assertCategoryDefinitionLimit(projected, data.medicines.map((item) => item.category));
+    } catch (error) {
+      rejectHaptic();
+      Alert.alert('Import has too many categories', error instanceof Error ? error.message : 'Reduce the number of categories and try again.');
+      return;
+    }
     const action = mode === 'replace' ? replace(data.medicines) : merge(data.medicines);
     void action
       .then(() => {
