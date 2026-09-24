@@ -4,7 +4,6 @@ import { Alert, KeyboardAvoidingView, Pressable, ScrollView, Text, View } from '
 
 import { FormField } from '@/components/form-field';
 import { actionHaptic, confirmHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
-import { categories } from '@/data/categories';
 import type { Medicine } from '@/data/medicine';
 import { listSubcategories, buildMedicineSearchIndex, subcategoryKey, subcategoryLabel } from '@/data/medicine-query';
 import { useMedicines } from '@/data/medicine-store';
@@ -13,7 +12,7 @@ const makeId = () => `med-${Date.now()}-${Math.random().toString(36).slice(2, 8)
 
 export default function EditMedicineScreen() {
   const params = useLocalSearchParams<{ id?: string; category?: string }>();
-  const { items, currency, save } = useMedicines();
+  const { items, categories, currency, save } = useMedicines();
   const existing = useMemo(() => items.find((item) => item.id === params.id), [items, params.id]);
   const [name, setName] = useState(existing?.name ?? '');
   const [category, setCategory] = useState(existing?.category ?? params.category ?? 'syrups');
@@ -67,7 +66,10 @@ export default function EditMedicineScreen() {
     <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 18, paddingBottom: 50, gap: 18 }}>
       <FormField label="Medicine / brand" value={name} onChangeText={setName} autoFocus={!existing} />
       <View style={{ gap: 8 }}>
-        <Text selectable style={{ color: '#37544a', fontWeight: '700', fontSize: 14 }}>Category</Text>
+        <View style={{ minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <Text selectable style={{ color: '#37544a', fontWeight: '700', fontSize: 14 }}>Category</Text>
+          <Pressable accessibilityRole="button" onPress={() => { actionHaptic(); router.push('/categories'); }} style={({ pressed }) => ({ minHeight: 40, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 11, backgroundColor: pressed ? '#dceae3' : '#edf3f0' })}><Text style={{ color: '#315b49', fontSize: 12, fontWeight: '800' }}>Manage categories</Text></Pressable>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
           {categories.slice(1).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => { selectionHaptic(); setCategory(item.id); }} style={{ paddingHorizontal: 14, minHeight: 48, justifyContent: 'center', borderRadius: 13, backgroundColor: category === item.id ? '#103e3b' : '#e7eeea' }}><Text style={{ color: category === item.id ? '#ffffff' : '#435f55', fontWeight: '700' }}>{item.arabic}</Text></Pressable>)}
         </ScrollView>
