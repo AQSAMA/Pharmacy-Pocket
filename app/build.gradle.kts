@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.aqsama.pharmacypocket"
     compileSdk = 37
+    compileSdkMinor = 0
 
     defaultConfig {
         applicationId = "com.aqsama.pharmacypocket"
