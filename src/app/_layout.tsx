@@ -18,6 +18,7 @@ export default function RootLayout() {
           <Stack.Screen name="medicine/[id]" options={{ title: 'Medicine', presentation: 'card', animation: 'none' }} />
           <Stack.Screen name="edit" options={{ title: 'Medicine details', presentation: 'modal', animation: 'fade' }} />
           <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal', animation: 'fade' }} />
+          <Stack.Screen name="categories" options={{ title: 'Categories', presentation: 'card', animation: 'slide_from_right' }} />
         </Stack>
       </MedicineProvider>
     </GestureHandlerRootView>

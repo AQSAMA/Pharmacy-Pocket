@@ -13,6 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
+const { MAX_CATEGORY_DEFINITIONS, assertCategoryDefinitionLimit, categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, resolveCategoryImport, tintCategoryColor } = require('../src/data/categories.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -58,6 +59,97 @@ test('backup preserves Arabic, descriptions, favorites, and custom currency', ()
   const result = parseBackup(JSON.parse(JSON.stringify(createBackup([item], 'USD'))));
   assert.deepEqual(result.medicines, [item]);
   assert.equal(result.currency, 'USD');
+});
+
+test('category definitions keep stable ids while allowing names and colors to change', () => {
+  const customized = mergeCategoryDefinitions(defaultCategories, [
+    { id: 'syrups', label: 'Liquids', arabic: 'سوائل', color: '#123456' },
+    { id: 'custom-inhalers', label: 'Inhalers', arabic: 'بخاخات', color: '#3f7fb5' },
+  ]);
+  assert.equal(customized[0].id, 'all');
+  assert.equal(customized.find(item => item.id === 'syrups').label, 'Liquids');
+  assert.equal(customized.find(item => item.id === 'syrups').color, '#123456');
+  assert.equal(customized.at(-1).id, 'custom-inhalers');
+  assert.equal(tintCategoryColor('#2f856d', 0.08), '#eef5f3');
+  const legacy = ensureCategoriesForMedicines(defaultCategories, [' legacy-id ']);
+  assert.equal(legacy.find(item => item.id === ' legacy-id ').label, 'legacy-id');
+});
+
+test('createBackup keeps the legacy third exportedAt argument compatible', () => {
+  const item = { id: 'legacy-export', name: 'Legacy', note: '', category: 'syrups', subcategory: 'General', official: 1000, discounted: null, revision: 0 };
+  const backup = createBackup([item], 'IQD', '2026-01-02T03:04:05.000Z');
+  assert.equal(backup.exportedAt, '2026-01-02T03:04:05.000Z');
+  assert.equal(backup.sections[0].categoryLabel, 'Syrups & sachets');
+});
+
+test('custom category names and colors survive JSON backup and legacy custom sections still import', () => {
+  const custom = { id: 'custom-inhalers', label: 'Inhalers', arabic: 'بخاخات', color: '#3f7fb5' };
+  const definitions = [...defaultCategories, custom];
+  const item = { id: 'inh', name: 'Inhaler', note: '', category: custom.id, subcategory: 'General', official: 5000, discounted: null, revision: 0 };
+  const backup = createBackup([item], 'IQD', definitions);
+  assert.ok(backup.categories.some(category => category.id === custom.id && category.color === custom.color));
+  assert.equal(backup.sections[0].categoryLabel, 'Inhalers');
+  assert.equal(backup.sections[0].color, '#3f7fb5');
+
+  const parsed = parseBackup(JSON.parse(JSON.stringify(backup)));
+  assert.ok(parsed.categories.some(category => category.id === custom.id && category.arabic === 'بخاخات'));
+
+  const legacy = JSON.parse(JSON.stringify(backup));
+  delete legacy.categories;
+  const parsedLegacy = parseBackup(legacy);
+  assert.ok(parsedLegacy.categories.some(category => category.id === custom.id));
+});
+
+test('backup rejects duplicate category metadata', () => {
+  const item = { id: 'category-guard', name: 'Guard', note: '', category: 'custom', subcategory: 'General', official: 1000, discounted: null, revision: 0 };
+  const category = { id: 'custom', label: 'Custom', arabic: 'Custom', color: '#3f7fb5' };
+  const duplicate = createBackup([item], 'IQD', [defaultCategories[0], category]);
+  duplicate.categories = [category, { ...category, label: 'Duplicate' }];
+  assert.throws(() => parseBackup(duplicate), /Duplicate category ID/);
+});
+
+test('category import merge preserves local styles while replace restores incoming styles', () => {
+  const local = mergeCategoryDefinitions(defaultCategories, [
+    { id: 'syrups', label: 'Local liquids', arabic: 'محلي', color: '#123456' },
+  ]);
+  const incoming = [
+    { id: 'syrups', label: 'Imported liquids', arabic: 'مستورد', color: '#654321' },
+    { id: 'custom-imported', label: 'Imported custom', arabic: 'خاص', color: '#3f7fb5' },
+  ];
+
+  const merged = resolveCategoryImport(local, incoming, 'merge', ['custom-imported']);
+  assert.equal(merged.find(item => item.id === 'syrups').label, 'Local liquids');
+  assert.equal(merged.find(item => item.id === 'syrups').color, '#123456');
+  assert.equal(merged.find(item => item.id === 'custom-imported').label, 'Imported custom');
+
+  const replaced = resolveCategoryImport(local, incoming, 'replace', ['custom-imported']);
+  assert.equal(replaced.find(item => item.id === 'syrups').label, 'Imported liquids');
+  assert.equal(replaced.find(item => item.id === 'syrups').color, '#654321');
+});
+
+test('category import resolution preserves local merge styles and rejects overflow before writes', () => {
+  const local = mergeCategoryDefinitions(defaultCategories, [
+    { id: 'syrups', label: 'My liquids', arabic: 'سوائل', color: '#123456' },
+  ]);
+  const incoming = [
+    { id: 'syrups', label: 'Imported liquids', arabic: 'شراب', color: '#654321' },
+    { id: 'new-cat', label: 'New category', arabic: 'جديد', color: '#3f7fb5' },
+  ];
+  const merged = resolveCategoryImport(local, incoming, 'merge', ['new-cat']);
+  assert.equal(merged.find(item => item.id === 'syrups').label, 'My liquids');
+  assert.equal(merged.find(item => item.id === 'syrups').color, '#123456');
+  assert.ok(merged.some(item => item.id === 'new-cat'));
+
+  const tooMany = Array.from({ length: MAX_CATEGORY_DEFINITIONS }, (_, index) => ({
+    id: `overflow-${index}`,
+    label: `Overflow ${index}`,
+    arabic: `Overflow ${index}`,
+    color: '#3f7fb5',
+  }));
+  assert.throws(
+    () => resolveCategoryImport(defaultCategories, tooMany, 'replace'),
+    /supports up to/,
+  );
 });
 
 test('Arabic search ignores diacritics and normalizes alef', () => {
@@ -174,7 +266,16 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /removeClippedSubviews=\{false\}/);
   assert.match(home, /paddingTop: insets.top/);
   assert.match(home, /useState<MedicineSort>\('default'\)/);
-  assert.match(home, /Filters & sort/);
+  assert.match(home, /Tune/);
+  assert.match(home, /categoryCounts/);
+  assert.match(home, /categoryById\(row\.item\.category, categories\)/);
+  assert.match(home, /item\.category === 'all'/);
+  assert.match(home, /favoriteCount/);
+  assert.match(home, /Show favorites only, \$\{favoriteCount\} favorites/);
+  assert.match(home, /clearViewFilters/);
+  assert.match(home, /quickFavorite: \{ minWidth: 54, height: 48/);
+  assert.match(home, /!categories\.some\(\(item\) => item\.id === category\)/);
+  assert.match(home, /setCategory\('all'\)/);
   assert.match(home, /searchDock/);
   assert.match(home, /breadcrumbRow/);
   assert.match(home, /<View accessible accessibilityLabel=\{`\$\{row\.section\.data\.length\} medicines`\}/);
@@ -187,12 +288,39 @@ test('navigation and scroll regression guards', () => {
   assert.doesNotMatch(home, /position: 'absolute'/);
   const search = read('src/components/floating-search.tsx');
   assert.doesNotMatch(search, /Animated|position: 'absolute'/);
-  assert.match(search, /flex: expanded \? 1 : 0/);
+  assert.doesNotMatch(search, /useState|expanded/);
   assert.doesNotMatch(search, /suggestions/);
-  assert.match(search, /filter active/);
   assert.match(search, /Boolean\(query\.trim\(\)\)/);
+  assert.match(search, /minHeight: 50/);
+  assert.equal((search.match(/width: 48/g) || []).length >= 2, true);
+  assert.match(home, /quickFavorite: \{ minWidth: 54, height: 48/);
+  assert.match(search, /Search medicines/);
   const layout = read('src/app/_layout.tsx');
   assert.doesNotMatch(layout, /formSheet|sheetAllowedDetents/);
   assert.match(layout, /presentation: 'card', animation: 'none'/);
-  assert.match(read('src/components/medicine-card.tsx'), /onFavorite\(item\)\.catch/);
+  const categoryManager = read('src/app/categories.tsx');
+  assert.match(categoryManager, /Add category/);
+  assert.match(categoryManager, /Save category/);
+  assert.match(categoryManager, /CATEGORY_COLORS/);
+  assert.match(categoryManager, /tintCategoryColor/);
+  const settings = read('src/app/settings.tsx');
+  assert.match(settings, /Manage categories/);
+  assert.match(settings, /accessibilityLabel=\{label\}/);
+  assert.match(settings, /resolveCategoryImport/);
+  assert.match(read('src/app/edit.tsx'), /minHeight: 48, justifyContent: 'center'/);
+  assert.match(read('src/app/medicine\/\[id\]\.tsx'), /favoriteButton: \{ minHeight: 48/);
+  const card = read('src/components/medicine-card.tsx');
+  assert.match(card, /onFavorite\(item\)\.catch/);
+  assert.match(card, /width: 48, height: 48/);
+  assert.match(card, /tintCategoryColor\(category\.color/);
+  assert.doesNotMatch(card, /categoryById/);
+  const haptics = read('src/components/haptics.ts');
+  assert.match(haptics, /performAndroidHapticsAsync/);
+  assert.match(haptics, /AndroidHaptics\.Segment_Frequent_Tick/);
+  assert.match(haptics, /AndroidHaptics\.Confirm/);
+  assert.doesNotMatch(haptics, /Vibration/);
+  assert.match(read('package.json'), /"expo-haptics": "~55\.0\.18"/);
+  assert.match(read('src/data/medicine-store.tsx'), /category-definitions-v1/);
+  assert.match(read('src/data/medicine-store.tsx'), /resolveCategoryImport/);
+  assert.match(read('src/data/backup.ts'), /categories\?: Category\[\]/);
 });
