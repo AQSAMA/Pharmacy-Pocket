@@ -1,43 +1,30 @@
-# Pharmacy Pocket for Android
+# Pharmacy Pocket
 
-A fast, offline medicine price reference built with Expo and React Native.
+This repository temporarily contains both Android implementations of Pharmacy Pocket while the native rewrite matures.
 
-## Included
+## Applications
 
-- Empty on a fresh installation, ready for an import or manual entry
-- Arabic and English search
-- Category strip and previous/next category controls (no gesture competing with vertical scrolling)
-- Official and customer-requested prices in IQD
-- Configurable currency name, with IQD as the default
-- Large-text and customer price views
-- Full-card tap targets, full-screen medicine details, and longer descriptions
-- Add, edit, favorite, and one-file JSON import/export
-- Imports the original web app's v1 backups; v2 exports remain importable by the web app
-- Merge or exactly replace medicines while preserving category-section order
-- On-device SQLite storage; no connection is required after installation
+| Folder | Stack | Android application ID | Role |
+| --- | --- | --- | --- |
+| `legacy-expo/` | Expo + React Native | `com.aqsama.pharmacypocket` | Current/reference application |
+| `native-android/` preview flavor | Kotlin + Jetpack Compose | `com.aqsama.pharmacypocket.native` | Side-by-side native testing |
+| `native-android/` production flavor | Kotlin + Jetpack Compose | `com.aqsama.pharmacypocket` | Reserved for eventual cutover |
 
-## Test in Expo Go
+The Expo app and native preview can be installed on the same Android device at the same time.
 
-```bash
-npm install
-npx expo start
-```
+## Migration strategy
 
-Scan the QR code with Expo Go. An Expo account is not required for this local workflow.
+During the maturation period, the two apps are independent installations. Exchange data through the shared Pharmacy Pocket JSON backup format.
 
-## Build an installable APK with EAS
+When the native application is approved, the production flavor can take over the original application ID. Before using it as an in-place update, Android signing compatibility with the installed legacy app must be configured and verified.
 
-Sign in once, then start the preview build:
+## Repository layout
 
-```bash
-npx eas-cli@latest login
-npx eas-cli@latest build --platform android --profile preview
-```
+    Pharmacy-Pocket/
+    ├── legacy-expo/
+    ├── native-android/
+    ├── .github/workflows/
+    ├── .gitignore
+    └── README.md
 
-The preview profile produces an APK suitable for direct Android installation. EAS manages the signing key so later builds can update the installed app.
-
-The GitHub workflows build smaller ARM64 preview APKs without an Expo account. Every pull request receives a temporary downloadable artifact, and every successful build on `main` publishes a uniquely numbered GitHub prerelease. ARM64 covers modern Android phones while omitting emulator-only CPU libraries that made the universal APK unnecessarily large. These builds use development signing and are intended for direct testing; use EAS signing before a public or Play Store release.
-
-## Release notes
-
-The first native release stores data only on the phone. It does not use the private web app's cloud database because native clients do not receive the hosted Site's ChatGPT authentication session. Back up the list from Settings before clearing app data or changing phones.
+CI is path-scoped: changes to one application build and test that application without unnecessarily building the other.

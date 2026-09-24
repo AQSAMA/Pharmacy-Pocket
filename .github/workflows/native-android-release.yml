@@ -1,0 +1,90 @@
+name: Native Android Prerelease
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/native-android-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: native-android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up current Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
+
+      - name: Compute Android version code
+        id: version
+        run: |
+          commit_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
+          version_code=$((commit_epoch / 60))
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "tag=native-preview-${version_code}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build side-by-side preview
+        run: gradle --no-daemon testPreviewReleaseUnitTest assemblePreviewRelease -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
+
+      - name: Verify installable preview APK
+        id: verify
+        run: |
+          APK="app/build/outputs/apk/preview/release/app-preview-release.apk"
+          test -f "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.aqsama.pharmacypocket.native'"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
+          mkdir -p dist
+          OUT="dist/Pharmacy-Pocket-Native-${{ steps.version.outputs.version_code }}.apk"
+          cp "$APK" "$OUT"
+          echo "apk=native-android/$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmacy-pocket-native-${{ steps.version.outputs.version_code }}
+          path: ${{ steps.verify.outputs.apk }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish native preview prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Pharmacy Pocket Native ${{ steps.version.outputs.version_code }}
+          prerelease: true
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: ${{ steps.verify.outputs.apk }}

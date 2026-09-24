@@ -17,6 +17,7 @@ const { MAX_CATEGORY_DEFINITIONS, assertCategoryDefinitionLimit, categories: def
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+const readRepo = (file) => fs.readFileSync(path.join(__dirname, '..', '..', file), 'utf8');
 
 test('added dates render saved timestamps and tolerate missing or invalid legacy dates', () => {
   const timestamp = Date.UTC(2026, 8, 21, 12);
@@ -259,14 +260,26 @@ test('switching subcategories preserves the selected global sort without rebuild
   assert.deepEqual(index.map(entry => entry.item.id), ['z', 'a', 'm']);
 });
 
-test('Android CI uses monotonic version codes and verifies APK installability before upload', () => {
-  for (const workflowPath of ['.github/workflows/android-release.yml', '.github/workflows/pr-android.yml']) {
-    const workflow = read(workflowPath);
+test('Android CI uses monotonic version codes and verifies APK installability before publishing', () => {
+  const workflowPaths = [
+    '.github/workflows/legacy-expo-release.yml',
+    '.github/workflows/legacy-expo-pr.yml',
+  ];
+  for (const workflowPath of workflowPaths) {
+    const workflow = readRepo(workflowPath);
     assert.match(workflow, /commit_epoch=\$\(git show -s --format=%ct "\$GITHUB_SHA"\)/);
     assert.match(workflow, /version_code=\$\(\(commit_epoch \/ 60\)\)/);
     assert.match(workflow, /apksigner" verify --verbose --print-certs/);
     assert.match(workflow, /zipalign" -c -P 16 -v 4/);
-    assert.ok(workflow.indexOf('Verify installable APK') < workflow.indexOf('Upload'));
+    const verifyIndex = Math.max(
+      workflow.indexOf('Verify installable APK'),
+      workflow.indexOf('Name and verify APK'),
+    );
+    const publishIndex = Math.max(
+      workflow.indexOf('Upload legacy APK'),
+      workflow.indexOf('Publish legacy prerelease'),
+    );
+    assert.ok(verifyIndex >= 0 && publishIndex >= 0 && verifyIndex < publishIndex);
   }
 });
 
