@@ -39,6 +39,13 @@ export default function HomeScreen() {
   }, [selectedSubcategoryKey, subcategories]);
 
   useEffect(() => {
+    if (category !== 'all' && !categories.some((item) => item.id === category)) {
+      setCategory('all');
+      setSelectedSubcategoryKey(null);
+    }
+  }, [categories, category]);
+
+  useEffect(() => {
     if (!categories.some((item) => item.id === category)) {
       setCategory('all');
       setSelectedSubcategoryKey(null);
