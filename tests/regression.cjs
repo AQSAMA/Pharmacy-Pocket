@@ -108,6 +108,19 @@ test('backup rejects duplicate category metadata', () => {
   assert.throws(() => parseBackup(duplicate), /Duplicate category ID/);
 });
 
+test('projected category limit counts medicine category ids not present in metadata', () => {
+  const definitions = Array.from({ length: MAX_CATEGORY_DEFINITIONS }, (_, index) => ({
+    id: `definition-${index}`,
+    label: `Definition ${index}`,
+    arabic: `Definition ${index}`,
+    color: '#3f7fb5',
+  }));
+  assert.throws(
+    () => assertCategoryDefinitionLimit(definitions, ['medicine-only-category']),
+    /supports up to/,
+  );
+});
+
 test('Arabic search ignores diacritics and normalizes alef', () => {
   assert.equal(normalize('أَ'), normalize('ا'));
 });
