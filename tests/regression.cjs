@@ -13,7 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, resolveCategoryImport, tintCategoryColor } = require('../src/data/categories.ts');
+const { MAX_CATEGORY_DEFINITIONS, assertCategoryDefinitionLimit, categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, resolveCategoryImport, tintCategoryColor } = require('../src/data/categories.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -125,6 +125,31 @@ test('category import merge preserves local styles while replace restores incomi
   const replaced = resolveCategoryImport(local, incoming, 'replace', ['custom-imported']);
   assert.equal(replaced.find(item => item.id === 'syrups').label, 'Imported liquids');
   assert.equal(replaced.find(item => item.id === 'syrups').color, '#654321');
+});
+
+test('category import resolution preserves local merge styles and rejects overflow before writes', () => {
+  const local = mergeCategoryDefinitions(defaultCategories, [
+    { id: 'syrups', label: 'My liquids', arabic: 'سوائل', color: '#123456' },
+  ]);
+  const incoming = [
+    { id: 'syrups', label: 'Imported liquids', arabic: 'شراب', color: '#654321' },
+    { id: 'new-cat', label: 'New category', arabic: 'جديد', color: '#3f7fb5' },
+  ];
+  const merged = resolveCategoryImport(local, incoming, 'merge', ['new-cat']);
+  assert.equal(merged.find(item => item.id === 'syrups').label, 'My liquids');
+  assert.equal(merged.find(item => item.id === 'syrups').color, '#123456');
+  assert.ok(merged.some(item => item.id === 'new-cat'));
+
+  const tooMany = Array.from({ length: MAX_CATEGORY_DEFINITIONS }, (_, index) => ({
+    id: `overflow-${index}`,
+    label: `Overflow ${index}`,
+    arabic: `Overflow ${index}`,
+    color: '#3f7fb5',
+  }));
+  assert.throws(
+    () => resolveCategoryImport(defaultCategories, tooMany, 'replace'),
+    /supports up to/,
+  );
 });
 
 test('Arabic search ignores diacritics and normalizes alef', () => {
@@ -278,9 +303,11 @@ test('navigation and scroll regression guards', () => {
   assert.match(categoryManager, /Save category/);
   assert.match(categoryManager, /CATEGORY_COLORS/);
   assert.match(categoryManager, /tintCategoryColor/);
+  assert.match(categoryManager, /MAX_CATEGORY_DEFINITIONS/);
   const settings = read('src/app/settings.tsx');
   assert.match(settings, /Manage categories/);
   assert.match(settings, /accessibilityLabel=\{label\}/);
+  assert.match(settings, /resolveCategoryImport/);
   assert.match(read('src/app/edit.tsx'), /minHeight: 48, justifyContent: 'center'/);
   assert.match(read('src/app/medicine\/\[id\]\.tsx'), /favoriteButton: \{ minHeight: 48/);
   const card = read('src/components/medicine-card.tsx');
