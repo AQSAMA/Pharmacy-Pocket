@@ -63,6 +63,7 @@ jobs:
         run: |
           APK="app/build/outputs/apk/preview/release/app-preview-release.apk"
           test -f "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.aqsama.pharmacypocket.native'"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
           mkdir -p dist
