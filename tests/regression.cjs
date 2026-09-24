@@ -241,7 +241,6 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /quickFavorite: \{ minWidth: 54, height: 48/);
   assert.match(home, /!categories\.some\(\(item\) => item\.id === category\)/);
   assert.match(home, /setCategory\('all'\)/);
-  assert.match(home, /!categories\.some\(\(item\) => item\.id === category\)/);
   assert.match(home, /searchDock/);
   assert.match(home, /breadcrumbRow/);
   assert.match(home, /<View accessible accessibilityLabel=\{`\$\{row\.section\.data\.length\} medicines`\}/);
