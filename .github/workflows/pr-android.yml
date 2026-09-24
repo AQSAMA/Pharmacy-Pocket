@@ -10,6 +10,9 @@ permissions:
 
 jobs:
   build:
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -28,7 +31,7 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
