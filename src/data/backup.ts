@@ -66,9 +66,15 @@ export function buildSections(items: Medicine[], categoryDefinitions: readonly C
 export function createBackup(
   items: Medicine[],
   currency = 'IQD',
-  categoryDefinitions: readonly Category[] = defaultCategories,
-  exportedAt = new Date().toISOString(),
+  categoryDefinitionsOrExportedAt: readonly Category[] | string = defaultCategories,
+  explicitExportedAt?: string,
 ): PharmacyPocketBackup {
+  const categoryDefinitions = typeof categoryDefinitionsOrExportedAt === 'string'
+    ? defaultCategories
+    : categoryDefinitionsOrExportedAt;
+  const exportedAt = typeof categoryDefinitionsOrExportedAt === 'string'
+    ? categoryDefinitionsOrExportedAt
+    : explicitExportedAt ?? new Date().toISOString();
   return {
     schema: BACKUP_SCHEMA,
     version: BACKUP_VERSION,
