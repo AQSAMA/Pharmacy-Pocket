@@ -124,6 +124,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
           current,
           valid.filter((item) => !current.some((existing) => existing.id === item.id)),
         );
+    assertCategoryDefinitionLimit(definitions, medicines.map((item) => item.category));
     const complete = ensureCategoriesForMedicines(definitions, medicines.map((item) => item.category));
     updateCategories(complete);
   }, [updateCategories]);
