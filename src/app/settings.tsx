@@ -1,6 +1,7 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
@@ -22,7 +23,7 @@ function SettingButton({ icon, label, description, onPress }: { icon: string; la
 }
 
 export default function SettingsScreen() {
-  const { items, largeText, currency, setLargeText, setCurrency, merge, replace } = useMedicines();
+  const { items, categories, largeText, currency, setLargeText, setCurrency, importCategories, merge, replace } = useMedicines();
   const [currencyDraft, setCurrencyDraft] = useState(currency);
 
   useEffect(() => setCurrencyDraft(currency), [currency]);
@@ -32,7 +33,7 @@ export default function SettingsScreen() {
     try {
       if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device.');
       const uri = `${FileSystem.cacheDirectory}pharmacy-pocket-${new Date().toISOString().slice(0, 10)}.json`;
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify(createBackup(items, currency), null, 2));
+      await FileSystem.writeAsStringAsync(uri, JSON.stringify(createBackup(items, currency, categories), null, 2));
       await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: 'Export Pharmacy Pocket JSON' });
       confirmHaptic();
     } catch (error) {
@@ -46,6 +47,11 @@ export default function SettingsScreen() {
     void action
       .then(() => {
         setCurrency(data.currency);
+        try {
+          importCategories(data.categories, mode, data.medicines);
+        } catch {
+          Alert.alert('Category appearance not restored', 'The medicines were imported, but category names and colors could not be saved.');
+        }
         confirmHaptic();
         Alert.alert('Import complete', `${data.medicines.length} medicines and ${data.sections.length} sections were imported.`);
       })
@@ -121,6 +127,19 @@ export default function SettingsScreen() {
           />
           <Text selectable style={styles.rowDescription}>Leave it blank to use IQD.</Text>
         </View>
+      </View>
+
+      <Text style={styles.sectionLabel}>CATEGORIES</Text>
+      <View style={styles.group}>
+        <SettingButton
+          icon="◈"
+          label="Manage categories"
+          description={`${Math.max(0, categories.length - 1)} categories · rename, add, and customize colors.`}
+          onPress={() => {
+            actionHaptic();
+            router.push('/categories');
+          }}
+        />
       </View>
 
       <Text style={styles.sectionLabel}>DATA</Text>
