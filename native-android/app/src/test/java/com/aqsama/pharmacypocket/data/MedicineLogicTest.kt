@@ -75,6 +75,13 @@ class MedicineLogicTest {
     }
 
     @Test
+    fun mergeOnlyAppliesCurrencyWhenBackupExplicitlyContainsIt() {
+        assertTrue(shouldApplyImportedCurrency(ImportMode.MERGE, true))
+        assertTrue(!shouldApplyImportedCurrency(ImportMode.MERGE, false))
+        assertTrue(shouldApplyImportedCurrency(ImportMode.REPLACE, false))
+    }
+
+    @Test
     fun categoryMergePreservesLocalStyleWhileReplaceAcceptsIncomingStyle() {
         val local = mergeCategoryDefinitions(
             PharmacyDefaults.categories,
