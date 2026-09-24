@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { actionHaptic, confirmHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
-import { CATEGORY_COLORS, MAX_CATEGORY_DEFINITIONS, tintCategoryColor, type Category } from '@/data/categories';
+import { CATEGORY_COLORS, tintCategoryColor, type Category } from '@/data/categories';
 import { useMedicines } from '@/data/medicine-store';
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -25,11 +25,6 @@ export default function CategoriesScreen() {
 
   const openNew = () => {
     actionHaptic();
-    if (editableCategories.length >= MAX_CATEGORY_DEFINITIONS) {
-      rejectHaptic();
-      Alert.alert('Category limit reached', `Pharmacy Pocket supports up to ${MAX_CATEGORY_DEFINITIONS} categories so exported backups always remain importable.`);
-      return;
-    }
     const color = CATEGORY_COLORS[editableCategories.length % CATEGORY_COLORS.length];
     setDraft({ id: makeCategoryId(), label: '', arabic: '', color });
   };
@@ -44,7 +39,7 @@ export default function CategoriesScreen() {
       Alert.alert('Check the category', 'Add a name, keep labels reasonably short, and use a color such as #2F856D.');
       return;
     }
-    if (categories.some((item) => item.id !== draft.id && item.id !== 'all' && item.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())) {
+    if (categories.some((item) => item.id !== draft.id && item.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())) {
       rejectHaptic();
       Alert.alert('Category already exists', 'Choose a different category name.');
       return;
