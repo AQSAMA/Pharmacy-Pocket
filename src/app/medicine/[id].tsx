@@ -138,7 +138,7 @@ const styles = StyleSheet.create({
   infoGrid: { gap: 14 },
   infoItem: { gap: 3 },
   infoLabel: { color: '#8a9993', fontSize: 10, fontWeight: '800', letterSpacing: 0.7 },
-  infoValue: { color: '#315247', fontSize: 16, fontWeight: '650' },
+  infoValue: { color: '#315247', fontSize: 16, fontWeight: '600' },
   infoValueLarge: { fontSize: 21 },
   legacyNote: { color: '#75877f', fontSize: 12, lineHeight: 18 },
   description: { color: '#536a61', fontSize: 16, lineHeight: 25 },
