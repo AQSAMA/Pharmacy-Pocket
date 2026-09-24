@@ -347,7 +347,6 @@ fun HomeScreen(
                 }
             }
 
-
             if (rows.isEmpty()) {
                 item(key = "empty") {
                     Column(
@@ -532,8 +531,9 @@ private fun HomeBottomBar(
             ) {
                 Row(
                     Modifier
+                        .padding(end = endReserve)
                         .horizontalScroll(rememberScrollState())
-                        .padding(start = 10.dp, end = endReserve),
+                        .padding(start = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     snapshot.categories.forEach { item ->
@@ -548,8 +548,9 @@ private fun HomeBottomBar(
                 if (subcategories.isNotEmpty()) {
                     Row(
                         Modifier
+                            .padding(end = endReserve)
                             .horizontalScroll(rememberScrollState())
-                            .padding(start = 10.dp, end = endReserve),
+                            .padding(start = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         SoftChip(
