@@ -46,6 +46,9 @@ enum class MedicineSort(val label: String) {
 
 enum class ImportMode { MERGE, REPLACE }
 
+fun shouldApplyImportedCurrency(mode: ImportMode, hasCurrency: Boolean): Boolean =
+    mode == ImportMode.REPLACE || hasCurrency
+
 data class BackupSection(
     val id: String,
     val category: String,
@@ -62,6 +65,7 @@ data class ParsedBackup(
     val sections: List<BackupSection>,
     val categories: List<Category>,
     val currency: String,
+    val hasCurrency: Boolean,
     val sourceVersion: Int,
 )
 
