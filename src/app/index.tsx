@@ -66,7 +66,10 @@ export default function HomeScreen() {
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     counts.set('all', items.length);
-    for (const item of items) counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
+    for (const item of items) {
+      if (item.category === 'all') continue;
+      counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
+    }
     return counts;
   }, [items]);
   const activeControlCount = Number(favoritesOnly) + Number(sort !== 'default') + Number(category !== 'all') + Number(selectedSubcategoryKey !== null) + Number(Boolean(query.trim()));
@@ -145,7 +148,7 @@ export default function HomeScreen() {
             <Text style={styles.resultsTitle}>{visibleCount === items.length ? `${visibleCount} medicines` : `${visibleCount} of ${items.length} medicines`}</Text>
             <Text numberOfLines={1} style={styles.resultsSubtitle}>{category === 'all' ? 'All categories' : categoryById(category).label}{selectedSubcategoryKey ? ' · filtered subcategory' : ''}</Text>
           </View>
-          <Pressable accessibilityRole="togglebutton" accessibilityLabel="Show favorites only" accessibilityState={{ checked: favoritesOnly }} onPress={() => { selectionHaptic(); setFavoritesOnly((value) => !value); }} style={({ pressed }) => [styles.quickFavorite, favoritesOnly && styles.quickFavoriteActive, pressed && styles.quickControlPressed]}><Text style={[styles.quickFavoriteText, favoritesOnly && styles.quickFavoriteTextActive]}>★ {favoriteCount}</Text></Pressable>
+          <Pressable accessibilityRole="togglebutton" accessibilityLabel={`Show favorites only, ${favoriteCount} favorites`} accessibilityState={{ checked: favoritesOnly }} onPress={() => { selectionHaptic(); setFavoritesOnly((value) => !value); }} style={({ pressed }) => [styles.quickFavorite, favoritesOnly && styles.quickFavoriteActive, pressed && styles.quickControlPressed]}><Text style={[styles.quickFavoriteText, favoritesOnly && styles.quickFavoriteTextActive]}>★ {favoriteCount}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: controlsOpen }} onPress={() => { actionHaptic(); setControlsOpen((value) => !value); }} style={({ pressed }) => [styles.filterButton, controlsOpen && styles.filterButtonActive, pressed && !controlsOpen && styles.quickControlPressed]}><Text style={[styles.filterButtonText, controlsOpen && styles.filterButtonTextActive]}>{'Tune' + (activeControlCount ? ' · ' + activeControlCount : '')}</Text></Pressable>
         </View>
         {controlsOpen ? <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 6, paddingBottom: 2 }}>
