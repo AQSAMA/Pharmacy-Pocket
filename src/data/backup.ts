@@ -118,8 +118,9 @@ function orderBySections(items: Medicine[], sections: BackupSection[]) {
 
 function categoriesFromSections(sections: BackupSection[]) {
   const found = new Map<string, Category>();
+  const builtInIds = new Set(defaultCategories.map((item) => item.id));
   for (const section of sections) {
-    if (!section.category || section.category === 'all' || found.has(section.category)) continue;
+    if (!section.category || section.category === 'all' || builtInIds.has(section.category) || found.has(section.category)) continue;
     const candidate: Category = {
       id: section.category,
       label: section.categoryLabel || section.category,
