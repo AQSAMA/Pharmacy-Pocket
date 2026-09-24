@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FloatingSearch } from '@/components/floating-search';
 import { actionHaptic, selectionHaptic } from '@/components/haptics';
 import { MedicineCard } from '@/components/medicine-card';
-import { categories, categoryById } from '@/data/categories';
+import { categoryById } from '@/data/categories';
 import { medicineSortOptions, type Medicine, type MedicineSort } from '@/data/medicine';
 import { buildMedicineSearchIndex, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey, subcategoryLabel, type MedicineFilters } from '@/data/medicine-query';
 import { useMedicines } from '@/data/medicine-store';
@@ -17,7 +17,7 @@ type MedicineSection = { key: string; groupKey: string; title: string; category:
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { items, ready, largeText, currency, setLargeText, favorite } = useMedicines();
+  const { items, categories, ready, largeText, currency, setLargeText, favorite } = useMedicines();
   const [category, setCategory] = useState('all');
   const [selectedSubcategoryKey, setSelectedSubcategoryKey] = useState<string | null>(null);
   const [sort, setSort] = useState<MedicineSort>('default');
@@ -78,7 +78,7 @@ export default function HomeScreen() {
     const current = categories.findIndex((item) => item.id === category);
     setCategory(categories[(current + direction + categories.length) % categories.length].id);
     setSelectedSubcategoryKey(null);
-  }, [category]);
+  }, [categories, category]);
   const selectCategory = useCallback((next: string) => {
     selectionHaptic();
     setCategory(next);
@@ -99,7 +99,7 @@ export default function HomeScreen() {
 
   const renderRow = useCallback(({ item: row }: ListRenderItemInfo<ListRow>) => {
     if (row.kind === 'header') {
-      const selected = categoryById(row.section.category);
+      const selected = categoryById(row.section.category, categories);
       return <View style={styles.sectionHeader}>
         <View style={styles.breadcrumbRow}>
           <View style={[styles.breadcrumbChip, { borderColor: selected.color }]}>
@@ -116,8 +116,8 @@ export default function HomeScreen() {
         </View>
       </View>;
     }
-    return <View style={styles.cardContainer}><MedicineCard item={row.item} large={largeText} currency={currency} first={row.first} last={row.last} onFavorite={favorite} /></View>;
-  }, [currency, favorite, largeText]);
+    return <View style={styles.cardContainer}><MedicineCard item={row.item} category={categoryById(row.item.category, categories)} large={largeText} currency={currency} first={row.first} last={row.last} onFavorite={favorite} /></View>;
+  }, [categories, currency, favorite, largeText]);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: '#f4f7f6', justifyContent: 'center' }}><ActivityIndicator color="#126052" size="large" /></View>;
 
@@ -146,7 +146,7 @@ export default function HomeScreen() {
         <View style={styles.overviewRow}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.resultsTitle}>{visibleCount === items.length ? `${visibleCount} medicines` : `${visibleCount} of ${items.length} medicines`}</Text>
-            <Text numberOfLines={1} style={styles.resultsSubtitle}>{category === 'all' ? 'All categories' : categoryById(category).label}{selectedSubcategoryKey ? ' · filtered subcategory' : ''}</Text>
+            <Text numberOfLines={1} style={styles.resultsSubtitle}>{category === 'all' ? 'All categories' : categoryById(category, categories).label}{selectedSubcategoryKey ? ' · filtered subcategory' : ''}</Text>
           </View>
           <Pressable accessibilityRole="togglebutton" accessibilityLabel={`Show favorites only, ${favoriteCount} favorites`} accessibilityState={{ checked: favoritesOnly }} onPress={() => { selectionHaptic(); setFavoritesOnly((value) => !value); }} style={({ pressed }) => [styles.quickFavorite, favoritesOnly && styles.quickFavoriteActive, pressed && styles.quickControlPressed]}><Text style={[styles.quickFavoriteText, favoritesOnly && styles.quickFavoriteTextActive]}>★ {favoriteCount}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityState={{ expanded: controlsOpen }} onPress={() => { actionHaptic(); setControlsOpen((value) => !value); }} style={({ pressed }) => [styles.filterButton, controlsOpen && styles.filterButtonActive, pressed && !controlsOpen && styles.quickControlPressed]}><Text style={[styles.filterButtonText, controlsOpen && styles.filterButtonTextActive]}>{'Tune' + (activeControlCount ? ' · ' + activeControlCount : '')}</Text></Pressable>
