@@ -128,8 +128,9 @@ private class MedicineDatabase(context: Context) {
             if (cursor.moveToFirst()) cursor.getLong(0) else -1L
         }
 
-    private fun writeMedicine(db: SQLiteDatabase, item: Medicine) {
+    private fun writeMedicine(db: SQLiteDatabase, item: Medicine, newSortOrder: Long? = null): Boolean {
         val current = existing(db, item.id)
+        val isNew = current == null
         val createdAt = item.createdAt?.takeIf { it >= 0 }
             ?: current?.createdAt?.takeIf { it >= 0 }
             ?: System.currentTimeMillis()
@@ -144,10 +145,11 @@ private class MedicineDatabase(context: Context) {
             if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
             put("revision", item.revision)
             put("favorite", if (current?.favorite ?: item.favorite) 1 else 0)
-            put("sort_order", current?.sortOrder ?: maxSortOrder(db) + 1)
+            put("sort_order", current?.sortOrder ?: newSortOrder ?: maxSortOrder(db) + 1)
             put("created_at", createdAt)
         }
         db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        return isNew
     }
 
     fun saveMedicine(item: Medicine) {
@@ -175,7 +177,10 @@ private class MedicineDatabase(context: Context) {
         val db = open()
         db.beginTransaction()
         try {
-            items.forEach { writeMedicine(db, it) }
+            var nextSortOrder = maxSortOrder(db) + 1
+            items.forEach { item ->
+                if (writeMedicine(db, item, nextSortOrder)) nextSortOrder += 1
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -377,7 +382,9 @@ class PharmacyRepository(context: Context) {
                 ImportMode.MERGE -> database.mergeMedicines(data.medicines)
                 ImportMode.REPLACE -> database.replaceMedicines(data.medicines)
             }
-            preferences.setCurrency(data.currency)
+            if (shouldApplyImportedCurrency(mode, data.hasCurrency)) {
+                preferences.setCurrency(data.currency)
+            }
             preferences.setCategories(nextCategories)
             snapshotUnsafe()
         }
