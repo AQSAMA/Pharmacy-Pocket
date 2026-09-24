@@ -4,6 +4,7 @@ import { isMedicine, type Medicine } from './medicine';
 export const BACKUP_SCHEMA = 'pharmacy-pocket-backup';
 export const BACKUP_VERSION = 2;
 export const MAX_BACKUP_MEDICINES = 5000;
+export const MAX_BACKUP_CATEGORIES = 256;
 
 export type BackupSection = {
   id: string;
@@ -175,10 +176,17 @@ export function parseBackup(value: unknown): ParsedBackup {
 
   const suppliedCategories = data.categories === undefined
     ? categoriesFromSections(sections)
-    : Array.isArray(data.categories) && data.categories.every(isCategory)
+    : Array.isArray(data.categories) &&
+        data.categories.length <= MAX_BACKUP_CATEGORIES &&
+        data.categories.every(isCategory)
       ? data.categories.filter((item) => item.id !== 'all')
       : (() => { throw new Error('The categories in this file are invalid.'); })();
 
+  const categoryIds = new Set<string>();
+  for (const category of suppliedCategories) {
+    if (categoryIds.has(category.id)) throw new Error(`Duplicate category ID: ${category.id}`);
+    categoryIds.add(category.id);
+  }
   const parsedCategories = suppliedCategories.filter((item) => item.id !== 'all' && isCategory(item));
 
   const sourceVersion = Number.isInteger(data.version) ? Number(data.version) : 1;
