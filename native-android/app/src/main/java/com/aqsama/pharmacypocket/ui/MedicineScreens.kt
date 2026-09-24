@@ -336,7 +336,7 @@ fun MedicineDetailScreen(
                                     lineHeight = 40.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     textAlign = TextAlign.Center,
-                                    style = TextStyle(textDirection = if (hasArabic(item.name)) TextDirection.Rtl else TextDirection.Ltr),
+                                    style = TextStyle(textDirection = TextDirection.Content),
                                 )
                                 if (item.note.isNotBlank()) {
                                     Text(

@@ -542,7 +542,6 @@ private fun HomeBottomBar(
                     .fillMaxWidth()
                     .height(IntrinsicSize.Min),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.Stretch,
             ) {
                 Column(
                     modifier = Modifier.weight(1f),
