@@ -29,6 +29,10 @@ captures/
 .externalNativeBuild/
 .cxx/
 *.jks
+!native-android/signing/preview.jks
+*.keystore
+*.pem
+keystore.properties
 *.p8
 *.p12
 *.key
