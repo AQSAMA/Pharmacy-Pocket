@@ -52,6 +52,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var loadAttempt by remember { mutableStateOf(0) }
 
     fun push(destination: Destination) {
         Haptics.action(view)
@@ -70,8 +71,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
         onSuccess: () -> Unit = {},
         operation: suspend () -> AppSnapshot,
     ) {
+        if (busy) return
+        busy = true
         scope.launch {
-            busy = true
             try {
                 snapshot = operation()
                 Haptics.confirm(view)
@@ -88,7 +90,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
     }
 
-    LaunchedEffect(repository) {
+    LaunchedEffect(repository, loadAttempt) {
         try {
             snapshot = repository.loadSnapshot()
         } catch (error: Throwable) {
@@ -209,12 +211,22 @@ fun PharmacyApp(repository: PharmacyRepository) {
     }
 
     errorMessage?.let { message ->
+        val initialLoadFailed = snapshot == null
         AlertDialog(
-            onDismissRequest = { errorMessage = null },
+            onDismissRequest = {
+                if (!initialLoadFailed) errorMessage = null
+            },
             title = { Text("Pharmacy Pocket") },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = { errorMessage = null }) { Text("OK") }
+                TextButton(
+                    onClick = {
+                        errorMessage = null
+                        if (initialLoadFailed) loadAttempt += 1
+                    },
+                ) {
+                    Text(if (initialLoadFailed) "Retry" else "OK")
+                }
             },
         )
     }
