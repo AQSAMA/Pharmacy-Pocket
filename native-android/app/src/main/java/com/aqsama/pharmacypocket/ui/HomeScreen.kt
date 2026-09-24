@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,6 +46,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.LayoutDirection
@@ -180,127 +183,80 @@ fun HomeScreen(
         selectedSubcategory = null
     }
 
-    fun stepCategory(direction: Int) {
-        Haptics.selection(view)
-        val current = snapshot.categories.indexOfFirst { it.id == category }.coerceAtLeast(0)
-        val next = (current + direction + snapshot.categories.size) % snapshot.categories.size
-        category = snapshot.categories[next].id
-        selectedSubcategory = null
-    }
+
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
             Surface(color = MaterialTheme.colorScheme.background) {
-                Row(
+                Column(
                     Modifier
                         .statusBarsPadding()
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Surface(
-                        onClick = {
-                            Haptics.action(view)
-                            onSettings()
-                        },
-                        modifier = Modifier.size(52.dp),
-                        shape = RoundedCornerShape(17.dp),
-                        color = Color.White,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.75f)),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("⚙", fontSize = 21.sp, color = MaterialTheme.colorScheme.secondary)
-                        }
-                    }
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 52.dp),
-                        placeholder = { Text("Search medicines…") },
-                        leadingIcon = { Text("⌕", fontSize = 22.sp) },
-                        trailingIcon = {
-                            if (query.isNotEmpty()) {
-                                TextButton(onClick = {
-                                    Haptics.action(view)
-                                    query = ""
-                                }) { Text("×", fontSize = 22.sp) }
-                            }
-                        },
-                        singleLine = true,
-                        shape = RoundedCornerShape(17.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = {}),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color.White,
-                            unfocusedContainerColor = Color.White,
-                            focusedBorderColor = Color(0xFF7DA997),
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
-                        ),
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            HomeBottomBar(
-                snapshot = snapshot,
-                category = category,
-                categoryCounts = categoryCounts,
-                subcategories = subcategories.map { it.key to it.label },
-                selectedSubcategory = selectedSubcategory,
-                onSelectCategory = ::selectCategory,
-                onSelectSubcategory = {
-                    Haptics.selection(view)
-                    selectedSubcategory = it
-                },
-                onPrevious = { stepCategory(-1) },
-                onNext = { stepCategory(1) },
-                onAdd = {
-                    Haptics.action(view)
-                    onAddMedicine(if (category == "all") snapshot.categories.getOrNull(1)?.id ?: "syrups" else category)
-                },
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = padding,
-        ) {
-            item(key = "overview") {
-                Column(
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                if (visible.size == snapshot.items.size) "${visible.size} medicines"
-                                else "${visible.size} of ${snapshot.items.size} medicines",
-                                color = Color(0xFF24443A),
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 15.sp,
-                            )
-                            Text(
-                                if (category == "all") "All categories" else categoryById(category, snapshot.categories).label,
-                                color = Color(0xFF7A8A84),
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                            )
-                        }
-                        SoftChip(
-                            label = "★ $favoriteCount",
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        HeaderControl(
+                            label = "⚙",
+                            contentDescription = "Settings",
+                            onClick = {
+                                Haptics.action(view)
+                                onSettings()
+                            },
+                        )
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 52.dp),
+                            placeholder = { Text("Search medicines…") },
+                            leadingIcon = { Text("⌕", fontSize = 22.sp) },
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    TextButton(onClick = {
+                                        Haptics.action(view)
+                                        query = ""
+                                    }) { Text("×", fontSize = 22.sp) }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(17.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {}),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedBorderColor = Color(0xFF7DA997),
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                            ),
+                        )
+                        HeaderControl(
+                            label = if (favoritesOnly) "★" else "☆",
+                            contentDescription = if (favoritesOnly) {
+                                "Favorites filter on, $favoriteCount favorite medicines"
+                            } else {
+                                "Favorites filter off, $favoriteCount favorite medicines"
+                            },
+                            badge = favoriteCount.takeIf { it > 0 },
                             selected = favoritesOnly,
                             onClick = {
                                 Haptics.selection(view)
                                 favoritesOnly = !favoritesOnly
                             },
                         )
-                        SoftChip(
-                            label = "Tune" + if (activeCount > 0) " · $activeCount" else "",
+                        HeaderControl(
+                            label = "Tune",
+                            contentDescription = if (activeCount > 0) {
+                                "Tune filters, $activeCount active"
+                            } else {
+                                "Tune filters"
+                            },
+                            badge = activeCount.takeIf { it > 0 },
                             selected = controlsOpen,
                             onClick = {
                                 Haptics.action(view)
@@ -345,6 +301,52 @@ fun HomeScreen(
                     }
                 }
             }
+        },
+        bottomBar = {
+            HomeBottomBar(
+                snapshot = snapshot,
+                category = category,
+                categoryCounts = categoryCounts,
+                subcategories = subcategories.map { it.key to it.label },
+                selectedSubcategory = selectedSubcategory,
+                onSelectCategory = ::selectCategory,
+                onSelectSubcategory = {
+                    Haptics.selection(view)
+                    selectedSubcategory = it
+                },
+                onAdd = {
+                    Haptics.action(view)
+                    onAddMedicine(if (category == "all") snapshot.categories.getOrNull(1)?.id ?: "syrups" else category)
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = padding,
+        ) {
+            item(key = "overview") {
+                Column(
+                    Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        if (visible.size == snapshot.items.size) "${visible.size} medicines"
+                        else "${visible.size} of ${snapshot.items.size} medicines",
+                        color = Color(0xFF24443A),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp,
+                    )
+                    Text(
+                        if (category == "all") "All categories" else categoryById(category, snapshot.categories).label,
+                        color = Color(0xFF7A8A84),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                    )
+                }
+            }
+
 
             if (rows.isEmpty()) {
                 item(key = "empty") {
@@ -404,6 +406,62 @@ fun HomeScreen(
 }
 
 @Composable
+private fun HeaderControl(
+    label: String,
+    contentDescription: String,
+    badge: Int? = null,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .size(48.dp)
+            .semantics { this.contentDescription = contentDescription },
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.White,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.secondary,
+        border = BorderStroke(
+            1.dp,
+            if (selected) Color(0xFF7DA997) else MaterialTheme.colorScheme.outline.copy(alpha = 0.75f),
+        ),
+        shadowElevation = 1.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                fontSize = if (label == "Tune") 10.sp else 20.sp,
+                fontWeight = if (label == "Tune") FontWeight.ExtraBold else FontWeight.Bold,
+            )
+            if (badge != null && badge > 0) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 3.dp, end = 3.dp)
+                        .heightIn(min = 17.dp)
+                        .widthIn(min = 17.dp),
+                    shape = RoundedCornerShape(50),
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    Box(
+                        Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            if (badge > 99) "99+" else badge.toString(),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SectionBreadcrumb(section: MedicineSection, snapshot: AppSnapshot) {
     val selected = categoryById(section.category, snapshot.categories)
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
@@ -451,8 +509,6 @@ private fun HomeBottomBar(
     selectedSubcategory: String?,
     onSelectCategory: (String) -> Unit,
     onSelectSubcategory: (String?) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     onAdd: () -> Unit,
 ) {
     Surface(
@@ -460,72 +516,78 @@ private fun HomeBottomBar(
         shadowElevation = 7.dp,
         border = BorderStroke(1.dp, Color(0xFFE0E8E4)),
     ) {
-        Column(
+        BoxWithConstraints(
             Modifier
+                .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            Row(
-                Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            val compact = maxWidth < 360.dp
+            val addWidth = if (compact) 58.dp else 104.dp
+            val endReserve = addWidth + 18.dp
+
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                snapshot.categories.forEach { item ->
-                    SoftChip(
-                        label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                        selected = category == item.id,
-                        accent = if (item.id == "all") null else colorFromHex(item.color),
-                        onClick = { onSelectCategory(item.id) },
-                    )
-                }
-            }
-            if (subcategories.isNotEmpty()) {
                 Row(
                     Modifier
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 10.dp),
+                        .padding(start = 10.dp, end = endReserve),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    SoftChip(
-                        label = "All subcategories",
-                        selected = selectedSubcategory == null,
-                        onClick = { onSelectSubcategory(null) },
-                    )
-                    subcategories.forEach { (key, label) ->
+                    snapshot.categories.forEach { item ->
                         SoftChip(
-                            label = label,
-                            selected = selectedSubcategory == key,
-                            onClick = { onSelectSubcategory(key) },
+                            label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
+                            selected = category == item.id,
+                            accent = if (item.id == "all") null else colorFromHex(item.color),
+                            onClick = { onSelectCategory(item.id) },
                         )
                     }
                 }
+                if (subcategories.isNotEmpty()) {
+                    Row(
+                        Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(start = 10.dp, end = endReserve),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        SoftChip(
+                            label = "All subcategories",
+                            selected = selectedSubcategory == null,
+                            onClick = { onSelectSubcategory(null) },
+                        )
+                        subcategories.forEach { (key, label) ->
+                            SoftChip(
+                                label = label,
+                                selected = selectedSubcategory == key,
+                                onClick = { onSelectSubcategory(key) },
+                            )
+                        }
+                    }
+                }
             }
-            Row(
-                Modifier.padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
+
+            Button(
+                onClick = onAdd,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 10.dp)
+                    .widthIn(min = addWidth, max = addWidth)
+                    .heightIn(min = 48.dp)
+                    .semantics { contentDescription = "Add medicine" },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFDCEFE1),
+                    contentColor = Color(0xFF175D3F),
+                ),
+                shape = RoundedCornerShape(15.dp),
             ) {
-                TextButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
-                    Text("‹", fontSize = 26.sp)
-                }
-                Button(
-                    onClick = onAdd,
-                    modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFDCEFE1),
-                        contentColor = Color(0xFF175D3F),
-                    ),
-                    shape = RoundedCornerShape(13.dp),
-                ) {
-                    Text("＋ Add medicine", fontWeight = FontWeight.ExtraBold)
-                }
-                TextButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
-                    Text("›", fontSize = 26.sp)
-                }
+                Text(
+                    if (compact) "＋" else "＋ Add",
+                    fontSize = if (compact) 21.sp else 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                )
             }
         }
     }
