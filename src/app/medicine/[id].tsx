@@ -10,7 +10,7 @@ import { useMedicines } from '@/data/medicine-store';
 
 export default function CustomerPriceScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { items, currency, largeText, favorite } = useMedicines();
+  const { items, categories, currency, largeText, favorite } = useMedicines();
   const item = items.find((medicine) => medicine.id === id);
 
   if (!item) {
@@ -23,7 +23,7 @@ export default function CustomerPriceScreen() {
   }
 
   const rtl = hasArabic(item.name);
-  const category = categoryById(item.category);
+  const category = categoryById(item.category, categories);
   const subcategory = subcategoryLabel(item.subcategory);
 
   return (
