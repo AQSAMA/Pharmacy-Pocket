@@ -11,7 +11,7 @@ import { useMedicines } from '@/data/medicine-store';
 
 function SettingButton({ icon, label, description, onPress }: { icon: string; label: string; description: string; onPress(): void }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.settingButton, pressed && styles.pressed]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.settingButton, pressed && styles.pressed]}>
       <View style={styles.settingIcon}><Text style={styles.settingIconText}>{icon}</Text></View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={styles.settingButtonLabel}>{label}</Text>
