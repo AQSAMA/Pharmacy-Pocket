@@ -7,6 +7,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 
 import { actionHaptic, confirmHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
 import { createBackup, parseBackup, type ParsedBackup } from '@/data/backup';
+import { resolveCategoryImport } from '@/data/categories';
 import { useMedicines } from '@/data/medicine-store';
 
 function SettingButton({ icon, label, description, onPress }: { icon: string; label: string; description: string; onPress(): void }) {
@@ -43,6 +44,13 @@ export default function SettingsScreen() {
   };
 
   const applyImport = (data: ParsedBackup, mode: 'merge' | 'replace') => {
+    try {
+      resolveCategoryImport(categories, data.categories, mode, data.medicines.map((item) => item.category));
+    } catch (error) {
+      rejectHaptic();
+      Alert.alert('Import blocked', error instanceof Error ? error.message : 'The imported categories cannot be represented safely.');
+      return;
+    }
     const action = mode === 'replace' ? replace(data.medicines) : merge(data.medicines);
     void action
       .then(() => {
