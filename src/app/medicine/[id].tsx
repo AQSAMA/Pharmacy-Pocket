@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   categoryPill: { minHeight: 36, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
   categoryPillText: { color: '#e8f4ef', fontSize: 12, fontWeight: '800' },
-  favoriteButton: { minHeight: 44, paddingHorizontal: 13, borderRadius: 13, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.09)' },
+  favoriteButton: { minHeight: 48, paddingHorizontal: 13, borderRadius: 13, justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.09)' },
   favoriteButtonActive: { backgroundColor: '#fff2bf' },
   favoriteText: { color: '#d3e4dc', fontSize: 13, fontWeight: '800' },
   favoriteTextActive: { color: '#8a610e' },
