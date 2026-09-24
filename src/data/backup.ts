@@ -1,4 +1,4 @@
-import { MAX_CATEGORY_DEFINITIONS, categories as defaultCategories, categoryById, isCategory, type Category } from './categories';
+import { categories as defaultCategories, categoryById, isCategory, type Category } from './categories';
 import { isMedicine, type Medicine } from './medicine';
 
 export const BACKUP_SCHEMA = 'pharmacy-pocket-backup';
@@ -175,9 +175,7 @@ export function parseBackup(value: unknown): ParsedBackup {
 
   const suppliedCategories = data.categories === undefined
     ? categoriesFromSections(sections)
-    : Array.isArray(data.categories) &&
-        data.categories.length <= MAX_CATEGORY_DEFINITIONS &&
-        data.categories.every(isCategory)
+    : Array.isArray(data.categories) && data.categories.every(isCategory)
       ? data.categories.filter((item) => item.id !== 'all')
       : (() => { throw new Error('The categories in this file are invalid.'); })();
 
