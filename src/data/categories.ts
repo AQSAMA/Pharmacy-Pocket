@@ -84,10 +84,10 @@ export function ensureCategoriesForMedicines(source: readonly Category[], catego
   const next = [...source];
   const ids = new Set(next.map((item) => item.id));
   for (const rawId of categoryIds) {
-    const id = rawId.trim();
-    if (!id || id === 'all' || ids.has(id)) continue;
-    next.push({ id, label: id, arabic: id, color: '#758790' });
-    ids.add(id);
+    const label = rawId.trim();
+    if (!label || rawId === 'all' || ids.has(rawId)) continue;
+    next.push({ id: rawId, label, arabic: label, color: '#758790' });
+    ids.add(rawId);
   }
   return next;
 }
