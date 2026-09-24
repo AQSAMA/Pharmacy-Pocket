@@ -1,4 +1,4 @@
-import { categories as defaultCategories, categoryById, isCategory, mergeCategoryDefinitions, type Category } from './categories';
+import { categories as defaultCategories, categoryById, isCategory, type Category } from './categories';
 import { isMedicine, type Medicine } from './medicine';
 
 export const BACKUP_SCHEMA = 'pharmacy-pocket-backup';
