@@ -92,6 +92,27 @@ export function ensureCategoriesForMedicines(source: readonly Category[], catego
   return next;
 }
 
+export function resolveCategoryImport(
+  current: readonly Category[],
+  incoming: readonly Category[],
+  mode: 'merge' | 'replace',
+  medicineCategoryIds: readonly string[] = [],
+) {
+  const valid = incoming.filter((item) => isCategory(item) && item.id !== 'all');
+  const definitions = mode === 'replace'
+    ? mergeCategoryDefinitions(categories, valid)
+    : mergeCategoryDefinitions(
+        current,
+        valid.filter((item) => !current.some((existing) => existing.id === item.id)),
+      );
+  const complete = ensureCategoriesForMedicines(definitions, medicineCategoryIds);
+  const count = complete.reduce((total, item) => total + Number(item.id !== 'all'), 0);
+  if (count > MAX_CATEGORY_DEFINITIONS) {
+    throw new Error(`This import would create ${count} categories. Pharmacy Pocket supports up to ${MAX_CATEGORY_DEFINITIONS}.`);
+  }
+  return complete;
+}
+
 export function assertCategoryDefinitionLimit(definitions: readonly Category[], categoryIds: readonly string[] = []) {
   const ids = new Set(definitions.filter((item) => item.id !== 'all').map((item) => item.id));
   for (const rawId of categoryIds) {
