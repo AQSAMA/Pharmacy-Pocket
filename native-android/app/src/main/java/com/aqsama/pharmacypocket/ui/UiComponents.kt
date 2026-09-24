@@ -27,6 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -142,42 +144,62 @@ fun MedicineCard(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
+                    TextButton(
+                        onClick = onEdit,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics { contentDescription = "Edit ${item.name}" },
+                    ) {
                         Text("✎", fontSize = 19.sp, color = Color(0xFF55746A))
                     }
-                    Text(
-                        text = item.name,
-                        modifier = Modifier
+                    Column(
+                        Modifier
                             .weight(1f)
                             .padding(horizontal = 4.dp),
-                        maxLines = 2,
-                        color = Color(0xFF173C30),
-                        fontSize = if (large) 27.sp else 20.sp,
-                        lineHeight = if (large) 36.sp else 27.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(textDirection = TextDirection.Content),
-                    )
-                    TextButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = item.name,
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 2,
+                            color = Color(0xFF173C30),
+                            fontSize = if (large) 27.sp else 20.sp,
+                            lineHeight = if (large) 36.sp else 27.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            style = TextStyle(textDirection = TextDirection.Content),
+                        )
+                        if (!large && item.note.isNotBlank()) {
+                            Text(
+                                text = item.note,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFF71827A),
+                                fontSize = 13.sp,
+                                lineHeight = 19.sp,
+                                maxLines = 2,
+                                textAlign = if (hasArabic(item.note)) TextAlign.End else TextAlign.Start,
+                                style = TextStyle(textDirection = TextDirection.Content),
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = onFavorite,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics {
+                                contentDescription = if (item.favorite) {
+                                    "Remove ${item.name} from favorites"
+                                } else {
+                                    "Add ${item.name} to favorites"
+                                }
+                            },
+                    ) {
                         Text(
                             if (item.favorite) "★" else "☆",
                             fontSize = 21.sp,
                             color = if (item.favorite) Color(0xFFA87311) else Color(0xFF70867E),
                         )
                     }
-                }
-
-                if (!large && item.note.isNotBlank()) {
-                    Text(
-                        text = item.note,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFF71827A),
-                        fontSize = 13.sp,
-                        lineHeight = 19.sp,
-                        maxLines = 2,
-                        textAlign = if (hasArabic(item.note)) TextAlign.End else TextAlign.Start,
-                        style = TextStyle(textDirection = TextDirection.Content),
-                    )
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
