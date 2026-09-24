@@ -39,13 +39,15 @@ Requirements: JDK 17, Android SDK 37.0, Build Tools 36.0.0 and Gradle 9.6.
 
 From this folder:
 
-    gradle testPreviewDebugUnitTest assemblePreviewDebug
+    gradle testPreviewDebugUnitTest assemblePreviewRelease
 
 Preview APK:
 
-    app/build/outputs/apk/preview/debug/app-preview-debug.apk
+    app/build/outputs/apk/preview/release/app-preview-release.apk
 
-A test-signed preview release:
+Preview builds use the repository's intentionally public **preview-only** signing key so successive side-loaded native previews can update one another without losing the preview app's private data. This key provides no production authenticity and must never be used for the final Pharmacy Pocket package.
+
+A preview release:
 
     gradle assemblePreviewRelease
 
