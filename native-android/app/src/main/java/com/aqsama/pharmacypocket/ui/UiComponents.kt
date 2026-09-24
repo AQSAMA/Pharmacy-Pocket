@@ -3,6 +3,7 @@ package com.aqsama.pharmacypocket.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -39,21 +41,19 @@ import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.Medicine
 import com.aqsama.pharmacypocket.data.formatAddedDate
 import com.aqsama.pharmacypocket.data.formatPrice
-import com.aqsama.pharmacypocket.data.hasArabic
 
 fun colorFromHex(hex: String): Color = runCatching {
     Color(android.graphics.Color.parseColor(hex))
 }.getOrDefault(Color(0xFF758790))
 
+@Composable
 fun tintCategoryColor(hex: String, strength: Float = 0.08f): Color {
-    val base = colorFromHex(hex)
-    val amount = strength.coerceIn(0f, 1f)
-    return Color(
-        red = 1f - (1f - base.red) * amount,
-        green = 1f - (1f - base.green) * amount,
-        blue = 1f - (1f - base.blue) * amount,
-        alpha = 1f,
-    )
+    val amount = if (LocalPharmacyDarkTheme.current) {
+        (strength * 1.7f).coerceIn(0f, 0.24f)
+    } else {
+        strength.coerceIn(0f, 1f)
+    }
+    return lerp(MaterialTheme.colorScheme.surface, colorFromHex(hex), amount)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,7 +128,7 @@ fun MedicineCard(
             .clickable(onClick = onOpen),
         color = tintCategoryColor(category.color, 0.09f),
         shape = shape,
-        border = BorderStroke(0.5.dp, colorFromHex(category.color).copy(alpha = 0.20f)),
+        border = BorderStroke(0.5.dp, colorFromHex(category.color).copy(alpha = if (LocalPharmacyDarkTheme.current) 0.34f else 0.20f)),
     ) {
         Column(
             Modifier
@@ -151,8 +151,9 @@ fun MedicineCard(
                         modifier = Modifier
                             .size(48.dp)
                             .semantics { contentDescription = "Edit ${item.name}" },
+                        contentPadding = PaddingValues(0.dp),
                     ) {
-                        Text("✎", fontSize = 19.sp, color = Color(0xFF55746A))
+                        Text("✎", fontSize = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Column(
                         Modifier
@@ -164,7 +165,7 @@ fun MedicineCard(
                             text = item.name,
                             modifier = Modifier.fillMaxWidth(),
                             maxLines = 2,
-                            color = Color(0xFF173C30),
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = if (large) 27.sp else 20.sp,
                             lineHeight = if (large) 36.sp else 27.sp,
                             fontWeight = FontWeight.Bold,
@@ -175,11 +176,11 @@ fun MedicineCard(
                             Text(
                                 text = item.note,
                                 modifier = Modifier.fillMaxWidth(),
-                                color = Color(0xFF71827A),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
                                 lineHeight = 19.sp,
                                 maxLines = 2,
-                                textAlign = if (hasArabic(item.note)) TextAlign.End else TextAlign.Start,
+                                textAlign = TextAlign.Start,
                                 style = TextStyle(textDirection = TextDirection.Content),
                             )
                         }
@@ -195,40 +196,45 @@ fun MedicineCard(
                                     "Add ${item.name} to favorites"
                                 }
                             },
+                        contentPadding = PaddingValues(0.dp),
                     ) {
                         Text(
                             if (item.favorite) "★" else "☆",
                             fontSize = 21.sp,
-                            color = if (item.favorite) Color(0xFFA87311) else Color(0xFF70867E),
+                            color = if (item.favorite) {
+                                if (LocalPharmacyDarkTheme.current) Color(0xFFFFD166) else Color(0xFFA87311)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("OFFICIAL", color = Color(0xFF81928B), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("OFFICIAL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
                         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             Text(
                                 formatPrice(item.official),
-                                color = Color(0xFF1C7352),
+                                color = MaterialTheme.colorScheme.primary,
                                 fontSize = if (large) 28.sp else 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 maxLines = 1,
                             )
-                            Text(currency, color = Color(0xFF81928B), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(currency, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     item.discounted?.let { price ->
                         Column(Modifier.weight(0.8f)) {
                             Text(
                                 if (price > item.official) "VERIFY" else "IF ASKED",
-                                color = if (price > item.official) Color(0xFFA94E36) else Color(0xFF81928B),
+                                color = if (price > item.official) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                             )
                             Text(
                                 formatPrice(price),
-                                color = Color(0xFFA66C14),
+                                color = if (LocalPharmacyDarkTheme.current) Color(0xFFE1B86C) else Color(0xFFA66C14),
                                 fontSize = if (large) 26.sp else 20.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 maxLines = 1,
@@ -239,7 +245,7 @@ fun MedicineCard(
 
                 Text(
                     "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
-                    color = Color(0xFF687C74),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                 )
             }

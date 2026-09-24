@@ -42,7 +42,6 @@ import com.aqsama.pharmacypocket.data.buildSearchIndex
 import com.aqsama.pharmacypocket.data.categoryById
 import com.aqsama.pharmacypocket.data.formatAddedDate
 import com.aqsama.pharmacypocket.data.formatPrice
-import com.aqsama.pharmacypocket.data.hasArabic
 import com.aqsama.pharmacypocket.data.listSubcategories
 import com.aqsama.pharmacypocket.data.subcategoryKey
 import com.aqsama.pharmacypocket.data.subcategoryLabel
@@ -131,7 +130,7 @@ fun MedicineEditorScreen(
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Category", color = Color(0xFF37544A), fontWeight = FontWeight.Bold)
+                            Text("Category", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                             TextButton(onClick = {
                                 Haptics.action(view)
                                 onManageCategories()
@@ -158,7 +157,7 @@ fun MedicineEditorScreen(
                     Field("Subcategory", subcategory, { subcategory = it })
                     if (existingSubcategories.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text("Or select an existing subcategory", color = Color(0xFF63776F), fontSize = 13.sp)
+                            Text("Or select an existing subcategory", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                             Row(
                                 Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -208,7 +207,7 @@ fun MedicineEditorScreen(
 
                     Text(
                         "Prices use ${snapshot.currency}. A blank discounted price means no second price was supplied.",
-                        color = Color(0xFF7B8984),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         lineHeight = 19.sp,
                     )
@@ -297,7 +296,7 @@ fun MedicineDetailScreen(
                     ) {
                         Surface(
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
-                            color = Color(0xFF103E3B),
+                            color = MaterialTheme.colorScheme.tertiary,
                         ) {
                             Column(
                                 Modifier.padding(20.dp),
@@ -305,13 +304,13 @@ fun MedicineDetailScreen(
                             ) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Surface(
-                                        color = Color.White.copy(alpha = 0.08f),
+                                        color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.08f),
                                         shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, colorFromHex(category.color)),
                                     ) {
                                         Text(
                                             category.label,
-                                            color = Color(0xFFE8F4EF),
+                                            color = MaterialTheme.colorScheme.onTertiary,
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 12.sp,
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
@@ -323,7 +322,7 @@ fun MedicineDetailScreen(
                                     }) {
                                         Text(
                                             if (item.favorite) "★ Favorite" else "☆ Favorite",
-                                            color = if (item.favorite) Color(0xFFFFE29A) else Color(0xFFD3E4DC),
+                                            color = if (item.favorite) Color(0xFFFFD166) else MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.82f),
                                             fontWeight = FontWeight.Bold,
                                         )
                                     }
@@ -332,7 +331,7 @@ fun MedicineDetailScreen(
                                 Text(
                                     item.name,
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onTertiary,
                                     fontSize = 30.sp,
                                     lineHeight = 40.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -343,7 +342,7 @@ fun MedicineDetailScreen(
                                     Text(
                                         item.note,
                                         modifier = Modifier.fillMaxWidth(),
-                                        color = Color(0xFFC4D9D0),
+                                        color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.78f),
                                         textAlign = TextAlign.Center,
                                     )
                                 }
@@ -407,7 +406,7 @@ fun MedicineDetailScreen(
                             InfoValue("DATE ADDED", formatAddedDate(item.createdAt), snapshot.largeText)
                             Text(
                                 "Older records may show the date they were imported or migrated.",
-                                color = Color(0xFF75877F),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                             )
                         }
@@ -416,11 +415,11 @@ fun MedicineDetailScreen(
                             InfoCard("Description") {
                                 Text(
                                     item.description,
-                                    color = Color(0xFF536A61),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 16.sp,
                                     lineHeight = 25.sp,
-                                    textAlign = if (hasArabic(item.description)) TextAlign.End else TextAlign.Start,
-                                    style = TextStyle(textDirection = if (hasArabic(item.description)) TextDirection.Rtl else TextDirection.Ltr),
+                                    textAlign = TextAlign.Start,
+                                    style = TextStyle(textDirection = TextDirection.Content),
                                 )
                             }
                         }
@@ -434,8 +433,8 @@ fun MedicineDetailScreen(
                                 .fillMaxWidth()
                                 .heightIn(min = 52.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFDCEFE1),
-                                contentColor = Color(0xFF175D3F),
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                             ),
                         ) {
                             Text("✎ Edit medicine", fontWeight = FontWeight.ExtraBold)
@@ -458,13 +457,13 @@ private fun InfoCard(title: String, content: @Composable ColumnScope.() -> Unit)
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(title, color = Color(0xFF24443A), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
             content()
         }
     }
@@ -473,10 +472,10 @@ private fun InfoCard(title: String, content: @Composable ColumnScope.() -> Unit)
 @Composable
 private fun InfoValue(label: String, value: String, large: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(label, color = Color(0xFF8A9993), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
         Text(
             value,
-            color = Color(0xFF315247),
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = if (large) 21.sp else 16.sp,
             fontWeight = FontWeight.SemiBold,
         )

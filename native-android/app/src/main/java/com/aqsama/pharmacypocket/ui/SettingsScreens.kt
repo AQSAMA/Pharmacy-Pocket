@@ -128,7 +128,7 @@ fun SettingsScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
-                        color = Color(0xFF103E3B),
+                        color = MaterialTheme.colorScheme.tertiary,
                     ) {
                         Column(
                             Modifier.padding(20.dp),
@@ -136,29 +136,29 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 snapshot.items.size.toString(),
-                                color = Color(0xFFB8F0CB),
+                                color = MaterialTheme.colorScheme.onTertiary,
                                 fontSize = 34.sp,
                                 fontWeight = FontWeight.Black,
                             )
                             Text(
                                 "medicines stored locally",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onTertiary,
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.ExtraBold,
                             )
                             Text(
                                 "Fast, offline-first, and fully exportable.",
-                                color = Color(0xFFB7CEC4),
+                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.78f),
                                 fontSize = 13.sp,
                             )
                             Surface(
                                 modifier = Modifier.padding(top = 7.dp),
                                 shape = RoundedCornerShape(11.dp),
-                                color = Color.White.copy(alpha = 0.08f),
+                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.08f),
                             ) {
                                 Text(
                                     "● Offline ready",
-                                    color = Color(0xFFCCE5DA),
+                                    color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.88f),
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
@@ -177,8 +177,8 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("Large text", color = Color(0xFF234A3C), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                                Text("Increase medicine names and key prices.", color = Color(0xFF75857F), fontSize = 13.sp)
+                                Text("Large text", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("Increase medicine names and key prices.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                             }
                             Switch(
                                 checked = snapshot.largeText,
@@ -231,7 +231,7 @@ fun SettingsScreen(
                             Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text("Currency name", color = Color(0xFF234A3C), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("Currency name", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                             OutlinedTextField(
                                 value = currencyDraft,
                                 onValueChange = { currencyDraft = it.take(24) },
@@ -244,7 +244,7 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text("Leave it blank to use IQD.", color = Color(0xFF75857F), fontSize = 13.sp)
+                                Text("Leave it blank to use IQD.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                                 TextButton(onClick = {
                                     Haptics.action(view)
                                     onSetCurrency(currencyDraft)
@@ -278,7 +278,7 @@ fun SettingsScreen(
                                     exportLauncher.launch("pharmacy-pocket-${LocalDate.now()}.json")
                                 },
                             )
-                            Surface(color = Color(0xFFE5ECE8), modifier = Modifier.fillMaxWidth()) {
+                            Surface(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxWidth()) {
                                 androidx.compose.foundation.layout.Spacer(Modifier.size(1.dp))
                             }
                             SettingsActionRow(
@@ -296,22 +296,22 @@ fun SettingsScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
-                        color = Color(0xFFE7EFEA),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                     ) {
                         Column(
                             Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text("About your data", color = Color(0xFF315247), fontWeight = FontWeight.ExtraBold)
+                            Text("About your data", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold)
                             Text(
                                 "One JSON file contains medicines, category sections, custom category names/colors, order, favorites, descriptions, and currency. Files exported by the original web and Expo apps remain supported.",
-                                color = Color(0xFF60766D),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
                                 lineHeight = 20.sp,
                             )
                             Text(
                                 "Descriptions are reference notes and are not verified clinical guidance.",
-                                color = Color(0xFF60766D),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
                                 lineHeight = 20.sp,
                             )
@@ -375,7 +375,7 @@ private fun SectionLabel(text: String) {
     Text(
         text,
         modifier = Modifier.padding(start = 3.dp, top = 7.dp),
-        color = Color(0xFF83938C),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 11.sp,
         fontWeight = FontWeight.ExtraBold,
         letterSpacing = 0.9.sp,
@@ -387,7 +387,7 @@ private fun SettingsCard(content: @Composable () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
         content = content,
     )
 }
@@ -423,17 +423,17 @@ private fun SettingsActionRow(
         Surface(
             modifier = Modifier.size(44.dp),
             shape = RoundedCornerShape(14.dp),
-            color = Color(0xFFE9F2ED),
+            color = MaterialTheme.colorScheme.secondaryContainer,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text(symbol, color = Color(0xFF315B49), fontSize = 21.sp, fontWeight = FontWeight.ExtraBold)
+                Text(symbol, color = MaterialTheme.colorScheme.onSecondaryContainer, fontSize = 21.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
         Column(Modifier.weight(1f)) {
-            Text(title, color = Color(0xFF234A3C), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-            Text(description, color = Color(0xFF75857F), fontSize = 12.sp, lineHeight = 17.sp)
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
-        Text("›", color = Color(0xFF91A099), fontSize = 26.sp)
+        Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 26.sp)
     }
 }
 
@@ -504,13 +504,13 @@ fun CategoryManagerScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(20.dp),
-                        color = Color(0xFF103E3B),
+                        color = MaterialTheme.colorScheme.tertiary,
                     ) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Make categories yours", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("Make categories yours", color = MaterialTheme.colorScheme.onTertiary, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
                             Text(
                                 "Rename existing categories or create new ones. Colors become the card accent and a subtle tint.",
-                                color = Color(0xFFBED2C9),
+                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.80f),
                                 fontSize = 13.sp,
                                 lineHeight = 20.sp,
                             )
@@ -522,7 +522,7 @@ fun CategoryManagerScreen(
                             .fillMaxWidth()
                             .clickable(onClick = ::openNew),
                         shape = RoundedCornerShape(18.dp),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.surface,
                     ) {
                         Row(
                             Modifier.padding(14.dp),
@@ -532,15 +532,15 @@ fun CategoryManagerScreen(
                             Surface(
                                 modifier = Modifier.size(46.dp),
                                 shape = RoundedCornerShape(15.dp),
-                                color = Color(0xFFDCEFE1),
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                                    Text("＋", color = Color(0xFF175D3F), fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                    Text("＋", color = MaterialTheme.colorScheme.onTertiaryContainer, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                             Column(Modifier.weight(1f)) {
-                                Text("Add category", color = Color(0xFF234A3C), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                                Text("Create a new medicine group with its own color.", color = Color(0xFF75857F), fontSize = 12.sp)
+                                Text("Add category", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("Create a new medicine group with its own color.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                             }
                         }
                     }
@@ -559,7 +559,7 @@ fun CategoryManagerScreen(
                         },
                     shape = RoundedCornerShape(18.dp),
                     color = tintCategoryColor(category.color, 0.085f),
-                    border = BorderStroke(1.dp, Color(0xFFE1E9E5)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
@@ -574,23 +574,23 @@ fun CategoryManagerScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(category.label, color = Color(0xFF1F4538), fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                                    Text(category.arabic, color = Color(0xFF677B73), fontSize = 13.sp, maxLines = 1)
+                                    Text(category.label, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                                    Text(category.arabic, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
                                 }
-                                Surface(shape = RoundedCornerShape(11.dp), color = Color.White.copy(alpha = 0.72f)) {
+                                Surface(shape = RoundedCornerShape(11.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)) {
                                     Text(
                                         (counts[category.id] ?: 0).toString(),
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                        color = Color(0xFF536C62),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                     )
                                 }
-                                Text("›", color = Color(0xFF84958E), fontSize = 25.sp)
+                                Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 25.sp)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 Surface(modifier = Modifier.size(10.dp), shape = RoundedCornerShape(50), color = colorFromHex(category.color)) {}
-                                Text(category.color.uppercase(Locale.ROOT), color = Color(0xFF81918B), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(category.color.uppercase(Locale.ROOT), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -603,13 +603,13 @@ fun CategoryManagerScreen(
                         .padding(horizontal = 18.dp, vertical = 4.dp)
                         .fillMaxWidth(),
                     shape = RoundedCornerShape(17.dp),
-                    color = Color(0xFFE7EFEA),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Why there is no delete button", color = Color(0xFF315247), fontWeight = FontWeight.ExtraBold)
+                        Text("Why there is no delete button", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold)
                         Text(
                             "Category IDs stay stable when you rename or recolor them, so medicines never lose their category. A safe delete/move flow can be added separately.",
-                            color = Color(0xFF60766D),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                             lineHeight = 19.sp,
                         )
@@ -635,7 +635,7 @@ fun CategoryManagerScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(17.dp),
                         color = tintCategoryColor(localColor, 0.085f),
-                        border = BorderStroke(1.dp, Color(0xFFDFE8E3)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
@@ -643,8 +643,8 @@ fun CategoryManagerScreen(
                                 color = colorFromHex(localColor),
                             ) {}
                             Column(Modifier.padding(14.dp)) {
-                                Text(localLabel.trim().ifEmpty { "Category name" }, color = Color(0xFF1F4538), fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
-                                Text(localArabic.trim().ifEmpty { localLabel.trim().ifEmpty { "Short label" } }, color = Color(0xFF667A72), fontSize = 13.sp)
+                                Text(localLabel.trim().ifEmpty { "Category name" }, color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                                Text(localArabic.trim().ifEmpty { localLabel.trim().ifEmpty { "Short label" } }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                             }
                         }
                     }
@@ -671,7 +671,7 @@ fun CategoryManagerScreen(
                         placeholder = { Text("Arabic or English") },
                         singleLine = true,
                     )
-                    Text("Color", color = Color(0xFF37544A), fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                    Text("Color", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -686,8 +686,8 @@ fun CategoryManagerScreen(
                                         draft = current.copy(label = localLabel, arabic = localArabic, color = localColor)
                                     },
                                 shape = RoundedCornerShape(15.dp),
-                                color = if (color.equals(localColor, true)) Color.White else Color.Transparent,
-                                border = if (color.equals(localColor, true)) BorderStroke(2.dp, Color(0xFF103E3B)) else null,
+                                color = if (color.equals(localColor, true)) MaterialTheme.colorScheme.surface else Color.Transparent,
+                                border = if (color.equals(localColor, true)) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                             ) {
                                 Surface(
                                     modifier = Modifier.padding(8.dp),
@@ -719,7 +719,10 @@ fun CategoryManagerScreen(
                         draft = current.copy(label = localLabel, arabic = localArabic, color = localColor)
                         saveDraft()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF103E3B)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiary,
+                        contentColor = MaterialTheme.colorScheme.onTertiary,
+                    ),
                 ) { Text("Save category") }
             },
         )

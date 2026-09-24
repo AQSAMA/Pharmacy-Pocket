@@ -3,13 +3,17 @@ package com.aqsama.pharmacypocket.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -49,6 +53,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -72,6 +77,8 @@ private data class MedicineSection(
     val category: String,
     val data: List<Medicine>,
 )
+
+private val ToolbarControlHeight = 52.dp
 
 private sealed interface HomeRow {
     val key: String
@@ -215,8 +222,8 @@ fun HomeScreen(
                             onValueChange = { query = it },
                             modifier = Modifier
                                 .weight(1f)
-                                .heightIn(min = 52.dp),
-                            placeholder = { Text("Search medicines…") },
+                                .height(ToolbarControlHeight),
+                            placeholder = { Text("Search medicines…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             leadingIcon = { Text("⌕", fontSize = 22.sp) },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
@@ -231,9 +238,9 @@ fun HomeScreen(
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                             keyboardActions = KeyboardActions(onSearch = {}),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.White,
-                                unfocusedContainerColor = Color.White,
-                                focusedBorderColor = Color(0xFF7DA997),
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
                                 unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
                             ),
                         )
@@ -336,13 +343,13 @@ fun HomeScreen(
                     Text(
                         if (visible.size == snapshot.items.size) "${visible.size} medicines"
                         else "${visible.size} of ${snapshot.items.size} medicines",
-                        color = Color(0xFF24443A),
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 15.sp,
                     )
                     Text(
                         if (category == "all") "All categories" else categoryById(category, snapshot.categories).label,
-                        color = Color(0xFF7A8A84),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         maxLines = 1,
                     )
@@ -363,12 +370,12 @@ fun HomeScreen(
                             if (snapshot.items.isEmpty()) "Your pocket is empty" else "No medicines found",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF24443A),
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             if (snapshot.items.isEmpty()) "Import your JSON from Settings, or add your first medicine."
                             else "Try a shorter name or another category.",
-                            color = Color(0xFF71827A),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -418,14 +425,14 @@ private fun HeaderControl(
     Surface(
         onClick = onClick,
         modifier = Modifier
-            .size(48.dp)
+            .size(ToolbarControlHeight)
             .semantics { this.contentDescription = contentDescription },
         shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.White,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.secondary,
         border = BorderStroke(
             1.dp,
-            if (selected) Color(0xFF7DA997) else MaterialTheme.colorScheme.outline.copy(alpha = 0.75f),
+            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.75f),
         ),
         shadowElevation = 1.dp,
     ) {
@@ -476,10 +483,10 @@ private fun SectionBreadcrumb(section: MedicineSection, snapshot: AppSnapshot) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             BreadcrumbChip(selected.arabic, border = colorFromHex(selected.color))
-            Text("/", color = Color(0xFF91A099), fontWeight = FontWeight.Bold)
+            Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             BreadcrumbChip(section.title, modifier = Modifier.widthIn(max = 190.dp))
-            Text("/", color = Color(0xFF91A099), fontWeight = FontWeight.Bold)
-            BreadcrumbChip(section.data.size.toString(), background = Color(0xFFEAF3EE))
+            Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+            BreadcrumbChip(section.data.size.toString(), background = MaterialTheme.colorScheme.surfaceVariant)
         }
     }
 }
@@ -490,21 +497,21 @@ private fun BreadcrumbChip(
     text: String,
     modifier: Modifier = Modifier,
     border: Color = MaterialTheme.colorScheme.outline,
-    background: Color = Color.White,
+    background: Color? = null,
 ) {
     Surface(
         modifier = modifier.heightIn(min = 30.dp),
         shape = RoundedCornerShape(9.dp),
-        color = background,
+        color = background ?: MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, border),
     ) {
         Box(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), contentAlignment = Alignment.CenterStart) {
-            Text(text, color = Color(0xFF24443A), fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(text, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
         }
     }
 }
 
-/** Keeps the Add action beside the scrollable category and subcategory chips. */
+/** Keeps the Add action fixed beside the independently scrollable category rows. */
 @Composable
 private fun HomeBottomBar(
     snapshot: AppSnapshot,
@@ -517,84 +524,92 @@ private fun HomeBottomBar(
     onAdd: () -> Unit,
 ) {
     Surface(
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
         shadowElevation = 7.dp,
-        border = BorderStroke(1.dp, Color(0xFFE0E8E4)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             val compact = maxWidth < 360.dp
             val addWidth = if (compact) 58.dp else 104.dp
-            val endReserve = addWidth + 18.dp
 
-            Column(
-                Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Stretch,
             ) {
-                Row(
-                    Modifier
-                        .padding(end = endReserve)
-                        .horizontalScroll(rememberScrollState())
-                        .padding(start = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    snapshot.categories.forEach { item ->
-                        SoftChip(
-                            label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                            selected = category == item.id,
-                            accent = if (item.id == "all") null else colorFromHex(item.color),
-                            onClick = { onSelectCategory(item.id) },
-                        )
-                    }
-                }
-                if (subcategories.isNotEmpty()) {
                     Row(
                         Modifier
-                            .padding(end = endReserve)
-                            .horizontalScroll(rememberScrollState())
-                            .padding(start = 10.dp),
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        SoftChip(
-                            label = "All subcategories",
-                            selected = selectedSubcategory == null,
-                            onClick = { onSelectSubcategory(null) },
-                        )
-                        subcategories.forEach { (key, label) ->
+                        snapshot.categories.forEach { item ->
                             SoftChip(
-                                label = label,
-                                selected = selectedSubcategory == key,
-                                onClick = { onSelectSubcategory(key) },
+                                label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
+                                selected = category == item.id,
+                                accent = if (item.id == "all") null else colorFromHex(item.color),
+                                onClick = { onSelectCategory(item.id) },
                             )
                         }
                     }
+                    if (subcategories.isNotEmpty()) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            SoftChip(
+                                label = "All subcategories",
+                                selected = selectedSubcategory == null,
+                                onClick = { onSelectSubcategory(null) },
+                            )
+                            subcategories.forEach { (key, label) ->
+                                SoftChip(
+                                    label = label,
+                                    selected = selectedSubcategory == key,
+                                    onClick = { onSelectSubcategory(key) },
+                                )
+                            }
+                        }
+                    }
                 }
-            }
 
-            Button(
-                onClick = onAdd,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = 10.dp)
-                    .widthIn(min = addWidth, max = addWidth)
-                    .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Add medicine" },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFDCEFE1),
-                    contentColor = Color(0xFF175D3F),
-                ),
-                shape = RoundedCornerShape(15.dp),
-            ) {
-                Text(
-                    if (compact) "＋" else "＋ Add",
-                    fontSize = if (compact) 21.sp else 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                )
+                Button(
+                    onClick = onAdd,
+                    modifier = Modifier
+                        .widthIn(min = addWidth, max = addWidth)
+                        .fillMaxHeight()
+                        .heightIn(min = 48.dp)
+                        .semantics { contentDescription = "Add medicine" },
+                    contentPadding = PaddingValues(
+                        horizontal = if (compact) 4.dp else 12.dp,
+                        vertical = 8.dp,
+                    ),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    ),
+                    shape = RoundedCornerShape(15.dp),
+                ) {
+                    Text(
+                        if (compact) "＋" else "＋ Add",
+                        fontSize = if (compact) 21.sp else 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
