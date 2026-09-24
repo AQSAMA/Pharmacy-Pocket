@@ -114,6 +114,7 @@ object BackupCodec {
             require(sourceVersion in 1..version) {
                 "Backup version $sourceVersion is not supported by this app."
             }
+            val hasCurrency = root.has("currency") && !root.isNull("currency")
             val currency = root.optString("currency", "IQD").trim().ifEmpty { "IQD" }
             require(currency.length <= 24) { "The currency name in this file is too long." }
 
@@ -122,6 +123,7 @@ object BackupCodec {
                 sections = sections,
                 categories = categories,
                 currency = currency,
+                hasCurrency = hasCurrency,
                 sourceVersion = sourceVersion,
             )
         } catch (error: IllegalArgumentException) {
