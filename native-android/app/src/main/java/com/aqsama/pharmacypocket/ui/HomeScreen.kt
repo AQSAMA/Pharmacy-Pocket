@@ -110,6 +110,7 @@ private fun buildRows(items: List<Medicine>): List<HomeRow> {
     }
 }
 
+/** Displays the searchable medicine list with its sticky filters and category controls. */
 @Composable
 fun HomeScreen(
     snapshot: AppSnapshot,
@@ -177,6 +178,7 @@ fun HomeScreen(
         }
     }
 
+    /** Selects a category and clears any subcategory from the previous selection. */
     fun selectCategory(next: String) {
         Haptics.selection(view)
         category = next
@@ -404,6 +406,7 @@ fun HomeScreen(
     }
 }
 
+/** Renders a header action with its accessibility label and optional count badge. */
 @Composable
 private fun HeaderControl(
     label: String,
@@ -460,6 +463,7 @@ private fun HeaderControl(
     }
 }
 
+/** Shows the category, subcategory, and medicine count for a list section. */
 @Composable
 private fun SectionBreadcrumb(section: MedicineSection, snapshot: AppSnapshot) {
     val selected = categoryById(section.category, snapshot.categories)
@@ -480,6 +484,7 @@ private fun SectionBreadcrumb(section: MedicineSection, snapshot: AppSnapshot) {
     }
 }
 
+/** Renders one label in the section breadcrumb with its optional colors. */
 @Composable
 private fun BreadcrumbChip(
     text: String,
@@ -499,6 +504,7 @@ private fun BreadcrumbChip(
     }
 }
 
+/** Keeps the Add action beside the scrollable category and subcategory chips. */
 @Composable
 private fun HomeBottomBar(
     snapshot: AppSnapshot,

@@ -70,6 +70,7 @@ fun ScreenTopBar(title: String, onBack: () -> Unit) {
     )
 }
 
+/** Displays a selectable category or filter chip with an optional color marker. */
 @Composable
 fun SoftChip(
     label: String,
@@ -101,6 +102,7 @@ fun SoftChip(
     }
 }
 
+/** Displays a medicine with centered details and separate edit and favorite actions. */
 @Composable
 fun MedicineCard(
     item: Medicine,
