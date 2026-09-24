@@ -13,7 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, tintCategoryColor } = require('../src/data/categories.ts');
+const { MAX_CATEGORY_DEFINITIONS, categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, tintCategoryColor } = require('../src/data/categories.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -108,7 +108,7 @@ test('backup rejects duplicate or excessive category metadata', () => {
   assert.throws(() => parseBackup(duplicate), /Duplicate category ID/);
 
   const excessive = createBackup([item]);
-  excessive.categories = Array.from({ length: 257 }, (_, index) => ({
+  excessive.categories = Array.from({ length: MAX_CATEGORY_DEFINITIONS + 1 }, (_, index) => ({
     id: `category-${index}`,
     label: `Category ${index}`,
     arabic: `Category ${index}`,
@@ -286,5 +286,6 @@ test('navigation and scroll regression guards', () => {
   assert.match(read('package.json'), /"expo-haptics": "~55\.0\.18"/);
   assert.match(read('src/data/medicine-store.tsx'), /category-definitions-v1/);
   assert.match(read('src/data/medicine-store.tsx'), /valid\.filter\(\(item\) => !current\.some/);
+  assert.match(read('src/data/medicine-store.tsx'), /MAX_CATEGORY_DEFINITIONS/);
   assert.match(read('src/data/backup.ts'), /categories\?: Category\[\]/);
 });
