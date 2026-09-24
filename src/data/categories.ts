@@ -92,6 +92,16 @@ export function ensureCategoriesForMedicines(source: readonly Category[], catego
   return next;
 }
 
+export function assertCategoryDefinitionLimit(definitions: readonly Category[], categoryIds: readonly string[] = []) {
+  const ids = new Set(definitions.filter((item) => item.id !== 'all').map((item) => item.id));
+  for (const rawId of categoryIds) {
+    if (rawId && rawId !== 'all') ids.add(rawId);
+  }
+  if (ids.size > MAX_CATEGORY_DEFINITIONS) {
+    throw new Error(`Pharmacy Pocket supports up to ${MAX_CATEGORY_DEFINITIONS} categories.`);
+  }
+}
+
 export function tintCategoryColor(color: string, strength = 0.08) {
   if (!HEX_COLOR.test(color)) return '#f7faf8';
   const amount = Math.max(0, Math.min(1, strength));
