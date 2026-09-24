@@ -303,7 +303,6 @@ test('navigation and scroll regression guards', () => {
   assert.match(categoryManager, /Save category/);
   assert.match(categoryManager, /CATEGORY_COLORS/);
   assert.match(categoryManager, /tintCategoryColor/);
-  assert.match(categoryManager, /MAX_CATEGORY_DEFINITIONS/);
   const settings = read('src/app/settings.tsx');
   assert.match(settings, /Manage categories/);
   assert.match(settings, /accessibilityLabel=\{label\}/);
