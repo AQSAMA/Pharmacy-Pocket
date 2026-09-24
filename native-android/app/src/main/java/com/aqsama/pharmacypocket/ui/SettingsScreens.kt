@@ -49,6 +49,7 @@ import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.ParsedBackup
 import com.aqsama.pharmacypocket.data.PharmacyDefaults
+import com.aqsama.pharmacypocket.data.ThemePreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,6 +64,7 @@ fun SettingsScreen(
     onManageCategories: () -> Unit,
     onSetLargeText: (Boolean) -> Unit,
     onSetCurrency: (String) -> Unit,
+    onSetTheme: (ThemePreference) -> Unit,
     onImport: (ParsedBackup, ImportMode) -> Unit,
 ) {
     val context = LocalContext.current
@@ -185,6 +187,41 @@ fun SettingsScreen(
                                     onSetLargeText(it)
                                 },
                             )
+                        }
+                    }
+
+                    SectionLabel("APPEARANCE")
+                    SettingsCard {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                "Theme",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                            )
+                            Text(
+                                "Follow Android automatically, or keep Pharmacy Pocket light or dark.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                            )
+                            Row(
+                                Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
+                                ThemePreference.entries.forEach { option ->
+                                    SoftChip(
+                                        label = option.label,
+                                        selected = snapshot.themePreference == option,
+                                        onClick = {
+                                            Haptics.selection(view)
+                                            onSetTheme(option)
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
 

@@ -27,11 +27,18 @@ data class Category(
     val color: String,
 )
 
+enum class ThemePreference(val label: String) {
+    SYSTEM("System"),
+    LIGHT("Light"),
+    DARK("Dark"),
+}
+
 data class AppSnapshot(
     val items: List<Medicine>,
     val categories: List<Category>,
     val largeText: Boolean,
     val currency: String,
+    val themePreference: ThemePreference,
 )
 
 enum class MedicineSort(val label: String) {
