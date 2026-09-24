@@ -172,7 +172,7 @@ export function parseBackup(value: unknown): ParsedBackup {
       ? data.categories.filter((item) => item.id !== 'all')
       : (() => { throw new Error('The categories in this file are invalid.'); })();
 
-  const parsedCategories = mergeCategoryDefinitions(defaultCategories, suppliedCategories);
+  const parsedCategories = suppliedCategories.filter((item) => item.id !== 'all' && isCategory(item));
 
   const sourceVersion = Number.isInteger(data.version) ? Number(data.version) : 1;
   if (sourceVersion < 1 || sourceVersion > BACKUP_VERSION) {
