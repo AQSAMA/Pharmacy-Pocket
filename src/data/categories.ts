@@ -2,8 +2,6 @@ export type Category = { id: string; label: string; arabic: string; color: strin
 
 export const MAX_CATEGORY_DEFINITIONS = 256;
 
-export const MAX_CATEGORY_DEFINITIONS = 256;
-
 export const CATEGORY_COLORS = [
   '#2f856d',
   '#596aab',
