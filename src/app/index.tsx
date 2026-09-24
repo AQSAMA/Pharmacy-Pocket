@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
   cardContainer: { marginHorizontal: 16 },
   categoryChip: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 13, borderRadius: 13, backgroundColor: '#eff4f1' },
   categoryChipActive: { backgroundColor: '#103e3b' },
-  categoryChipLabel: { color: '#536c62', fontSize: 15, writingDirection: 'rtl', fontWeight: '650' },
+  categoryChipLabel: { color: '#536c62', fontSize: 15, writingDirection: 'rtl', fontWeight: '600' },
   categoryChipLabelActive: { color: '#ffffff' },
   categoryCount: { minWidth: 24, height: 24, paddingHorizontal: 6, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' },
   categoryCountActive: { backgroundColor: 'rgba(255,255,255,0.14)' },
