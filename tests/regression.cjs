@@ -100,6 +100,23 @@ test('custom category names and colors survive JSON backup and legacy custom sec
   assert.ok(parsedLegacy.categories.some(category => category.id === custom.id));
 });
 
+test('backup rejects duplicate or excessive category metadata', () => {
+  const item = { id: 'category-guard', name: 'Guard', note: '', category: 'custom', subcategory: 'General', official: 1000, discounted: null, revision: 0 };
+  const category = { id: 'custom', label: 'Custom', arabic: 'Custom', color: '#3f7fb5' };
+  const duplicate = createBackup([item], 'IQD', [defaultCategories[0], category]);
+  duplicate.categories = [category, { ...category, label: 'Duplicate' }];
+  assert.throws(() => parseBackup(duplicate), /Duplicate category ID/);
+
+  const excessive = createBackup([item]);
+  excessive.categories = Array.from({ length: 257 }, (_, index) => ({
+    id: `category-${index}`,
+    label: `Category ${index}`,
+    arabic: `Category ${index}`,
+    color: '#3f7fb5',
+  }));
+  assert.throws(() => parseBackup(excessive), /categories in this file are invalid/);
+});
+
 test('Arabic search ignores diacritics and normalizes alef', () => {
   assert.equal(normalize('أَ'), normalize('ا'));
 });
@@ -221,6 +238,7 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /favoriteCount/);
   assert.match(home, /Show favorites only, \$\{favoriteCount\} favorites/);
   assert.match(home, /clearViewFilters/);
+  assert.match(home, /quickFavorite: \{ minWidth: 54, height: 48/);
   assert.match(home, /!categories\.some\(\(item\) => item\.id === category\)/);
   assert.match(home, /setCategory\('all'\)/);
   assert.match(home, /!categories\.some\(\(item\) => item\.id === category\)/);
@@ -268,5 +286,6 @@ test('navigation and scroll regression guards', () => {
   assert.doesNotMatch(haptics, /Vibration/);
   assert.match(read('package.json'), /"expo-haptics": "~55\.0\.18"/);
   assert.match(read('src/data/medicine-store.tsx'), /category-definitions-v1/);
+  assert.match(read('src/data/medicine-store.tsx'), /valid\.filter\(\(item\) => !current\.some/);
   assert.match(read('src/data/backup.ts'), /categories\?: Category\[\]/);
 });
