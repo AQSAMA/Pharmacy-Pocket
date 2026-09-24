@@ -13,7 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { categories: defaultCategories, mergeCategoryDefinitions, tintCategoryColor } = require('../src/data/categories.ts');
+const { categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, tintCategoryColor } = require('../src/data/categories.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -71,6 +71,8 @@ test('category definitions keep stable ids while allowing names and colors to ch
   assert.equal(customized.find(item => item.id === 'syrups').color, '#123456');
   assert.equal(customized.at(-1).id, 'custom-inhalers');
   assert.equal(tintCategoryColor('#2f856d', 0.08), '#eef5f3');
+  const legacy = ensureCategoriesForMedicines(defaultCategories, [' legacy-id ']);
+  assert.equal(legacy.find(item => item.id === ' legacy-id ').label, 'legacy-id');
 });
 
 test('custom category names and colors survive JSON backup and legacy custom sections still import', () => {
