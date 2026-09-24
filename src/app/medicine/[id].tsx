@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { actionHaptic, selectionHaptic } from '@/components/haptics';
+import { actionHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
 import { categoryById } from '@/data/categories';
 import { formatAddedDate, formatPrice, hasArabic } from '@/data/medicine';
 import { subcategoryLabel } from '@/data/medicine-query';
@@ -39,7 +39,7 @@ export default function CustomerPriceScreen() {
             accessibilityState={{ selected: Boolean(item.favorite) }}
             onPress={() => {
               selectionHaptic();
-              void favorite(item).catch(() => Alert.alert('Could not update favorite', 'Please try again.'));
+              void favorite(item).catch(() => { rejectHaptic(); Alert.alert('Could not update favorite', 'Please try again.'); });
             }}
             style={({ pressed }) => [styles.favoriteButton, item.favorite && styles.favoriteButtonActive, pressed && styles.pressed]}
           >
