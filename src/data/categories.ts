@@ -1,5 +1,7 @@
 export type Category = { id: string; label: string; arabic: string; color: string };
 
+export const MAX_CATEGORY_DEFINITIONS = 256;
+
 export const CATEGORY_COLORS = [
   '#2f856d',
   '#596aab',
@@ -92,6 +94,16 @@ export function ensureCategoriesForMedicines(source: readonly Category[], catego
   return next;
 }
 
+export function assertCategoryDefinitionLimit(definitions: readonly Category[], categoryIds: readonly string[] = []) {
+  const ids = new Set(definitions.filter((item) => item.id !== 'all').map((item) => item.id));
+  for (const rawId of categoryIds) {
+    if (rawId && rawId !== 'all') ids.add(rawId);
+  }
+  if (ids.size > MAX_CATEGORY_DEFINITIONS) {
+    throw new Error(`Pharmacy Pocket supports up to ${MAX_CATEGORY_DEFINITIONS} categories.`);
+  }
+}
+
 export function resolveCategoryImport(
   current: readonly Category[],
   incoming: readonly Category[],
@@ -105,6 +117,7 @@ export function resolveCategoryImport(
         current,
         valid.filter((item) => !current.some((existing) => existing.id === item.id)),
       );
+  assertCategoryDefinitionLimit(definitions, medicineCategoryIds);
   return ensureCategoriesForMedicines(definitions, medicineCategoryIds);
 }
 
