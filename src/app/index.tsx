@@ -166,9 +166,9 @@ export default function HomeScreen() {
         {subcategories.map((option) => <Pressable key={option.key} onPress={() => { selectionHaptic(); setSelectedSubcategoryKey(option.key); }} style={[styles.subcategoryChipButton, selectedSubcategoryKey === option.key && styles.subcategoryChipButtonActive]}><Text style={[styles.subcategoryChipText, selectedSubcategoryKey === option.key && styles.subcategoryChipTextActive]}>{option.label}</Text></Pressable>)}
       </ScrollView> : null}
       <View style={{ flexDirection: 'row', gap: 7, paddingHorizontal: 10 }}>
-        <Pressable accessibilityLabel="Previous category" onPress={() => stepCategory(-1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>‹</Text></Pressable>
+        <Pressable accessibilityLabel="Previous category" onPress={() => stepCategory(-1)} style={{ width: 48, height: 48, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>‹</Text></Pressable>
         <Pressable onPress={() => { actionHaptic(); router.push({ pathname: '/edit', params: { id: 'new', category: category === 'all' ? 'syrups' : category } }); }} style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}><Text style={styles.addButtonText}>＋ Add medicine</Text></Pressable>
-        <Pressable accessibilityLabel="Next category" onPress={() => stepCategory(1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>›</Text></Pressable>
+        <Pressable accessibilityLabel="Next category" onPress={() => stepCategory(1)} style={{ width: 48, height: 48, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>›</Text></Pressable>
       </View>
     </View>
   </View>;
@@ -206,12 +206,12 @@ const styles = StyleSheet.create({
   quickFavoriteActive: { backgroundColor: '#fff6da', borderColor: '#ead291' },
   quickFavoriteText: { color: '#73857e', fontSize: 13, fontWeight: '800' },
   quickFavoriteTextActive: { color: '#94680f' },
-  filterButton: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce5e1' },
+  filterButton: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce5e1' },
   filterButtonActive: { backgroundColor: '#103e3b', borderColor: '#103e3b' },
   filterButtonText: { color: '#315b49', fontSize: 13, fontWeight: '800' },
   filterButtonTextActive: { color: '#ffffff' },
   quickControlPressed: { opacity: 0.65 },
-  controlChip: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e0e8e4' },
+  controlChip: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e0e8e4' },
   controlChipActive: { backgroundColor: '#103e3b', borderColor: '#103e3b' },
   controlChipText: { color: '#536c62', fontSize: 13, fontWeight: '700' },
   controlChipTextActive: { color: '#ffffff' },
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   countChip: { minWidth: 34, alignItems: 'center', backgroundColor: '#eaf3ee' },
   countText: { color: '#315b49', fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   cardContainer: { marginHorizontal: 16 },
-  categoryChip: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 13, borderRadius: 13, backgroundColor: '#eff4f1' },
+  categoryChip: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 13, borderRadius: 13, backgroundColor: '#eff4f1' },
   categoryChipActive: { backgroundColor: '#103e3b' },
   categoryChipLabel: { color: '#536c62', fontSize: 15, writingDirection: 'rtl', fontWeight: '600' },
   categoryChipLabelActive: { color: '#ffffff' },
@@ -257,11 +257,11 @@ const styles = StyleSheet.create({
   categoryCountActive: { backgroundColor: 'rgba(255,255,255,0.14)' },
   categoryCountText: { color: '#667b72', fontSize: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
   categoryCountTextActive: { color: '#ffffff' },
-  subcategoryChipButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: '#f4f7f6' },
+  subcategoryChipButton: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: '#f4f7f6' },
   subcategoryChipButtonActive: { backgroundColor: '#315b49' },
   subcategoryChipText: { color: '#5d736a', fontSize: 14 },
   subcategoryChipTextActive: { color: '#ffffff', fontWeight: '700' },
-  addButton: { flex: 1, height: 46, borderRadius: 13, backgroundColor: '#dcefe1', alignItems: 'center', justifyContent: 'center' },
+  addButton: { flex: 1, height: 48, borderRadius: 13, backgroundColor: '#dcefe1', alignItems: 'center', justifyContent: 'center' },
   addButtonPressed: { backgroundColor: '#cbe5d3' },
   addButtonText: { color: '#175d3f', fontSize: 16, fontWeight: '800' },
 });
