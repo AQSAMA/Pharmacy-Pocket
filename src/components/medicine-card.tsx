@@ -31,7 +31,7 @@ function MedicineCardComponent({ item, large, currency, first, last, onFavorite 
               style={{
                 color: '#173c30',
                 fontSize: large ? 27 : 20,
-                fontWeight: '750',
+                fontWeight: '700',
                 lineHeight: large ? 37 : 28,
                 textAlign: rtl ? 'right' : 'left',
                 writingDirection: rtl ? 'rtl' : 'ltr',
@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
   priceLabel: { color: '#81928b', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   verifyLabel: { color: '#a94e36' },
   priceValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
-  officialPrice: { color: '#1c7352', fontWeight: '850', fontVariant: ['tabular-nums'] },
+  officialPrice: { color: '#1c7352', fontWeight: '800', fontVariant: ['tabular-nums'] },
   discountPrice: { color: '#a66c14', fontWeight: '800', fontVariant: ['tabular-nums'] },
   currency: { color: '#81928b', fontSize: 11, fontWeight: '700' },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
