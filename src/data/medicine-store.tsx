@@ -116,9 +116,14 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
 
   const importCategories = useCallback((incoming: Category[], mode: 'merge' | 'replace', medicines: Medicine[] = []) => {
     const valid = incoming.filter((item) => isCategory(item) && item.id !== 'all');
-    const base = mode === 'replace' ? defaultCategories : categoryItemsRef.current;
-    const merged = mergeCategoryDefinitions(base, valid);
-    const complete = ensureCategoriesForMedicines(merged, medicines.map((item) => item.category));
+    const current = categoryItemsRef.current;
+    const definitions = mode === 'replace'
+      ? mergeCategoryDefinitions(defaultCategories, valid)
+      : mergeCategoryDefinitions(
+          current,
+          valid.filter((item) => !current.some((existing) => existing.id === item.id)),
+        );
+    const complete = ensureCategoriesForMedicines(definitions, medicines.map((item) => item.category));
     updateCategories(complete);
   }, [updateCategories]);
 
