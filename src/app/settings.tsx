@@ -47,13 +47,14 @@ export default function SettingsScreen() {
     void action
       .then(() => {
         setCurrency(data.currency);
+        let categoryWarning = '';
         try {
           importCategories(data.categories, mode, data.medicines);
         } catch {
-          Alert.alert('Category appearance not restored', 'The medicines were imported, but category names and colors could not be saved.');
+          categoryWarning = '\n\nCategory names and colors could not be saved.';
         }
         confirmHaptic();
-        Alert.alert('Import complete', `${data.medicines.length} medicines and ${data.sections.length} sections were imported.`);
+        Alert.alert('Import complete', `${data.medicines.length} medicines and ${data.sections.length} sections were imported.${categoryWarning}`);
       })
       .catch((error) => {
         rejectHaptic();
@@ -151,7 +152,7 @@ export default function SettingsScreen() {
 
       <View style={styles.aboutCard}>
         <Text selectable style={styles.aboutTitle}>About your data</Text>
-        <Text selectable style={styles.aboutText}>One JSON file contains medicines, category sections, order, favorites, descriptions, and currency. Files exported by the original web app remain supported.</Text>
+        <Text selectable style={styles.aboutText}>One JSON file contains medicines, category sections, custom category names/colors, order, favorites, descriptions, and currency. Files exported by the original web app remain supported.</Text>
         <Text selectable style={styles.aboutText}>Descriptions are reference notes and are not verified clinical guidance.</Text>
       </View>
     </ScrollView>
