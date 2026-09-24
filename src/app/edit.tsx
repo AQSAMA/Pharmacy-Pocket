@@ -68,7 +68,7 @@ export default function EditMedicineScreen() {
       <View style={{ gap: 8 }}>
         <View style={{ minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <Text selectable style={{ color: '#37544a', fontWeight: '700', fontSize: 14 }}>Category</Text>
-          <Pressable accessibilityRole="button" onPress={() => { actionHaptic(); router.push('/categories'); }} style={({ pressed }) => ({ minHeight: 40, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 11, backgroundColor: pressed ? '#dceae3' : '#edf3f0' })}><Text style={{ color: '#315b49', fontSize: 12, fontWeight: '800' }}>Manage categories</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={() => { actionHaptic(); router.push('/categories'); }} style={({ pressed }) => ({ minHeight: 48, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 11, backgroundColor: pressed ? '#dceae3' : '#edf3f0' })}><Text style={{ color: '#315b49', fontSize: 12, fontWeight: '800' }}>Manage categories</Text></Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
           {categories.slice(1).map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => { selectionHaptic(); setCategory(item.id); }} style={{ paddingHorizontal: 14, minHeight: 48, justifyContent: 'center', borderRadius: 13, backgroundColor: category === item.id ? '#103e3b' : '#e7eeea' }}><Text style={{ color: category === item.id ? '#ffffff' : '#435f55', fontWeight: '700' }}>{item.arabic}</Text></Pressable>)}
