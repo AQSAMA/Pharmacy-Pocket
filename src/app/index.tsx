@@ -172,7 +172,7 @@ export default function HomeScreen() {
         </ScrollView> : null}
       </View>}
       renderItem={renderRow}
-      ListEmptyComponent={<View style={{ alignItems: 'center', padding: 48, gap: 11 }}><Text style={{ fontSize: 30 }}>{items.length ? '⌕' : '＋'}</Text><Text selectable style={{ color: '#24443a', fontSize: 18, fontWeight: '700' }}>{items.length ? 'No medicines found' : 'Your pocket is empty'}</Text><Text selectable style={{ color: '#71827a', textAlign: 'center', lineHeight: 21 }}>{items.length ? 'Try a shorter name or another category.' : 'Import your web app JSON from Settings, or add your first medicine.'}</Text>{!items.length ? <Pressable onPress={() => router.push('/settings')} style={{ backgroundColor: '#103e3b', borderRadius: 12, paddingHorizontal: 18, minHeight: 46, justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontWeight: '700' }}>Import JSON</Text></Pressable> : null}</View>}
+      ListEmptyComponent={<View style={{ alignItems: 'center', padding: 48, gap: 11 }}><Text style={{ fontSize: 30 }}>{items.length ? '⌕' : '＋'}</Text><Text selectable style={{ color: '#24443a', fontSize: 18, fontWeight: '700' }}>{items.length ? 'No medicines found' : 'Your pocket is empty'}</Text><Text selectable style={{ color: '#71827a', textAlign: 'center', lineHeight: 21 }}>{items.length ? 'Try a shorter name or another category.' : 'Import your web app JSON from Settings, or add your first medicine.'}</Text>{!items.length ? <Pressable onPress={() => router.push('/settings')} style={{ backgroundColor: '#103e3b', borderRadius: 12, paddingHorizontal: 18, minHeight: 48, justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontWeight: '700' }}>Import JSON</Text></Pressable> : null}</View>}
     />
     <View style={{ paddingBottom: Math.max(insets.bottom, 9), paddingTop: 9, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#dce5e1', gap: 7 }}>
       <ScrollView horizontal style={{ flexGrow: 0, flexShrink: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6 }}>
@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
   overviewRow: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 8 },
   resultsTitle: { color: '#24443a', fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
   resultsSubtitle: { marginTop: 2, color: '#7a8a84', fontSize: 12 },
-  quickFavorite: { minWidth: 54, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce5e1' },
+  quickFavorite: { minWidth: 54, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce5e1' },
   quickFavoriteActive: { backgroundColor: '#fff6da', borderColor: '#ead291' },
   quickFavoriteText: { color: '#73857e', fontSize: 13, fontWeight: '800' },
   quickFavoriteTextActive: { color: '#94680f' },
