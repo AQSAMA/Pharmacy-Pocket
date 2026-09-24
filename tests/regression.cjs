@@ -13,6 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
+const { categories: defaultCategories, mergeCategoryDefinitions, tintCategoryColor } = require('../src/data/categories.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -58,6 +59,36 @@ test('backup preserves Arabic, descriptions, favorites, and custom currency', ()
   const result = parseBackup(JSON.parse(JSON.stringify(createBackup([item], 'USD'))));
   assert.deepEqual(result.medicines, [item]);
   assert.equal(result.currency, 'USD');
+});
+
+test('category definitions keep stable ids while allowing names and colors to change', () => {
+  const customized = mergeCategoryDefinitions(defaultCategories, [
+    { id: 'syrups', label: 'Liquids', arabic: 'سوائل', color: '#123456' },
+    { id: 'custom-inhalers', label: 'Inhalers', arabic: 'بخاخات', color: '#3f7fb5' },
+  ]);
+  assert.equal(customized[0].id, 'all');
+  assert.equal(customized.find(item => item.id === 'syrups').label, 'Liquids');
+  assert.equal(customized.find(item => item.id === 'syrups').color, '#123456');
+  assert.equal(customized.at(-1).id, 'custom-inhalers');
+  assert.equal(tintCategoryColor('#2f856d', 0.08), '#eef5f3');
+});
+
+test('custom category names and colors survive JSON backup and legacy custom sections still import', () => {
+  const custom = { id: 'custom-inhalers', label: 'Inhalers', arabic: 'بخاخات', color: '#3f7fb5' };
+  const definitions = [...defaultCategories, custom];
+  const item = { id: 'inh', name: 'Inhaler', note: '', category: custom.id, subcategory: 'General', official: 5000, discounted: null, revision: 0 };
+  const backup = createBackup([item], 'IQD', definitions);
+  assert.ok(backup.categories.some(category => category.id === custom.id && category.color === custom.color));
+  assert.equal(backup.sections[0].categoryLabel, 'Inhalers');
+  assert.equal(backup.sections[0].color, '#3f7fb5');
+
+  const parsed = parseBackup(JSON.parse(JSON.stringify(backup)));
+  assert.ok(parsed.categories.some(category => category.id === custom.id && category.arabic === 'بخاخات'));
+
+  const legacy = JSON.parse(JSON.stringify(backup));
+  delete legacy.categories;
+  const parsedLegacy = parseBackup(legacy);
+  assert.ok(parsedLegacy.categories.some(category => category.id === custom.id));
 });
 
 test('Arabic search ignores diacritics and normalizes alef', () => {
@@ -176,6 +207,7 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /useState<MedicineSort>\('default'\)/);
   assert.match(home, /Tune/);
   assert.match(home, /categoryCounts/);
+  assert.match(home, /categoryById\(row\.item\.category, categories\)/);
   assert.match(home, /item\.category === 'all'/);
   assert.match(home, /favoriteCount/);
   assert.match(home, /Show favorites only, \$\{favoriteCount\} favorites/);
@@ -200,14 +232,23 @@ test('navigation and scroll regression guards', () => {
   const layout = read('src/app/_layout.tsx');
   assert.doesNotMatch(layout, /formSheet|sheetAllowedDetents/);
   assert.match(layout, /presentation: 'card', animation: 'none'/);
+  const categoryManager = read('src/app/categories.tsx');
+  assert.match(categoryManager, /Add category/);
+  assert.match(categoryManager, /Save category/);
+  assert.match(categoryManager, /CATEGORY_COLORS/);
+  assert.match(categoryManager, /tintCategoryColor/);
+  assert.match(read('src/app/settings.tsx'), /Manage categories/);
   const card = read('src/components/medicine-card.tsx');
   assert.match(card, /onFavorite\(item\)\.catch/);
   assert.match(card, /width: 48, height: 48/);
-  assert.match(card, /categoryById/);
+  assert.match(card, /tintCategoryColor\(category\.color/);
+  assert.doesNotMatch(card, /categoryById/);
   const haptics = read('src/components/haptics.ts');
   assert.match(haptics, /performAndroidHapticsAsync/);
   assert.match(haptics, /AndroidHaptics\.Segment_Frequent_Tick/);
   assert.match(haptics, /AndroidHaptics\.Confirm/);
   assert.doesNotMatch(haptics, /Vibration/);
   assert.match(read('package.json'), /"expo-haptics": "~55\.0\.18"/);
+  assert.match(read('src/data/medicine-store.tsx'), /category-definitions-v1/);
+  assert.match(read('src/data/backup.ts'), /categories\?: Category\[\]/);
 });
