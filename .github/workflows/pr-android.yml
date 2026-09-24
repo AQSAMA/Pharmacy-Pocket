@@ -90,5 +90,5 @@ jobs:
           echo "### Android APK ready" >> "$GITHUB_STEP_SUMMARY"
           echo "Download **pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64** from the Artifacts section of this workflow run." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Android versionCode: `$VERSION_CODE`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SHA-256: `$APK_SHA256`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Android versionCode: $VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-256: $APK_SHA256" >> "$GITHUB_STEP_SUMMARY"
