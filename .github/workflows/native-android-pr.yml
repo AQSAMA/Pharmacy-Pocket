@@ -58,14 +58,18 @@ jobs:
           version_code=$((commit_epoch / 60))
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
 
-      - name: Test and build side-by-side preview
-        run: gradle --no-daemon testPreviewDebugUnitTest assemblePreviewDebug -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
+      - name: Test preview and compile both native identities
+        run: gradle --no-daemon testPreviewDebugUnitTest assemblePreviewDebug assembleProductionDebug -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
 
       - name: Verify installable preview APK
         id: verify
         run: |
           APK="app/build/outputs/apk/preview/debug/app-preview-debug.apk"
+          PROD_APK="app/build/outputs/apk/production/debug/app-production-debug.apk"
           test -f "$APK"
+          test -f "$PROD_APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.aqsama.pharmacypocket.native'"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PROD_APK" | grep -F "package: name='com.aqsama.pharmacypocket'"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
           mkdir -p dist
