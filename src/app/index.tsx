@@ -45,13 +45,6 @@ export default function HomeScreen() {
     }
   }, [categories, category]);
 
-  useEffect(() => {
-    if (!categories.some((item) => item.id === category)) {
-      setCategory('all');
-      setSelectedSubcategoryKey(null);
-    }
-  }, [categories, category]);
-
   const filters = useMemo<MedicineFilters>(() => ({ category, subcategoryKey: selectedSubcategoryKey, favoritesOnly }), [category, favoritesOnly, selectedSubcategoryKey]);
   const visibleMedicines = useMemo(() => filterSortedMedicines(sortedIndex, filters, deferredQuery), [deferredQuery, filters, sortedIndex]);
 
