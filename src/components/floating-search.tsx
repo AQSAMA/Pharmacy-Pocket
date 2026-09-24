@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import React, { useRef } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+
+import { actionHaptic } from '@/components/haptics';
 
 type Props = {
   query: string;
@@ -7,24 +9,93 @@ type Props = {
 };
 
 export function FloatingSearch({ query, onChangeQuery }: Props) {
-  const [expanded, setExpanded] = useState(false);
   const input = useRef<TextInput>(null);
   const hasActiveQuery = Boolean(query.trim());
 
-  useEffect(() => {
-    if (expanded) requestAnimationFrame(() => input.current?.focus());
-  }, [expanded]);
-
-  const collapse = () => {
-    Keyboard.dismiss();
-    setExpanded(false);
-  };
-
-  return <View style={{ flex: expanded ? 1 : 0, minWidth: expanded ? 0 : 48, alignItems: 'stretch' }}>
-    {expanded ? <View style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, gap: 2, borderRadius: 15, borderCurve: 'continuous', backgroundColor: '#103e3b', boxShadow: '0 3px 10px rgba(18, 63, 52, 0.16)' }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Close search" onPress={collapse} hitSlop={8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#ffffff', fontSize: 22 }}>‹</Text></Pressable>
-      <TextInput ref={input} value={query} onChangeText={onChangeQuery} placeholder="Search medicines…" placeholderTextColor="rgba(255,255,255,0.72)" autoCapitalize="none" autoCorrect={false} returnKeyType="search" onSubmitEditing={collapse} style={{ flex: 1, color: '#ffffff', fontSize: 16, paddingVertical: 0 }} />
-      {query ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search text" onPress={() => { onChangeQuery(''); input.current?.focus(); }} hitSlop={8} style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}><Text style={{ color: '#ffffff', fontSize: 18 }}>×</Text></Pressable> : null}
-    </View> : <Pressable accessibilityRole="button" accessibilityLabel={hasActiveQuery ? "Search medicines, filter active" : "Search medicines"} onPress={() => setExpanded(true)} style={({ pressed }) => ({ width: 48, height: 48, borderRadius: 15, borderCurve: 'continuous', backgroundColor: hasActiveQuery ? '#176455' : pressed ? '#315b49' : '#103e3b', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(18, 63, 52, 0.14)' })}><Text style={{ color: '#ffffff', fontSize: 23 }}>⌕</Text></Pressable>}
-  </View>;
+  return (
+    <View style={[styles.container, hasActiveQuery && styles.containerActive]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Focus medicine search"
+        hitSlop={6}
+        onPress={() => {
+          actionHaptic();
+          input.current?.focus();
+        }}
+        style={styles.searchIcon}
+      >
+        <Text style={styles.searchGlyph}>⌕</Text>
+      </Pressable>
+      <TextInput
+        ref={input}
+        value={query}
+        onChangeText={onChangeQuery}
+        placeholder="Search medicines…"
+        placeholderTextColor="#84958e"
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="search"
+        clearButtonMode="never"
+        style={styles.input}
+      />
+      {query ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear search text"
+          onPress={() => {
+            actionHaptic();
+            onChangeQuery('');
+            input.current?.focus();
+          }}
+          hitSlop={6}
+          style={({ pressed }) => [styles.clearButton, pressed && styles.clearPressed]}
+        >
+          <Text style={styles.clearGlyph}>×</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: '#d7e3dd',
+    backgroundColor: '#ffffff',
+  },
+  containerActive: {
+    borderColor: '#7da997',
+    backgroundColor: '#fbfdfc',
+  },
+  searchIcon: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchGlyph: { color: '#315b49', fontSize: 23 },
+  input: {
+    flex: 1,
+    minWidth: 0,
+    color: '#173c30',
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+  clearButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef4f1',
+  },
+  clearPressed: { backgroundColor: '#dfeae5' },
+  clearGlyph: { color: '#536c62', fontSize: 20, fontWeight: '700' },
+});
