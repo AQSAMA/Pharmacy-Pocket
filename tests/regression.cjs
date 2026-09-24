@@ -13,7 +13,7 @@ require.extensions['.ts'] = (module, filename) => {
 };
 const { createSerialQueue } = require('../src/data/serial-queue.ts');
 const { createBackup, parseBackup } = require('../src/data/backup.ts');
-const { categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, tintCategoryColor } = require('../src/data/categories.ts');
+const { categories: defaultCategories, ensureCategoriesForMedicines, mergeCategoryDefinitions, resolveCategoryImport, tintCategoryColor } = require('../src/data/categories.ts');
 const { compareMedicines, normalize, isMedicine, resolveCreatedAt, formatAddedDate } = require('../src/data/medicine.ts');
 const { buildMedicineSearchIndex, filterAndSortMedicines, filterSortedMedicines, listSubcategories, sortMedicineSearchIndex, subcategoryKey } = require('../src/data/medicine-query.ts');
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
@@ -108,17 +108,23 @@ test('backup rejects duplicate category metadata', () => {
   assert.throws(() => parseBackup(duplicate), /Duplicate category ID/);
 });
 
-test('projected category limit counts medicine category ids not present in metadata', () => {
-  const definitions = Array.from({ length: MAX_CATEGORY_DEFINITIONS }, (_, index) => ({
-    id: `definition-${index}`,
-    label: `Definition ${index}`,
-    arabic: `Definition ${index}`,
-    color: '#3f7fb5',
-  }));
-  assert.throws(
-    () => assertCategoryDefinitionLimit(definitions, ['medicine-only-category']),
-    /supports up to/,
-  );
+test('category import merge preserves local styles while replace restores incoming styles', () => {
+  const local = mergeCategoryDefinitions(defaultCategories, [
+    { id: 'syrups', label: 'Local liquids', arabic: 'محلي', color: '#123456' },
+  ]);
+  const incoming = [
+    { id: 'syrups', label: 'Imported liquids', arabic: 'مستورد', color: '#654321' },
+    { id: 'custom-imported', label: 'Imported custom', arabic: 'خاص', color: '#3f7fb5' },
+  ];
+
+  const merged = resolveCategoryImport(local, incoming, 'merge', ['custom-imported']);
+  assert.equal(merged.find(item => item.id === 'syrups').label, 'Local liquids');
+  assert.equal(merged.find(item => item.id === 'syrups').color, '#123456');
+  assert.equal(merged.find(item => item.id === 'custom-imported').label, 'Imported custom');
+
+  const replaced = resolveCategoryImport(local, incoming, 'replace', ['custom-imported']);
+  assert.equal(replaced.find(item => item.id === 'syrups').label, 'Imported liquids');
+  assert.equal(replaced.find(item => item.id === 'syrups').color, '#654321');
 });
 
 test('Arabic search ignores diacritics and normalizes alef', () => {
@@ -289,6 +295,6 @@ test('navigation and scroll regression guards', () => {
   assert.doesNotMatch(haptics, /Vibration/);
   assert.match(read('package.json'), /"expo-haptics": "~55\.0\.18"/);
   assert.match(read('src/data/medicine-store.tsx'), /category-definitions-v1/);
-  assert.match(read('src/data/medicine-store.tsx'), /valid\.filter\(\(item\) => !current\.some/);
+  assert.match(read('src/data/medicine-store.tsx'), /resolveCategoryImport/);
   assert.match(read('src/data/backup.ts'), /categories\?: Category\[\]/);
 });
