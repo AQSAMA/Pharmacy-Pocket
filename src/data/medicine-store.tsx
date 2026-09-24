@@ -4,7 +4,6 @@ import React, { createContext, use, useCallback, useEffect, useMemo, useRef, use
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
 import {
-  MAX_CATEGORY_DEFINITIONS,
   categories as defaultCategories,
   ensureCategoriesForMedicines,
   isCategory,
@@ -112,10 +111,6 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
   const saveCategory = useCallback((category: Category) => {
     if (!isCategory(category) || category.id === 'all') throw new Error('Category details are invalid.');
     const current = categoryItemsRef.current;
-    const exists = current.some((item) => item.id === category.id);
-    if (!exists && current.length - 1 >= MAX_CATEGORY_DEFINITIONS) {
-      throw new Error(`You can store up to ${MAX_CATEGORY_DEFINITIONS} categories.`);
-    }
     const next = mergeCategoryDefinitions(current, [category]);
     updateCategories(next);
   }, [updateCategories]);
