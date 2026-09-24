@@ -240,6 +240,8 @@ test('navigation and scroll regression guards', () => {
   assert.doesNotMatch(search, /suggestions/);
   assert.match(search, /Boolean\(query\.trim\(\)\)/);
   assert.match(search, /minHeight: 50/);
+  assert.equal((search.match(/width: 48/g) || []).length >= 2, true);
+  assert.match(home, /quickFavorite: \{ minWidth: 54, height: 48/);
   assert.match(search, /Search medicines/);
   const layout = read('src/app/_layout.tsx');
   assert.doesNotMatch(layout, /formSheet|sheetAllowedDetents/);
