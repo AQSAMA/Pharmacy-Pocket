@@ -3,10 +3,17 @@ name: Native Android PR
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/native-android-pr.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: native-android-pr-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -15,10 +22,13 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: native-android
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -33,10 +43,8 @@ jobs:
         with:
           packages: platform-tools
 
-
       - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+        run: yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
@@ -45,33 +53,27 @@ jobs:
 
       - name: Compute Android version code
         id: version
-        shell: bash
         run: |
           commit_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
           version_code=$((commit_epoch / 60))
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests and build APK
-        env:
-          VERSION_CODE: ${{ steps.version.outputs.version_code }}
-        run: |
-          gradle --no-daemon test assembleDebug -PversionCode="$VERSION_CODE" --stacktrace
+      - name: Test and build side-by-side preview
+        run: gradle --no-daemon testPreviewDebugUnitTest assemblePreviewDebug -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
 
-      - name: Verify installable APK
+      - name: Verify installable preview APK
         id: verify
-        shell: bash
         run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APK="app/build/outputs/apk/preview/debug/app-preview-debug.apk"
           test -f "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
           mkdir -p dist
           OUT="dist/pharmacy-pocket-native-pr-${{ github.event.pull_request.number || github.run_number }}.apk"
           cp "$APK" "$OUT"
-          sha256sum "$OUT"
-          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
+          echo "apk=native-android/$OUT" >> "$GITHUB_OUTPUT"
 
-      - name: Upload native APK
+      - name: Upload native preview APK
         uses: actions/upload-artifact@v4
         with:
           name: pharmacy-pocket-native-pr-${{ github.event.pull_request.number || github.run_number }}

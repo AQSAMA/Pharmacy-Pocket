@@ -1,11 +1,35 @@
-*.iml
-.gradle/
-.idea/
-local.properties
+# Shared
 .DS_Store
-build/
+*.orig.*
+.env*.local
+dist/
+
+# Expo / React Native
+node_modules/
+.expo/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.tsbuildinfo
+legacy-expo/android/
+legacy-expo/ios/
+legacy-expo/app-example/
+
+# Android / Gradle
+.gradle/
 **/build/
+local.properties
+*.iml
+.idea/
+.kotlin/
 captures/
 .externalNativeBuild/
 .cxx/
-dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision

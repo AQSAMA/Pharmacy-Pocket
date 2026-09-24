@@ -16,14 +16,25 @@ android {
         versionName = "3.0.0-native"
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("preview") {
+            dimension = "distribution"
+            applicationIdSuffix = ".native"
+            versionNameSuffix = "-preview"
+            resValue("string", "app_name", "Pharmacy Pocket Native")
+        }
+        create("production") {
+            dimension = "distribution"
+            resValue("string", "app_name", "Pharmacy Pocket")
+        }
+    }
+
     buildFeatures {
         compose = true
     }
 
     buildTypes {
-        debug {
-            applicationIdSuffix = ""
-        }
         release {
             isMinifyEnabled = false
             // GitHub prereleases are test builds. Public distribution should use a private release key.
@@ -55,6 +66,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.12.1")
-
     testImplementation("junit:junit:4.13.2")
 }

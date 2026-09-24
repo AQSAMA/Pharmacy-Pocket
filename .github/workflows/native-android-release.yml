@@ -3,6 +3,9 @@ name: Native Android Prerelease
 on:
   push:
     branches: [main]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/native-android-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -15,10 +18,13 @@ jobs:
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: native-android
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -33,10 +39,8 @@ jobs:
         with:
           packages: platform-tools
 
-
       - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+        run: yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
@@ -45,33 +49,26 @@ jobs:
 
       - name: Compute Android version code
         id: version
-        shell: bash
         run: |
           commit_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
           version_code=$((commit_epoch / 60))
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
-          echo "tag=native-${version_code}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "tag=native-preview-${version_code}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests and build APK
-        env:
-          VERSION_CODE: ${{ steps.version.outputs.version_code }}
-        run: |
-          gradle --no-daemon test assembleRelease -PversionCode="$VERSION_CODE" --stacktrace
+      - name: Test and build side-by-side preview
+        run: gradle --no-daemon testPreviewReleaseUnitTest assemblePreviewRelease -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
 
-      - name: Verify installable APK
+      - name: Verify installable preview APK
         id: verify
-        shell: bash
         run: |
-          APK="app/build/outputs/apk/release/app-release.apk"
+          APK="app/build/outputs/apk/preview/release/app-preview-release.apk"
           test -f "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
           mkdir -p dist
-          OUT="dist/Pharmacy-Pocket-native-${{ steps.version.outputs.version_code }}.apk"
+          OUT="dist/Pharmacy-Pocket-Native-${{ steps.version.outputs.version_code }}.apk"
           cp "$APK" "$OUT"
-          SHA=$(sha256sum "$OUT" | awk '{print $1}')
-          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
-          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "apk=native-android/$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -81,7 +78,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish GitHub prerelease
+      - name: Publish native preview prerelease
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
@@ -90,12 +87,3 @@ jobs:
           fail_on_unmatched_files: true
           generate_release_notes: true
           files: ${{ steps.verify.outputs.apk }}
-
-      - name: Add release summary
-        env:
-          APK_SHA256: ${{ steps.verify.outputs.sha256 }}
-          VERSION_CODE: ${{ steps.version.outputs.version_code }}
-        run: |
-          echo "### Native Android prerelease published" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Android versionCode: $VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SHA-256: $APK_SHA256" >> "$GITHUB_STEP_SUMMARY"
