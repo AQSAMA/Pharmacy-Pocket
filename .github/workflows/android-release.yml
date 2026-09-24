@@ -112,5 +112,5 @@ jobs:
           echo "### Android prerelease published" >> "$GITHUB_STEP_SUMMARY"
           echo "[Download the standalone APK]($RELEASE_URL)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Android versionCode: `$VERSION_CODE`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SHA-256: `$APK_SHA256`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Android versionCode: $VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA-256: $APK_SHA256" >> "$GITHUB_STEP_SUMMARY"
