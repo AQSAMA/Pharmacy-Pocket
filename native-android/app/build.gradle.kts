@@ -16,6 +16,16 @@ android {
         versionName = "3.0.0-native"
     }
 
+    signingConfigs {
+        create("preview") {
+            // Intentionally public test key. Never use this identity for production.
+            storeFile = rootProject.file("signing/preview.jks")
+            storePassword = "pharmacy-pocket-preview"
+            keyAlias = "preview"
+            keyPassword = "pharmacy-pocket-preview"
+        }
+    }
+
     flavorDimensions += "distribution"
     productFlavors {
         create("preview") {
@@ -23,6 +33,7 @@ android {
             applicationIdSuffix = ".native"
             versionNameSuffix = "-preview"
             resValue("string", "app_name", "Pharmacy Pocket Native")
+            signingConfig = signingConfigs.getByName("preview")
         }
         create("production") {
             dimension = "distribution"
@@ -38,8 +49,6 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            // GitHub prereleases are test builds. Public distribution should use a private release key.
-            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
