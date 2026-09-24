@@ -54,13 +54,11 @@ export function mergeCategoryDefinitions(base: readonly Category[], incoming: re
   for (const item of base) byId.set(item.id, { ...item });
   for (const item of incoming) {
     if (!isCategory(item) || item.id === 'all') continue;
-    const existing = byId.get(item.id);
     byId.set(item.id, {
       id: item.id,
       label: item.label.trim(),
       arabic: item.arabic.trim(),
       color: item.color.toLowerCase(),
-      ...(existing ? {} : {}),
     });
   }
 
