@@ -105,22 +105,7 @@ export function resolveCategoryImport(
         current,
         valid.filter((item) => !current.some((existing) => existing.id === item.id)),
       );
-  const complete = ensureCategoriesForMedicines(definitions, medicineCategoryIds);
-  const count = complete.reduce((total, item) => total + Number(item.id !== 'all'), 0);
-  if (count > MAX_CATEGORY_DEFINITIONS) {
-    throw new Error(`This import would create ${count} categories. Pharmacy Pocket supports up to ${MAX_CATEGORY_DEFINITIONS}.`);
-  }
-  return complete;
-}
-
-export function assertCategoryDefinitionLimit(definitions: readonly Category[], categoryIds: readonly string[] = []) {
-  const ids = new Set(definitions.filter((item) => item.id !== 'all').map((item) => item.id));
-  for (const rawId of categoryIds) {
-    if (rawId && rawId !== 'all') ids.add(rawId);
-  }
-  if (ids.size > MAX_CATEGORY_DEFINITIONS) {
-    throw new Error(`Pharmacy Pocket supports up to ${MAX_CATEGORY_DEFINITIONS} categories.`);
-  }
+  return ensureCategoriesForMedicines(definitions, medicineCategoryIds);
 }
 
 export function tintCategoryColor(color: string, strength = 0.08) {
