@@ -185,6 +185,10 @@ export function parseBackup(value: unknown): ParsedBackup {
     categoryIds.add(category.id);
   }
   const parsedCategories = suppliedCategories.filter((item) => item.id !== 'all' && isCategory(item));
+  assertCategoryDefinitionLimit(
+    mergeCategoryDefinitions(defaultCategories, parsedCategories),
+    medicines.map((item) => item.category),
+  );
 
   const sourceVersion = Number.isInteger(data.version) ? Number(data.version) : 1;
   if (sourceVersion < 1 || sourceVersion > BACKUP_VERSION) {
