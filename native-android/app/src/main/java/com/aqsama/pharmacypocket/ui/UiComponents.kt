@@ -122,8 +122,9 @@ fun MedicineCard(
             .fillMaxWidth()
             .clip(shape)
             .clickable(onClick = onOpen),
-        color = tintCategoryColor(category.color, 0.075f),
+        color = tintCategoryColor(category.color, 0.09f),
         shape = shape,
+        border = BorderStroke(0.5.dp, colorFromHex(category.color).copy(alpha = 0.20f)),
     ) {
         Column(
             Modifier
@@ -134,28 +135,29 @@ fun MedicineCard(
                         size = Size(4.dp.toPx(), size.height),
                     )
                 }
-                .padding(start = 17.dp, end = 10.dp, top = 13.dp, bottom = 13.dp),
+                .padding(horizontal = 13.dp, vertical = 13.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = item.name,
-                            maxLines = 2,
-                            color = Color(0xFF173C30),
-                            fontSize = if (large) 27.sp else 20.sp,
-                            lineHeight = if (large) 36.sp else 27.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = if (hasArabic(item.name)) TextAlign.End else TextAlign.Start,
-                            style = TextStyle(textDirection = if (hasArabic(item.name)) TextDirection.Rtl else TextDirection.Ltr),
-                        )
-                        if (!large && item.note.isNotBlank()) {
-                            Text(item.note, color = Color(0xFF71827A), fontSize = 13.sp, lineHeight = 19.sp, maxLines = 2)
-                        }
-                    }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     TextButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
                         Text("✎", fontSize = 19.sp, color = Color(0xFF55746A))
                     }
+                    Text(
+                        text = item.name,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                        maxLines = 2,
+                        color = Color(0xFF173C30),
+                        fontSize = if (large) 27.sp else 20.sp,
+                        lineHeight = if (large) 36.sp else 27.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        style = TextStyle(textDirection = TextDirection.Content),
+                    )
                     TextButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
                         Text(
                             if (item.favorite) "★" else "☆",
@@ -163,6 +165,19 @@ fun MedicineCard(
                             color = if (item.favorite) Color(0xFFA87311) else Color(0xFF70867E),
                         )
                     }
+                }
+
+                if (!large && item.note.isNotBlank()) {
+                    Text(
+                        text = item.note,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFF71827A),
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                        maxLines = 2,
+                        textAlign = if (hasArabic(item.note)) TextAlign.End else TextAlign.Start,
+                        style = TextStyle(textDirection = TextDirection.Content),
+                    )
                 }
 
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
