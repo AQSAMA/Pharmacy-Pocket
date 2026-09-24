@@ -259,6 +259,17 @@ test('switching subcategories preserves the selected global sort without rebuild
   assert.deepEqual(index.map(entry => entry.item.id), ['z', 'a', 'm']);
 });
 
+test('Android CI uses monotonic version codes and verifies APK installability before upload', () => {
+  for (const workflowPath of ['.github/workflows/android-release.yml', '.github/workflows/pr-android.yml']) {
+    const workflow = read(workflowPath);
+    assert.match(workflow, /commit_epoch=\$\(git show -s --format=%ct "\$GITHUB_SHA"\)/);
+    assert.match(workflow, /version_code=\$\(\(commit_epoch \/ 60\)\)/);
+    assert.match(workflow, /apksigner" verify --verbose --print-certs/);
+    assert.match(workflow, /zipalign" -c -P 16 -v 4/);
+    assert.ok(workflow.indexOf('Verify installable APK') < workflow.indexOf('Upload'));
+  }
+});
+
 test('navigation and scroll regression guards', () => {
   const home = read('src/app/index.tsx');
   assert.match(home, /<FlatList/);
