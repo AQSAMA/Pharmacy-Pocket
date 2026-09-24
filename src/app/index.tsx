@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, V
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FloatingSearch } from '@/components/floating-search';
+import { actionHaptic, selectionHaptic } from '@/components/haptics';
 import { MedicineCard } from '@/components/medicine-card';
 import { categories, categoryById } from '@/data/categories';
 import { medicineSortOptions, type Medicine, type MedicineSort } from '@/data/medicine';
@@ -61,15 +62,32 @@ export default function HomeScreen() {
   }, [visibleMedicines]);
 
   const visibleCount = visibleMedicines.length;
-  const activeControlCount = Number(favoritesOnly) + Number(sort !== 'default');
+  const favoriteCount = useMemo(() => items.reduce((count, item) => count + Number(Boolean(item.favorite)), 0), [items]);
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    counts.set('all', items.length);
+    for (const item of items) counts.set(item.category, (counts.get(item.category) ?? 0) + 1);
+    return counts;
+  }, [items]);
+  const activeControlCount = Number(favoritesOnly) + Number(sort !== 'default') + Number(category !== 'all') + Number(selectedSubcategoryKey !== null) + Number(Boolean(query.trim()));
   const stepCategory = useCallback((direction: number) => {
+    selectionHaptic();
     const current = categories.findIndex((item) => item.id === category);
     setCategory(categories[(current + direction + categories.length) % categories.length].id);
     setSelectedSubcategoryKey(null);
   }, [category]);
   const selectCategory = useCallback((next: string) => {
+    selectionHaptic();
     setCategory(next);
     setSelectedSubcategoryKey(null);
+  }, []);
+  const clearViewFilters = useCallback(() => {
+    actionHaptic();
+    setQuery('');
+    setCategory('all');
+    setSelectedSubcategoryKey(null);
+    setFavoritesOnly(false);
+    setSort('default');
   }, []);
   const rows = useMemo<ListRow[]>(() => sections.flatMap((section) => [
     { key: 'header:' + section.key, kind: 'header' as const, section },
@@ -103,7 +121,7 @@ export default function HomeScreen() {
   return <View style={[styles.screen, { paddingTop: insets.top }]}>
     <View style={styles.searchDock}>
       <View style={styles.searchToolbar}>
-        <Pressable accessibilityLabel="Settings" onPress={() => router.push('/settings')} style={({ pressed }) => [styles.settingsButton, { backgroundColor: pressed ? '#dceae3' : '#ffffff' }]}><Text style={{ color: '#587067', fontSize: 22 }}>•••</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={() => { actionHaptic(); router.push('/settings'); }} style={({ pressed }) => [styles.settingsButton, pressed && styles.settingsButtonPressed]}><Text style={styles.settingsGlyph}>⚙</Text></Pressable>
         <FloatingSearch query={query} onChangeQuery={setQuery} />
       </View>
     </View>
@@ -122,15 +140,18 @@ export default function HomeScreen() {
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={{ paddingBottom: 16 }}
       ListHeaderComponent={<View style={styles.listHeader}>
-        <View style={{ minHeight: 40, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-          <Text style={{ color: '#71827a', fontSize: 13, fontVariant: ['tabular-nums'] }}>{visibleCount} medicines</Text>
-          <Pressable accessibilityRole="button" accessibilityState={{ expanded: controlsOpen }} onPress={() => setControlsOpen((value) => !value)} style={({ pressed }) => ({ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: controlsOpen ? '#103e3b' : pressed ? '#e5eee9' : '#ffffff' })}><Text style={{ color: controlsOpen ? '#ffffff' : '#315b49', fontSize: 13, fontWeight: '700' }}>{'Filters & sort' + (activeControlCount ? ' · ' + activeControlCount : '')}</Text></Pressable>
+        <View style={styles.overviewRow}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.resultsTitle}>{visibleCount === items.length ? `${visibleCount} medicines` : `${visibleCount} of ${items.length} medicines`}</Text>
+            <Text numberOfLines={1} style={styles.resultsSubtitle}>{category === 'all' ? 'All categories' : categoryById(category).label}{selectedSubcategoryKey ? ' · filtered subcategory' : ''}</Text>
+          </View>
+          <Pressable accessibilityRole="togglebutton" accessibilityLabel="Show favorites only" accessibilityState={{ checked: favoritesOnly }} onPress={() => { selectionHaptic(); setFavoritesOnly((value) => !value); }} style={({ pressed }) => [styles.quickFavorite, favoritesOnly && styles.quickFavoriteActive, pressed && styles.quickControlPressed]}><Text style={[styles.quickFavoriteText, favoritesOnly && styles.quickFavoriteTextActive]}>★ {favoriteCount}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded: controlsOpen }} onPress={() => { actionHaptic(); setControlsOpen((value) => !value); }} style={({ pressed }) => [styles.filterButton, controlsOpen && styles.filterButtonActive, pressed && !controlsOpen && styles.quickControlPressed]}><Text style={[styles.filterButtonText, controlsOpen && styles.filterButtonTextActive]}>{'Tune' + (activeControlCount ? ' · ' + activeControlCount : '')}</Text></Pressable>
         </View>
         {controlsOpen ? <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 6, paddingBottom: 2 }}>
-          <Pressable accessibilityRole="togglebutton" accessibilityState={{ checked: favoritesOnly }} onPress={() => setFavoritesOnly((value) => !value)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: favoritesOnly ? '#dceee4' : '#ffffff' }}><Text style={{ color: '#315b49', fontSize: 13, fontWeight: '700' }}>☆ Favorites</Text></Pressable>
-          <Pressable accessibilityRole="togglebutton" accessibilityState={{ checked: largeText }} onPress={() => setLargeText(!largeText)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: largeText ? '#dceee4' : '#ffffff' }}><Text style={{ color: '#315b49', fontSize: 13, fontWeight: '700' }}>T Large</Text></Pressable>
-          {medicineSortOptions.map((option) => <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected: sort === option.id }} onPress={() => setSort(option.id)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: sort === option.id ? '#103e3b' : '#ffffff' }}><Text style={{ color: sort === option.id ? '#ffffff' : '#536c62', fontSize: 13, fontWeight: '700' }}>{option.label}</Text></Pressable>)}
-          {activeControlCount ? <Pressable accessibilityRole="button" onPress={() => { setFavoritesOnly(false); setSort('default'); }} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 10, backgroundColor: '#f0e9e3' }}><Text style={{ color: '#795f4c', fontSize: 13, fontWeight: '700' }}>Reset</Text></Pressable> : null}
+          <Pressable accessibilityRole="togglebutton" accessibilityState={{ checked: largeText }} onPress={() => { selectionHaptic(); setLargeText(!largeText); }} style={styles.controlChip}><Text style={styles.controlChipText}>{largeText ? 'T Large ✓' : 'T Large'}</Text></Pressable>
+          {medicineSortOptions.map((option) => <Pressable key={option.id} accessibilityRole="button" accessibilityState={{ selected: sort === option.id }} onPress={() => { selectionHaptic(); setSort(option.id); }} style={[styles.controlChip, sort === option.id && styles.controlChipActive]}><Text style={[styles.controlChipText, sort === option.id && styles.controlChipTextActive]}>{option.label}</Text></Pressable>)}
+          {activeControlCount ? <Pressable accessibilityRole="button" onPress={clearViewFilters} style={[styles.controlChip, styles.resetChip]}><Text style={styles.resetChipText}>Clear view</Text></Pressable> : null}
         </ScrollView> : null}
       </View>}
       renderItem={renderRow}
@@ -138,15 +159,15 @@ export default function HomeScreen() {
     />
     <View style={{ paddingBottom: Math.max(insets.bottom, 9), paddingTop: 9, backgroundColor: '#ffffff', borderTopWidth: 1, borderTopColor: '#dce5e1', gap: 7 }}>
       <ScrollView horizontal style={{ flexGrow: 0, flexShrink: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6 }}>
-        {categories.map((item) => <Pressable key={item.id} onPress={() => selectCategory(item.id)} style={{ minHeight: 42, justifyContent: 'center', paddingHorizontal: 15, borderRadius: 11, backgroundColor: category === item.id ? '#103e3b' : '#eff4f1' }}><Text style={{ color: category === item.id ? '#ffffff' : '#536c62', fontSize: 16, writingDirection: 'rtl' }}>{item.arabic}</Text></Pressable>)}
+        {categories.map((item) => <Pressable key={item.id} accessibilityRole="button" accessibilityState={{ selected: category === item.id }} onPress={() => selectCategory(item.id)} style={[styles.categoryChip, category === item.id && styles.categoryChipActive]}><Text style={[styles.categoryChipLabel, category === item.id && styles.categoryChipLabelActive]}>{item.arabic}</Text><View style={[styles.categoryCount, category === item.id && styles.categoryCountActive]}><Text style={[styles.categoryCountText, category === item.id && styles.categoryCountTextActive]}>{categoryCounts.get(item.id) ?? 0}</Text></View></Pressable>)}
       </ScrollView>
       {subcategories.length ? <ScrollView horizontal style={{ flexGrow: 0, flexShrink: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10, gap: 6 }}>
-        <Pressable onPress={() => setSelectedSubcategoryKey(null)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 10, backgroundColor: selectedSubcategoryKey === null ? '#315b49' : '#f4f7f6' }}><Text style={{ color: selectedSubcategoryKey === null ? '#ffffff' : '#5d736a', fontSize: 14 }}>All subcategories</Text></Pressable>
-        {subcategories.map((option) => <Pressable key={option.key} onPress={() => setSelectedSubcategoryKey(option.key)} style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 10, backgroundColor: selectedSubcategoryKey === option.key ? '#315b49' : '#f4f7f6' }}><Text style={{ color: selectedSubcategoryKey === option.key ? '#ffffff' : '#5d736a', fontSize: 14 }}>{option.label}</Text></Pressable>)}
+        <Pressable onPress={() => { selectionHaptic(); setSelectedSubcategoryKey(null); }} style={[styles.subcategoryChipButton, selectedSubcategoryKey === null && styles.subcategoryChipButtonActive]}><Text style={[styles.subcategoryChipText, selectedSubcategoryKey === null && styles.subcategoryChipTextActive]}>All subcategories</Text></Pressable>
+        {subcategories.map((option) => <Pressable key={option.key} onPress={() => { selectionHaptic(); setSelectedSubcategoryKey(option.key); }} style={[styles.subcategoryChipButton, selectedSubcategoryKey === option.key && styles.subcategoryChipButtonActive]}><Text style={[styles.subcategoryChipText, selectedSubcategoryKey === option.key && styles.subcategoryChipTextActive]}>{option.label}</Text></Pressable>)}
       </ScrollView> : null}
       <View style={{ flexDirection: 'row', gap: 7, paddingHorizontal: 10 }}>
         <Pressable accessibilityLabel="Previous category" onPress={() => stepCategory(-1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>‹</Text></Pressable>
-        <Pressable onPress={() => router.push({ pathname: '/edit', params: { id: 'new', category: category === 'all' ? 'syrups' : category } })} style={{ flex: 1, height: 44, borderRadius: 11, backgroundColor: '#dcefe1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#175d3f', fontSize: 16, fontWeight: '700' }}>＋ Add medicine</Text></Pressable>
+        <Pressable onPress={() => { actionHaptic(); router.push({ pathname: '/edit', params: { id: 'new', category: category === 'all' ? 'syrups' : category } }); }} style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}><Text style={styles.addButtonText}>＋ Add medicine</Text></Pressable>
         <Pressable accessibilityLabel="Next category" onPress={() => stepCategory(1)} style={{ width: 46, height: 44, borderRadius: 11, backgroundColor: '#eff4f1', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#315b49', fontSize: 22 }}>›</Text></Pressable>
       </View>
     </View>
@@ -165,14 +186,37 @@ const styles = StyleSheet.create({
   },
   searchToolbar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8 },
   settingsButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
+    width: 50,
+    height: 50,
+    borderRadius: 16,
     borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d7e3dd',
   },
-  listHeader: { paddingTop: 6, paddingHorizontal: 16, gap: 8 },
+  settingsButtonPressed: { backgroundColor: '#e6efeb' },
+  settingsGlyph: { color: '#315b49', fontSize: 20 },
+  listHeader: { paddingTop: 8, paddingHorizontal: 16, gap: 9 },
+  overviewRow: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  resultsTitle: { color: '#24443a', fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  resultsSubtitle: { marginTop: 2, color: '#7a8a84', fontSize: 12 },
+  quickFavorite: { minWidth: 54, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce5e1' },
+  quickFavoriteActive: { backgroundColor: '#fff6da', borderColor: '#ead291' },
+  quickFavoriteText: { color: '#73857e', fontSize: 13, fontWeight: '800' },
+  quickFavoriteTextActive: { color: '#94680f' },
+  filterButton: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 14, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce5e1' },
+  filterButtonActive: { backgroundColor: '#103e3b', borderColor: '#103e3b' },
+  filterButtonText: { color: '#315b49', fontSize: 13, fontWeight: '800' },
+  filterButtonTextActive: { color: '#ffffff' },
+  quickControlPressed: { opacity: 0.65 },
+  controlChip: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 12, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e0e8e4' },
+  controlChipActive: { backgroundColor: '#103e3b', borderColor: '#103e3b' },
+  controlChipText: { color: '#536c62', fontSize: 13, fontWeight: '700' },
+  controlChipTextActive: { color: '#ffffff' },
+  resetChip: { backgroundColor: '#f4ece6', borderColor: '#ead9cd' },
+  resetChipText: { color: '#795f4c', fontSize: 13, fontWeight: '800' },
   sectionHeader: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 9 },
   breadcrumbRow: {
     minHeight: 30,
@@ -205,4 +249,19 @@ const styles = StyleSheet.create({
   countChip: { minWidth: 34, alignItems: 'center', backgroundColor: '#eaf3ee' },
   countText: { color: '#315b49', fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
   cardContainer: { marginHorizontal: 16 },
+  categoryChip: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 13, borderRadius: 13, backgroundColor: '#eff4f1' },
+  categoryChipActive: { backgroundColor: '#103e3b' },
+  categoryChipLabel: { color: '#536c62', fontSize: 15, writingDirection: 'rtl', fontWeight: '650' },
+  categoryChipLabelActive: { color: '#ffffff' },
+  categoryCount: { minWidth: 24, height: 24, paddingHorizontal: 6, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' },
+  categoryCountActive: { backgroundColor: 'rgba(255,255,255,0.14)' },
+  categoryCountText: { color: '#667b72', fontSize: 11, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  categoryCountTextActive: { color: '#ffffff' },
+  subcategoryChipButton: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 13, borderRadius: 11, backgroundColor: '#f4f7f6' },
+  subcategoryChipButtonActive: { backgroundColor: '#315b49' },
+  subcategoryChipText: { color: '#5d736a', fontSize: 14 },
+  subcategoryChipTextActive: { color: '#ffffff', fontWeight: '700' },
+  addButton: { flex: 1, height: 46, borderRadius: 13, backgroundColor: '#dcefe1', alignItems: 'center', justifyContent: 'center' },
+  addButtonPressed: { backgroundColor: '#cbe5d3' },
+  addButtonText: { color: '#175d3f', fontSize: 16, fontWeight: '800' },
 });
