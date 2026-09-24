@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import React, { memo } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { actionHaptic, selectionHaptic } from '@/components/haptics';
+import { actionHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
 import { categoryById } from '@/data/categories';
 import { formatAddedDate, formatPrice, hasArabic, type Medicine } from '@/data/medicine';
 
@@ -61,7 +61,7 @@ function MedicineCardComponent({ item, large, currency, first, last, onFavorite 
               onPress={(event) => {
                 event.stopPropagation();
                 selectionHaptic();
-                void onFavorite(item).catch(() => Alert.alert('Could not update favorite', 'Your saved medicines are unchanged. Please try again.'));
+                void onFavorite(item).catch(() => { rejectHaptic(); Alert.alert('Could not update favorite', 'Your saved medicines are unchanged. Please try again.'); });
               }}
               style={({ pressed }) => [styles.iconButton, item.favorite && styles.favoriteButton, pressed && styles.iconPressed]}
             >
