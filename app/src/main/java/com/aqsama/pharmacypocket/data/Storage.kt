@@ -167,7 +167,7 @@ private class MedicineDatabase(context: Context) {
             if (cursor.moveToFirst()) cursor.getInt(0) != 0 else return null
         }
         val next = !current
-        db.execSQL("UPDATE medicines SET favorite = ? WHERE id = ?", arrayOf(if (next) 1 else 0, id))
+        db.execSQL("UPDATE medicines SET favorite = ? WHERE id = ?", arrayOf<Any>(if (next) 1 else 0, id))
         return next
     }
 
