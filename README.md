@@ -1,43 +1,75 @@
 # Pharmacy Pocket for Android
 
-A fast, offline medicine price reference built with Expo and React Native.
+Pharmacy Pocket is now a fully native Android application written in Kotlin with Jetpack Compose.
 
-## Included
+The Android package remains com.aqsama.pharmacypocket, so this version can replace the previous Expo build. On first native launch it reads the existing Expo SQLite database from the same app-private location and migrates the Expo-backed preferences for currency, large text, and category definitions.
 
-- Empty on a fresh installation, ready for an import or manual entry
-- Arabic and English search
-- Category strip and previous/next category controls (no gesture competing with vertical scrolling)
-- Official and customer-requested prices in IQD
-- Configurable currency name, with IQD as the default
-- Large-text and customer price views
-- Full-card tap targets, full-screen medicine details, and longer descriptions
-- Add, edit, favorite, and one-file JSON import/export
-- Imports the original web app's v1 backups; v2 exports remain importable by the web app
-- Merge or exactly replace medicines while preserving category-section order
-- On-device SQLite storage; no connection is required after installation
+## Included features
 
-## Test in Expo Go
+- Fast offline medicine reference backed by SQLite
+- Empty fresh installation with manual entry or JSON import
+- Arabic and English search with Arabic diacritic and Alef normalization
+- Category and subcategory filtering
+- Custom categories with editable names, short labels, and colors
+- Category color accents and subtle card tints
+- Favorites and favorites-only filtering
+- Default ordering by category size, then newest medicine first inside each category
+- A-Z, Z-A, newest, oldest, price ascending, and price descending sorts
+- Official and optional customer-requested prices
+- Large-text mode
+- Full medicine detail view with note, description, category, subcategory, and date added
+- Add and edit medicine flows
+- Configurable currency name, defaulting to IQD
+- Native Android haptic feedback; no vibration API is used
+- One-file JSON export and import
+- Merge and replace import modes
+- Compatibility with Pharmacy Pocket backup schema v1 and v2, including the original web/Expo backup format
+- Preservation of favorites, custom category metadata, descriptions, timestamps, and imported section order
+- Android document picker / document creator, with no storage permission required
+- No React Native, Expo, JavaScript runtime, Metro, EAS, or web wrapper
 
-```bash
-npm install
-npx expo start
-```
+## Data migration
 
-Scan the QR code with Expo Go. An Expo account is not required for this local workflow.
+Existing Expo installs used:
 
-## Build an installable APK with EAS
+- files/SQLite/pharmacy-pocket.db for medicines
+- files/SQLite/ExpoSQLiteStorage for Expo localStorage preferences
 
-Sign in once, then start the preview build:
+The native application deliberately keeps the same medicine database path. It also imports large-text, currency-name, and category-definitions-v1 from the Expo localStorage database once, then stores preferences in Android SharedPreferences.
 
-```bash
-npx eas-cli@latest login
-npx eas-cli@latest build --platform android --profile preview
-```
+Back up important data before installing development builds over a production installation.
 
-The preview profile produces an APK suitable for direct Android installation. EAS manages the signing key so later builds can update the installed app.
+## Build
 
-The GitHub workflows build smaller ARM64 preview APKs without an Expo account. Every pull request receives a temporary downloadable artifact, and every successful build on `main` publishes a uniquely numbered GitHub prerelease. ARM64 covers modern Android phones while omitting emulator-only CPU libraries that made the universal APK unnecessarily large. These builds use development signing and are intended for direct testing; use EAS signing before a public or Play Store release.
+Requirements:
 
-## Release notes
+- JDK 17
+- Android SDK Platform 37
+- Android SDK Build Tools 36.0.0
+- Gradle 9.6.0
 
-The first native release stores data only on the phone. It does not use the private web app's cloud database because native clients do not receive the hosted Site's ChatGPT authentication session. Back up the list from Settings before clearing app data or changing phones.
+From the repository root with Gradle 9.6 available on PATH:
+
+    gradle test assembleDebug
+
+The debug APK is created at:
+
+    app/build/outputs/apk/debug/app-debug.apk
+
+For the test-signed release APK used by GitHub prereleases:
+
+    gradle assembleRelease
+
+The release workflow intentionally uses development signing for direct testing. Use a private production signing key for Play Store or public production distribution.
+
+## Continuous integration
+
+Pull requests run JVM tests, compile the native app, verify APK signing, verify 16 KB zip alignment, and upload an installable APK artifact.
+
+Successful builds on main publish a uniquely tagged prerelease APK.
+
+## Architecture
+
+The app is a single-activity Compose application. UI state is isolated from persistence through PharmacyRepository; database and import writes are serialized; JSON parsing and validation preserve the compatibility rules of the prior implementation.
+
+No network connection is required for normal application use.

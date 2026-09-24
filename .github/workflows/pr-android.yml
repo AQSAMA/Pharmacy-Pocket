@@ -1,94 +1,74 @@
-name: Validate and build PR
+name: Native Android PR
 
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: android-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 jobs:
-  android:
-    name: Type-check and build Android APK
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
+
     steps:
-      - name: Check out PR
-        uses: actions/checkout@v5
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v5
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          node-version: 20
-          cache: npm
+          fetch-depth: 0
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: "17"
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Type-check
-        run: npm run typecheck
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
-      - name: Regression tests
-        run: npm test
+      - name: Set up Gradle 9.6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
 
-      - name: Generate Android project
-        run: npx expo prebuild --platform android --clean --no-install
-
-      - name: Set monotonic Android version code
+      - name: Compute Android version code
         id: version
+        shell: bash
         run: |
           commit_epoch=$(git show -s --format=%ct "$GITHUB_SHA")
           version_code=$((commit_epoch / 60))
-          perl -0pi -e "s/versionCode\s+\d+/versionCode $version_code/" android/app/build.gradle
-          grep -q "versionCode $version_code" android/app/build.gradle
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
 
-      - name: Build ARM64 APK
-        working-directory: android
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -Pandroid.enableMinifyInReleaseBuilds=true -Pandroid.enableShrinkResourcesInReleaseBuilds=true
-
-      - name: Name APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64.apk
+      - name: Run tests and build APK
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          gradle --no-daemon test assembleDebug -PversionCode="$VERSION_CODE" --stacktrace
 
       - name: Verify installable APK
         id: verify
-        env:
-          APK_NAME: pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64.apk
+        shell: bash
         run: |
-          build_tools_dir=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
-          test -x "$build_tools_dir/apksigner"
-          test -x "$build_tools_dir/zipalign"
-          "$build_tools_dir/apksigner" verify --verbose --print-certs "$APK_NAME"
-          "$build_tools_dir/zipalign" -c -P 16 -v 4 "$APK_NAME"
-          apk_sha=$(sha256sum "$APK_NAME" | awk '{print $1}')
-          echo "sha256=$apk_sha" >> "$GITHUB_OUTPUT"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$APK"
+          mkdir -p dist
+          OUT="dist/pharmacy-pocket-native-pr-${{ github.event.pull_request.number || github.run_number }}.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT"
+          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
 
-      - name: Upload installable APK
+      - name: Upload native APK
         uses: actions/upload-artifact@v4
         with:
-          name: pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64
-          path: pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64.apk
+          name: pharmacy-pocket-native-pr-${{ github.event.pull_request.number || github.run_number }}
+          path: ${{ steps.verify.outputs.apk }}
           if-no-files-found: error
           retention-days: 14
-
-      - name: Add download instructions
-        env:
-          VERSION_CODE: ${{ steps.version.outputs.version_code }}
-          APK_SHA256: ${{ steps.verify.outputs.sha256 }}
-        run: |
-          echo "### Android APK ready" >> "$GITHUB_STEP_SUMMARY"
-          echo "Download **pharmacy-pocket-pr-${{ github.event.pull_request.number }}-arm64** from the Artifacts section of this workflow run." >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Android versionCode: $VERSION_CODE" >> "$GITHUB_STEP_SUMMARY"
-          echo "- SHA-256: $APK_SHA256" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,385 @@
+package com.aqsama.pharmacypocket.data
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.Locale
+
+private data class ExistingRow(
+    val sortOrder: Long,
+    val favorite: Boolean,
+    val createdAt: Long?,
+)
+
+private class MedicineDatabase(context: Context) {
+    private val dbFile = File(context.filesDir, "SQLite/pharmacy-pocket.db")
+    private val lock = Any()
+    @Volatile private var database: SQLiteDatabase? = null
+
+    private fun open(): SQLiteDatabase {
+        database?.takeIf { it.isOpen }?.let { return it }
+        synchronized(lock) {
+            database?.takeIf { it.isOpen }?.let { return it }
+            dbFile.parentFile?.mkdirs()
+            val db = SQLiteDatabase.openDatabase(
+                dbFile.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY,
+            )
+            runCatching { db.enableWriteAheadLogging() }
+            ensureSchema(db)
+            database = db
+            return db
+        }
+    }
+
+    private fun ensureSchema(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS medicines (
+              id TEXT PRIMARY KEY NOT NULL,
+              category TEXT NOT NULL,
+              subcategory TEXT NOT NULL,
+              name TEXT NOT NULL,
+              note TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              official INTEGER NOT NULL,
+              discounted INTEGER,
+              revision INTEGER NOT NULL DEFAULT 0,
+              favorite INTEGER NOT NULL DEFAULT 0,
+              sort_order INTEGER NOT NULL,
+              created_at INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+        val columns = mutableSetOf<String>()
+        db.rawQuery("PRAGMA table_info(medicines)", null).use { cursor ->
+            val nameIndex = cursor.getColumnIndexOrThrow("name")
+            while (cursor.moveToNext()) columns += cursor.getString(nameIndex)
+        }
+        if ("description" !in columns) {
+            db.execSQL("ALTER TABLE medicines ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+        }
+        if ("created_at" !in columns) {
+            db.execSQL("ALTER TABLE medicines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                "UPDATE medicines SET created_at = (strftime('%s','now') * 1000) + sort_order WHERE created_at = 0",
+            )
+        }
+        db.execSQL("PRAGMA user_version = 1")
+    }
+
+    fun loadMedicines(): List<Medicine> {
+        val result = mutableListOf<Medicine>()
+        open().rawQuery("SELECT * FROM medicines ORDER BY sort_order", null).use { cursor ->
+            val id = cursor.getColumnIndexOrThrow("id")
+            val category = cursor.getColumnIndexOrThrow("category")
+            val subcategory = cursor.getColumnIndexOrThrow("subcategory")
+            val name = cursor.getColumnIndexOrThrow("name")
+            val note = cursor.getColumnIndexOrThrow("note")
+            val description = cursor.getColumnIndexOrThrow("description")
+            val official = cursor.getColumnIndexOrThrow("official")
+            val discounted = cursor.getColumnIndexOrThrow("discounted")
+            val revision = cursor.getColumnIndexOrThrow("revision")
+            val favorite = cursor.getColumnIndexOrThrow("favorite")
+            val createdAt = cursor.getColumnIndexOrThrow("created_at")
+            while (cursor.moveToNext()) {
+                result += Medicine(
+                    id = cursor.getString(id),
+                    category = cursor.getString(category),
+                    subcategory = cursor.getString(subcategory),
+                    name = cursor.getString(name),
+                    note = cursor.getString(note),
+                    description = cursor.getString(description) ?: "",
+                    official = cursor.getLong(official),
+                    discounted = if (cursor.isNull(discounted)) null else cursor.getLong(discounted),
+                    revision = cursor.getInt(revision),
+                    favorite = cursor.getInt(favorite) != 0,
+                    createdAt = if (cursor.isNull(createdAt)) null else cursor.getLong(createdAt),
+                )
+            }
+        }
+        return result
+    }
+
+    private fun existing(db: SQLiteDatabase, id: String): ExistingRow? =
+        db.rawQuery(
+            "SELECT sort_order, favorite, created_at FROM medicines WHERE id = ?",
+            arrayOf(id),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) null
+            else ExistingRow(
+                sortOrder = cursor.getLong(0),
+                favorite = cursor.getInt(1) != 0,
+                createdAt = if (cursor.isNull(2)) null else cursor.getLong(2),
+            )
+        }
+
+    private fun maxSortOrder(db: SQLiteDatabase): Long =
+        db.rawQuery("SELECT COALESCE(MAX(sort_order), -1) FROM medicines", null).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else -1L
+        }
+
+    private fun writeMedicine(db: SQLiteDatabase, item: Medicine) {
+        val current = existing(db, item.id)
+        val createdAt = item.createdAt?.takeIf { it >= 0 }
+            ?: current?.createdAt?.takeIf { it >= 0 }
+            ?: System.currentTimeMillis()
+        val values = ContentValues().apply {
+            put("id", item.id)
+            put("category", item.category)
+            put("subcategory", subcategoryLabel(item.subcategory))
+            put("name", item.name)
+            put("note", item.note)
+            put("description", item.description)
+            put("official", item.official)
+            if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
+            put("revision", item.revision)
+            put("favorite", if (current?.favorite ?: item.favorite) 1 else 0)
+            put("sort_order", current?.sortOrder ?: maxSortOrder(db) + 1)
+            put("created_at", createdAt)
+        }
+        db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun saveMedicine(item: Medicine) {
+        val db = open()
+        db.beginTransaction()
+        try {
+            writeMedicine(db, item)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun toggleFavorite(id: String): Boolean? {
+        val db = open()
+        val current = db.rawQuery("SELECT favorite FROM medicines WHERE id = ?", arrayOf(id)).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) != 0 else return null
+        }
+        val next = !current
+        db.execSQL("UPDATE medicines SET favorite = ? WHERE id = ?", arrayOf(if (next) 1 else 0, id))
+        return next
+    }
+
+    fun mergeMedicines(items: List<Medicine>) {
+        val db = open()
+        db.beginTransaction()
+        try {
+            items.forEach { writeMedicine(db, it) }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun replaceMedicines(items: List<Medicine>) {
+        val db = open()
+        db.beginTransaction()
+        try {
+            db.delete("medicines", null, null)
+            val now = System.currentTimeMillis()
+            items.forEachIndexed { index, item ->
+                val values = ContentValues().apply {
+                    put("id", item.id)
+                    put("category", item.category)
+                    put("subcategory", subcategoryLabel(item.subcategory))
+                    put("name", item.name)
+                    put("note", item.note)
+                    put("description", item.description)
+                    put("official", item.official)
+                    if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
+                    put("revision", item.revision)
+                    put("favorite", if (item.favorite) 1 else 0)
+                    put("sort_order", index)
+                    put("created_at", item.createdAt?.takeIf { it >= 0 } ?: now + index)
+                }
+                db.insertOrThrow("medicines", null, values)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+}
+
+private class PreferenceStore(private val context: Context) {
+    private val prefs = context.getSharedPreferences("pharmacy-pocket-native", Context.MODE_PRIVATE)
+
+    init {
+        migrateExpoPreferences()
+    }
+
+    private fun migrateExpoPreferences() {
+        if (prefs.getBoolean("expo-preferences-migrated", false)) return
+        val values = mutableMapOf<String, String>()
+        val legacyFile = File(context.filesDir, "SQLite/ExpoSQLiteStorage")
+        if (legacyFile.exists()) {
+            runCatching {
+                SQLiteDatabase.openDatabase(
+                    legacyFile.absolutePath,
+                    null,
+                    SQLiteDatabase.OPEN_READONLY,
+                ).use { db ->
+                    db.rawQuery(
+                        "SELECT key, value FROM storage WHERE key IN (?, ?, ?)",
+                        arrayOf("large-text", "currency-name", "category-definitions-v1"),
+                    ).use { cursor ->
+                        while (cursor.moveToNext()) {
+                            if (!cursor.isNull(1)) values[cursor.getString(0)] = cursor.getString(1)
+                        }
+                    }
+                }
+            }
+        }
+        val editor = prefs.edit()
+        values["large-text"]?.let { editor.putBoolean("large-text", it == "true") }
+        values["currency-name"]?.trim()?.takeIf { it.isNotEmpty() }?.let { editor.putString("currency-name", it) }
+        values["category-definitions-v1"]?.let { raw ->
+            runCatching { parseCategories(raw) }.getOrNull()?.let { categories ->
+                editor.putString("category-definitions-v1", categoriesToJson(categories))
+            }
+        }
+        editor.putBoolean("expo-preferences-migrated", true).apply()
+    }
+
+    fun largeText(): Boolean = prefs.getBoolean("large-text", false)
+    fun setLargeText(value: Boolean) = prefs.edit().putBoolean("large-text", value).apply()
+
+    fun currency(): String = prefs.getString("currency-name", null)?.trim().takeUnless { it.isNullOrEmpty() } ?: "IQD"
+    fun setCurrency(value: String) {
+        prefs.edit().putString("currency-name", value.trim().ifEmpty { "IQD" }.take(24)).apply()
+    }
+
+    fun categories(): List<Category> {
+        val raw = prefs.getString("category-definitions-v1", null) ?: return PharmacyDefaults.categories
+        return runCatching { mergeCategoryDefinitions(PharmacyDefaults.categories, parseCategories(raw)) }
+            .getOrDefault(PharmacyDefaults.categories)
+    }
+
+    fun setCategories(categories: List<Category>) {
+        prefs.edit().putString("category-definitions-v1", categoriesToJson(categories)).apply()
+    }
+
+    private fun parseCategories(raw: String): List<Category> {
+        val array = JSONArray(raw)
+        return buildList {
+            for (index in 0 until array.length()) {
+                val obj = array.getJSONObject(index)
+                val category = Category(
+                    obj.getString("id"),
+                    obj.getString("label"),
+                    obj.getString("arabic"),
+                    obj.getString("color"),
+                )
+                if (isValidCategory(category)) add(category)
+            }
+        }
+    }
+
+    private fun categoriesToJson(categories: List<Category>): String {
+        val array = JSONArray()
+        categories.forEach { category ->
+            array.put(
+                JSONObject()
+                    .put("id", category.id)
+                    .put("label", category.label)
+                    .put("arabic", category.arabic)
+                    .put("color", category.color.lowercase(Locale.ROOT)),
+            )
+        }
+        return array.toString()
+    }
+}
+
+class PharmacyRepository(context: Context) {
+    private val database = MedicineDatabase(context.applicationContext)
+    private val preferences = PreferenceStore(context.applicationContext)
+    private val mutex = Mutex()
+
+    private fun snapshotUnsafe(): AppSnapshot {
+        val items = database.loadMedicines()
+        val stored = preferences.categories()
+        val complete = ensureCategoriesForMedicines(stored, items.map { it.category })
+        if (complete != stored) preferences.setCategories(complete)
+        return AppSnapshot(
+            items = items,
+            categories = complete,
+            largeText = preferences.largeText(),
+            currency = preferences.currency(),
+        )
+    }
+
+    suspend fun loadSnapshot(): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock { snapshotUnsafe() }
+    }
+
+    suspend fun saveMedicine(item: Medicine): AppSnapshot = withContext(Dispatchers.IO) {
+        require(item.id.isNotBlank() && item.name.isNotBlank() && item.category.isNotBlank())
+        require(item.official >= 0 && (item.discounted == null || item.discounted >= 0))
+        mutex.withLock {
+            database.saveMedicine(item)
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun toggleFavorite(id: String): Boolean? = withContext(Dispatchers.IO) {
+        mutex.withLock { database.toggleFavorite(id) }
+    }
+
+    suspend fun setLargeText(value: Boolean): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            preferences.setLargeText(value)
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun setCurrency(value: String): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            preferences.setCurrency(value)
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun saveCategory(category: Category): AppSnapshot = withContext(Dispatchers.IO) {
+        require(isValidCategory(category) && category.id != "all") { "Category details are invalid." }
+        mutex.withLock {
+            val current = preferences.categories()
+            val exists = current.any { it.id == category.id }
+            val editableCount = current.count { it.id != "all" }
+            require(exists || editableCount < PharmacyDefaults.maxCategories) {
+                "You can store up to ${PharmacyDefaults.maxCategories} categories."
+            }
+            preferences.setCategories(mergeCategoryDefinitions(current, listOf(category)))
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun importBackup(data: ParsedBackup, mode: ImportMode): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val currentCategories = preferences.categories()
+            val nextCategories = resolveCategoryImport(
+                currentCategories,
+                data.categories,
+                mode,
+                data.medicines.map { it.category },
+            )
+            when (mode) {
+                ImportMode.MERGE -> database.mergeMedicines(data.medicines)
+                ImportMode.REPLACE -> database.replaceMedicines(data.medicines)
+            }
+            preferences.setCurrency(data.currency)
+            preferences.setCategories(nextCategories)
+            snapshotUnsafe()
+        }
+    }
+}
