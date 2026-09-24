@@ -56,7 +56,7 @@ jobs:
           echo "tag=native-preview-${version_code}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: Test and build side-by-side preview
-        run: gradle --no-daemon testPreviewReleaseUnitTest assemblePreviewRelease -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
+        run: gradle --no-daemon testPreviewDebugUnitTest assemblePreviewRelease -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
 
       - name: Verify installable preview APK
         id: verify
