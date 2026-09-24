@@ -114,7 +114,7 @@ export function MedicineProvider({ children }: { children: React.ReactNode }) {
     const current = categoryItemsRef.current;
     const exists = current.some((item) => item.id === category.id);
     if (!exists && current.length - 1 >= MAX_CATEGORY_DEFINITIONS) {
-      throw new Error(`You can store up to ${MAX_CATEGORY_DEFINITIONS} custom categories.`);
+      throw new Error(`You can store up to ${MAX_CATEGORY_DEFINITIONS} categories.`);
     }
     const next = mergeCategoryDefinitions(current, [category]);
     updateCategories(next);
