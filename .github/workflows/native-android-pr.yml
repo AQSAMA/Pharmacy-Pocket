@@ -59,12 +59,12 @@ jobs:
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
 
       - name: Test preview and compile both native identities
-        run: gradle --no-daemon testPreviewDebugUnitTest assemblePreviewDebug assembleProductionDebug -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
+        run: gradle --no-daemon testPreviewDebugUnitTest assemblePreviewRelease assembleProductionDebug -PversionCode="${{ steps.version.outputs.version_code }}" --stacktrace
 
       - name: Verify installable preview APK
         id: verify
         run: |
-          APK="app/build/outputs/apk/preview/debug/app-preview-debug.apk"
+          APK="app/build/outputs/apk/preview/release/app-preview-release.apk"
           PROD_APK="app/build/outputs/apk/production/debug/app-production-debug.apk"
           test -f "$APK"
           test -f "$PROD_APK"
