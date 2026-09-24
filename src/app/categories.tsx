@@ -120,6 +120,7 @@ export default function CategoriesScreen() {
           {draft ? (
             <View style={styles.editor}>
               <View style={styles.editorHandle} />
+              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.editorContent}>
               <Text style={styles.editorTitle}>{categories.some((item) => item.id === draft.id) ? 'Edit category' : 'New category'}</Text>
 
               <View style={[styles.preview, { backgroundColor: tintCategoryColor(draft.color, 0.085) }]}>
@@ -196,6 +197,7 @@ export default function CategoriesScreen() {
                   <Text style={styles.saveText}>Save category</Text>
                 </Pressable>
               </View>
+              </ScrollView>
             </View>
           ) : null}
         </KeyboardAvoidingView>
@@ -231,7 +233,8 @@ const styles = StyleSheet.create({
   noteTitle: { color: '#315247', fontSize: 14, fontWeight: '800' },
   noteText: { color: '#60766d', fontSize: 12, lineHeight: 19 },
   modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(12,28,23,0.34)' },
-  editor: { maxHeight: '90%', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 24, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#f4f7f6', gap: 15 },
+  editor: { maxHeight: '90%', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 12, borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#f4f7f6' },
+  editorContent: { paddingBottom: 12, gap: 15 },
   editorHandle: { alignSelf: 'center', width: 40, height: 5, borderRadius: 3, backgroundColor: '#bdcac4' },
   editorTitle: { color: '#1f4538', fontSize: 21, fontWeight: '800' },
   preview: { minHeight: 76, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', borderRadius: 17, borderCurve: 'continuous', borderWidth: 1, borderColor: '#dfe8e3' },
