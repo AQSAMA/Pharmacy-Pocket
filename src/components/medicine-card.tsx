@@ -3,14 +3,13 @@ import React, { memo } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { actionHaptic, rejectHaptic, selectionHaptic } from '@/components/haptics';
-import { categoryById } from '@/data/categories';
+import { tintCategoryColor, type Category } from '@/data/categories';
 import { formatAddedDate, formatPrice, hasArabic, type Medicine } from '@/data/medicine';
 
-type Props = { item: Medicine; large: boolean; currency: string; first: boolean; last: boolean; onFavorite(item: Medicine): Promise<void> };
+type Props = { item: Medicine; category: Category; large: boolean; currency: string; first: boolean; last: boolean; onFavorite(item: Medicine): Promise<void> };
 
-function MedicineCardComponent({ item, large, currency, first, last, onFavorite }: Props) {
+function MedicineCardComponent({ item, category, large, currency, first, last, onFavorite }: Props) {
   const rtl = hasArabic(item.name);
-  const category = categoryById(item.category);
 
   return (
     <Pressable
@@ -20,7 +19,7 @@ function MedicineCardComponent({ item, large, currency, first, last, onFavorite 
         actionHaptic();
         router.navigate({ pathname: '/medicine/[id]', params: { id: item.id } });
       }}
-      style={({ pressed }) => [styles.card, first && styles.firstCard, last && styles.lastCard, pressed && styles.pressedCard]}
+      style={({ pressed }) => [styles.card, { backgroundColor: tintCategoryColor(category.color, pressed ? 0.14 : 0.075) }, first && styles.firstCard, last && styles.lastCard]}
     >
       <View style={[styles.accent, { backgroundColor: category.color }]} />
       <View style={styles.content}>
@@ -102,13 +101,11 @@ const styles = StyleSheet.create({
   card: {
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#ffffff',
     borderBottomColor: '#e5ece8',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   firstCard: { borderTopLeftRadius: 18, borderTopRightRadius: 18, borderCurve: 'continuous' },
   lastCard: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18, borderBottomWidth: 0, borderCurve: 'continuous' },
-  pressedCard: { backgroundColor: '#f1f7f4' },
   accent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   content: { paddingVertical: 14, paddingLeft: 17, paddingRight: 10, gap: 12 },
   topRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
