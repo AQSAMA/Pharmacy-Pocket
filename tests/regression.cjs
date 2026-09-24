@@ -75,6 +75,13 @@ test('category definitions keep stable ids while allowing names and colors to ch
   assert.equal(legacy.find(item => item.id === ' legacy-id ').label, 'legacy-id');
 });
 
+test('createBackup keeps the legacy third exportedAt argument compatible', () => {
+  const item = { id: 'legacy-export', name: 'Legacy', note: '', category: 'syrups', subcategory: 'General', official: 1000, discounted: null, revision: 0 };
+  const backup = createBackup([item], 'IQD', '2026-01-02T03:04:05.000Z');
+  assert.equal(backup.exportedAt, '2026-01-02T03:04:05.000Z');
+  assert.equal(backup.sections[0].categoryLabel, 'Syrups & sachets');
+});
+
 test('custom category names and colors survive JSON backup and legacy custom sections still import', () => {
   const custom = { id: 'custom-inhalers', label: 'Inhalers', arabic: 'بخاخات', color: '#3f7fb5' };
   const definitions = [...defaultCategories, custom];
@@ -214,6 +221,7 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /favoriteCount/);
   assert.match(home, /Show favorites only, \$\{favoriteCount\} favorites/);
   assert.match(home, /clearViewFilters/);
+  assert.match(home, /!categories\.some\(\(item\) => item\.id === category\)/);
   assert.match(home, /searchDock/);
   assert.match(home, /breadcrumbRow/);
   assert.match(home, /<View accessible accessibilityLabel=\{`\$\{row\.section\.data\.length\} medicines`\}/);
