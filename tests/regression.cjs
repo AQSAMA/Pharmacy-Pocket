@@ -176,7 +176,9 @@ test('navigation and scroll regression guards', () => {
   assert.match(home, /useState<MedicineSort>\('default'\)/);
   assert.match(home, /Tune/);
   assert.match(home, /categoryCounts/);
+  assert.match(home, /item\.category === 'all'/);
   assert.match(home, /favoriteCount/);
+  assert.match(home, /Show favorites only, \$\{favoriteCount\} favorites/);
   assert.match(home, /clearViewFilters/);
   assert.match(home, /searchDock/);
   assert.match(home, /breadcrumbRow/);
