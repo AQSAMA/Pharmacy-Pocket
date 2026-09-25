@@ -39,6 +39,12 @@ data class AppSnapshot(
     val largeText: Boolean,
     val currency: String,
     val themePreference: ThemePreference,
+    val trashCount: Int = 0,
+)
+
+data class TrashedMedicine(
+    val medicine: Medicine,
+    val deletedAt: Long,
 )
 
 enum class MedicineSort(val label: String) {
@@ -284,6 +290,24 @@ fun formatPrice(value: Long): String = NumberFormat.getIntegerInstance(Locale.US
 fun formatAddedDate(value: Long?): String {
     if (value == null || value < 0 || value > 8_640_000_000_000_000L) return "Unknown"
     return runCatching { DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(value)) }.getOrDefault("Unknown")
+}
+
+fun formatDeletedDate(value: Long): String {
+    if (value < 0 || value > 8_640_000_000_000_000L) return "Unknown"
+    return runCatching {
+        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(value))
+    }.getOrDefault("Unknown")
+}
+
+fun filterTrash(items: List<TrashedMedicine>, query: String): List<TrashedMedicine> {
+    val needle = normalizeSearch(query.trim())
+    if (needle.isEmpty()) return items
+    return items.filter { trashed ->
+        val item = trashed.medicine
+        normalizeSearch(
+            "${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)}",
+        ).contains(needle)
+    }
 }
 
 fun hasArabic(value: String): Boolean = value.any { it.code in 0x0600..0x06FF }

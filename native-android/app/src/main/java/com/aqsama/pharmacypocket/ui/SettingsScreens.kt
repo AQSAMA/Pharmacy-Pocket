@@ -62,6 +62,7 @@ fun SettingsScreen(
     snapshot: AppSnapshot,
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
+    onTrash: () -> Unit,
     onSetLargeText: (Boolean) -> Unit,
     onSetCurrency: (String) -> Unit,
     onSetTheme: (ThemePreference) -> Unit,
@@ -284,10 +285,22 @@ fun SettingsScreen(
                             SettingsActionRow(
                                 symbol = "⇩",
                                 title = "Import JSON",
-                                description = "Merge with this phone or replace everything.",
+                                description = "Merge with this phone or replace the active collection safely.",
                                 onClick = {
                                     Haptics.action(view)
                                     importLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+                                },
+                            )
+                            Surface(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxWidth()) {
+                                androidx.compose.foundation.layout.Spacer(Modifier.size(1.dp))
+                            }
+                            SettingsActionRow(
+                                symbol = "♲",
+                                title = "Trash",
+                                description = "${snapshot.trashCount} ${if (snapshot.trashCount == 1) "medicine" else "medicines"}",
+                                onClick = {
+                                    Haptics.action(view)
+                                    onTrash()
                                 },
                             )
                         }
@@ -329,7 +342,8 @@ fun SettingsScreen(
             text = {
                 Text(
                     "${data.medicines.size} medicines · ${data.sections.size} sections\n\n" +
-                        "Merge keeps medicines already on this phone. Replace makes the app match the file exactly.",
+                        "Merge keeps existing medicines and reactivates matching IDs from Trash. " +
+                        "Replace makes the active collection match the file: active medicines missing from the file move to Trash instead of being permanently deleted, and existing unrelated Trash items are kept.",
                 )
             },
             dismissButton = {

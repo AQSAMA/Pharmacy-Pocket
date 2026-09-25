@@ -58,6 +58,7 @@ fun MedicineEditorScreen(
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
     onSave: (Medicine) -> Unit,
+    onMoveToTrash: (Medicine) -> Unit,
 ) {
     val view = LocalView.current
     val existing = remember(snapshot.items, medicineId) { snapshot.items.firstOrNull { it.id == medicineId } }
@@ -74,6 +75,7 @@ fun MedicineEditorScreen(
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
     var validationError by remember { mutableStateOf<String?>(null) }
+    var confirmTrash by remember { mutableStateOf(false) }
 
     val existingSubcategories = remember(snapshot.items, category) {
         listSubcategories(buildSearchIndex(snapshot.items), category)
@@ -221,6 +223,24 @@ fun MedicineEditorScreen(
                     ) {
                         Text(if (busy) "Saving…" else "Save medicine", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                     }
+                    if (existing != null) {
+                        Button(
+                            enabled = !busy,
+                            onClick = {
+                                Haptics.action(view)
+                                confirmTrash = true
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 52.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        ) {
+                            Text("Move to Trash", fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
                 }
             }
         }
@@ -232,6 +252,35 @@ fun MedicineEditorScreen(
             title = { Text("Check the details") },
             text = { Text(error) },
             confirmButton = { TextButton(onClick = { validationError = null }) { Text("OK") } },
+        )
+    }
+
+    if (confirmTrash && existing != null) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) confirmTrash = false },
+            title = { Text("Move “${existing.name}” to Trash?") },
+            text = { Text("You can restore it later from Settings > Trash.") },
+            dismissButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = { confirmTrash = false },
+                ) { Text("Cancel") }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        confirmTrash = false
+                        onMoveToTrash(existing)
+                    },
+                ) {
+                    Text(
+                        "Move to Trash",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
         )
     }
 }
@@ -260,12 +309,15 @@ private fun Field(
 fun MedicineDetailScreen(
     snapshot: AppSnapshot,
     medicineId: String,
+    busy: Boolean,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onToggleFavorite: (Medicine) -> Unit,
+    onMoveToTrash: (Medicine) -> Unit,
 ) {
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
+    var confirmTrash by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = { ScreenTopBar("Medicine", onBack) },
@@ -439,6 +491,22 @@ fun MedicineDetailScreen(
                         ) {
                             Text("✎ Edit medicine", fontWeight = FontWeight.ExtraBold)
                         }
+                        Button(
+                            enabled = !busy,
+                            onClick = {
+                                Haptics.action(view)
+                                confirmTrash = true
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 52.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        ) {
+                            Text("Move to Trash", fontWeight = FontWeight.ExtraBold)
+                        }
                         TextButton(
                             onClick = onBack,
                             modifier = Modifier
@@ -449,6 +517,35 @@ fun MedicineDetailScreen(
                 }
             }
         }
+    }
+
+    if (confirmTrash && item != null) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) confirmTrash = false },
+            title = { Text("Move “${item.name}” to Trash?") },
+            text = { Text("You can restore it later from Settings > Trash.") },
+            dismissButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = { confirmTrash = false },
+                ) { Text("Cancel") }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        confirmTrash = false
+                        onMoveToTrash(item)
+                    },
+                ) {
+                    Text(
+                        "Move to Trash",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+        )
     }
 }
 
