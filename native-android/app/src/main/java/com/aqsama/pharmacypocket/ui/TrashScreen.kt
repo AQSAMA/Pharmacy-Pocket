@@ -95,7 +95,7 @@ fun TrashScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Text(
-                                    "${trashItems.size} ${if (items.size == 1) "medicine" else "medicines"} in Trash",
+                                    "${trashItems.size} ${if (trashItems.size == 1) "medicine" else "medicines"} in Trash",
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.ExtraBold,
