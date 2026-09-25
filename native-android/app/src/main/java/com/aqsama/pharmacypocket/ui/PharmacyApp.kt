@@ -242,7 +242,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         }
                         TrashScreen(
                             snapshot = current,
-                            items = trashItems,
+                            trashItems = trashItems,
                             busy = busy,
                             onBack = ::pop,
                             onRestore = { trashed ->
