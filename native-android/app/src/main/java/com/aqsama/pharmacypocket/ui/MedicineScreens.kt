@@ -309,6 +309,7 @@ private fun Field(
 fun MedicineDetailScreen(
     snapshot: AppSnapshot,
     medicineId: String,
+    busy: Boolean,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onToggleFavorite: (Medicine) -> Unit,
@@ -491,6 +492,7 @@ fun MedicineDetailScreen(
                             Text("✎ Edit medicine", fontWeight = FontWeight.ExtraBold)
                         }
                         Button(
+                            enabled = !busy,
                             onClick = {
                                 Haptics.action(view)
                                 confirmTrash = true
@@ -519,14 +521,18 @@ fun MedicineDetailScreen(
 
     if (confirmTrash && item != null) {
         AlertDialog(
-            onDismissRequest = { confirmTrash = false },
+            onDismissRequest = { if (!busy) confirmTrash = false },
             title = { Text("Move “${item.name}” to Trash?") },
             text = { Text("You can restore it later from Settings > Trash.") },
             dismissButton = {
-                TextButton(onClick = { confirmTrash = false }) { Text("Cancel") }
+                TextButton(
+                    enabled = !busy,
+                    onClick = { confirmTrash = false },
+                ) { Text("Cancel") }
             },
             confirmButton = {
                 TextButton(
+                    enabled = !busy,
                     onClick = {
                         confirmTrash = false
                         onMoveToTrash(item)
