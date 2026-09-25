@@ -387,11 +387,14 @@ internal class MedicineDatabase(context: Context) {
                 }
             }
 
+            // Keep sort_order unique across active and trashed rows. Trash retains its
+            // original order so a later restore cannot tie an imported active row.
+            val baseSortOrder = maxSortOrder(db) + 1
             items.forEachIndexed { index, item ->
                 writeReplacementMedicine(
                     db = db,
                     item = item,
-                    sortOrder = index.toLong(),
+                    sortOrder = baseSortOrder + index,
                     createdAtFallback = now + index,
                 )
             }
