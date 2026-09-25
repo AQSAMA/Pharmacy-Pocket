@@ -541,17 +541,17 @@ class PharmacyRepository(context: Context) {
         }
     }
 
-    suspend fun permanentlyDeleteMedicine(id: String): AppSnapshot = withContext(Dispatchers.IO) {
+    suspend fun permanentlyDeleteMedicine(id: String): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
             check(database.permanentlyDeleteMedicine(id)) { "Only medicines in Trash can be permanently deleted." }
-            snapshotUnsafe()
+            database.trashCount()
         }
     }
 
-    suspend fun emptyTrash(): AppSnapshot = withContext(Dispatchers.IO) {
+    suspend fun emptyTrash(): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
             database.emptyTrash()
-            snapshotUnsafe()
+            database.trashCount()
         }
     }
 
