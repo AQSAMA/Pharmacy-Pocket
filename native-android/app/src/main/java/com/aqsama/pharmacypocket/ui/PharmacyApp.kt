@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +34,7 @@ import com.aqsama.pharmacypocket.data.Medicine
 import com.aqsama.pharmacypocket.data.ParsedBackup
 import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
+import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -37,6 +42,7 @@ private sealed interface Destination {
     data object Home : Destination
     data object Settings : Destination
     data object Categories : Destination
+    data object Trash : Destination
     data class Editor(val medicineId: String?, val category: String?) : Destination
     data class Detail(val medicineId: String) : Destination
 }
@@ -54,6 +60,8 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
+    var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
     fun push(destination: Destination) {
         Haptics.action(view)
@@ -65,6 +73,61 @@ fun PharmacyApp(repository: PharmacyRepository) {
         Haptics.action(view)
         val removed = backStack.removeAt(backStack.lastIndex)
         stateHolder.removeState(removed.id)
+    }
+
+    fun removeMedicineDestinations(medicineId: String) {
+        val retained = backStack.filterNot { entry ->
+            when (val destination = entry.destination) {
+                is Destination.Detail -> destination.medicineId == medicineId
+                is Destination.Editor -> destination.medicineId == medicineId
+                else -> false
+            }
+        }
+        backStack
+            .filterNot { it in retained }
+            .forEach { stateHolder.removeState(it.id) }
+        backStack.clear()
+        if (retained.isEmpty()) {
+            backStack += NavEntry("home", Destination.Home)
+        } else {
+            backStack.addAll(retained)
+        }
+    }
+
+    fun moveToTrash(item: Medicine) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            var moved = false
+            try {
+                snapshot = repository.moveMedicineToTrash(item.id)
+                removeMedicineDestinations(item.id)
+                Haptics.confirm(view)
+                moved = true
+            } catch (error: Throwable) {
+                Haptics.reject(view)
+                errorMessage = error.message ?: "Could not move the medicine to Trash."
+            } finally {
+                busy = false
+            }
+
+            if (moved) {
+                val result = snackbarHostState.showSnackbar(
+                    message = "Moved to Trash",
+                    actionLabel = "Undo",
+                    duration = SnackbarDuration.Long,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    try {
+                        snapshot = repository.restoreMedicine(item.id)
+                        Haptics.confirm(view)
+                    } catch (error: Throwable) {
+                        Haptics.reject(view)
+                        errorMessage = error.message ?: "Undo failed."
+                    }
+                }
+            }
+        }
     }
 
     fun runOperation(
@@ -142,6 +205,10 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         snapshot = current,
                         onBack = ::pop,
                         onManageCategories = { push(Destination.Categories) },
+                        onTrash = {
+                            trashItems = null
+                            push(Destination.Trash)
+                        },
                         onSetLargeText = { value ->
                             runOperation { repository.setLargeText(value) }
                         },
@@ -164,6 +231,35 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         },
                     )
 
+                    Destination.Trash -> {
+                        LaunchedEffect(entry.id, current.trashCount) {
+                            try {
+                                trashItems = repository.loadTrash()
+                            } catch (error: Throwable) {
+                                Haptics.reject(view)
+                                errorMessage = error.message ?: "Could not load Trash."
+                            }
+                        }
+                        TrashScreen(
+                            snapshot = current,
+                            items = trashItems,
+                            busy = busy,
+                            onBack = ::pop,
+                            onRestore = { trashed ->
+                                runOperation { repository.restoreMedicine(trashed.medicine.id) }
+                            },
+                            onDeleteForever = { trashed ->
+                                runOperation { repository.permanentlyDeleteMedicine(trashed.medicine.id) }
+                            },
+                            onRestoreAll = {
+                                runOperation { repository.restoreAllTrash() }
+                            },
+                            onEmptyTrash = {
+                                runOperation { repository.emptyTrash() }
+                            },
+                        )
+                    }
+
                     is Destination.Editor -> MedicineEditorScreen(
                         snapshot = current,
                         medicineId = destination.medicineId,
@@ -177,6 +273,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                 onSuccess = ::pop,
                             ) { repository.saveMedicine(medicine) }
                         },
+                        onMoveToTrash = ::moveToTrash,
                     )
 
                     is Destination.Detail -> MedicineDetailScreen(
@@ -201,6 +298,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                 }
                             }
                         },
+                        onMoveToTrash = ::moveToTrash,
                     )
                 }
             }
@@ -213,6 +311,10 @@ fun PharmacyApp(repository: PharmacyRepository) {
                     .align(Alignment.TopCenter),
             )
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 
     errorMessage?.let { message ->
