@@ -2,8 +2,8 @@ package com.aqsama.pharmacypocket.data
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -13,13 +13,16 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
+private const val DATABASE_VERSION = 2
+
 private data class ExistingRow(
     val sortOrder: Long,
     val favorite: Boolean,
     val createdAt: Long?,
+    val deletedAt: Long?,
 )
 
-private class MedicineDatabase(context: Context) {
+internal class MedicineDatabase(context: Context) {
     private val dbFile = File(context.filesDir, "SQLite/pharmacy-pocket.db")
     private val lock = Any()
     @Volatile private var database: SQLiteDatabase? = null
@@ -41,78 +44,127 @@ private class MedicineDatabase(context: Context) {
         }
     }
 
-    private fun ensureSchema(db: SQLiteDatabase) {
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS medicines (
-              id TEXT PRIMARY KEY NOT NULL,
-              category TEXT NOT NULL,
-              subcategory TEXT NOT NULL,
-              name TEXT NOT NULL,
-              note TEXT NOT NULL,
-              description TEXT NOT NULL DEFAULT '',
-              official INTEGER NOT NULL,
-              discounted INTEGER,
-              revision INTEGER NOT NULL DEFAULT 0,
-              favorite INTEGER NOT NULL DEFAULT 0,
-              sort_order INTEGER NOT NULL,
-              created_at INTEGER NOT NULL DEFAULT 0
-            )
-            """.trimIndent(),
-        )
-        val columns = mutableSetOf<String>()
+    private fun userVersion(db: SQLiteDatabase): Int =
+        db.rawQuery("PRAGMA user_version", null).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+
+    private fun tableColumns(db: SQLiteDatabase): Set<String> = buildSet {
         db.rawQuery("PRAGMA table_info(medicines)", null).use { cursor ->
             val nameIndex = cursor.getColumnIndexOrThrow("name")
-            while (cursor.moveToNext()) columns += cursor.getString(nameIndex)
+            while (cursor.moveToNext()) add(cursor.getString(nameIndex))
         }
-        if ("description" !in columns) {
-            db.execSQL("ALTER TABLE medicines ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+    }
+
+    private fun ensureSchema(db: SQLiteDatabase) {
+        val currentVersion = userVersion(db)
+        require(currentVersion <= DATABASE_VERSION) {
+            "This database was created by a newer Pharmacy Pocket version."
         }
-        if ("created_at" !in columns) {
-            db.execSQL("ALTER TABLE medicines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+
+        db.beginTransaction()
+        try {
             db.execSQL(
-                "UPDATE medicines SET created_at = (strftime('%s','now') * 1000) + sort_order WHERE created_at = 0",
+                """
+                CREATE TABLE IF NOT EXISTS medicines (
+                  id TEXT PRIMARY KEY NOT NULL,
+                  category TEXT NOT NULL,
+                  subcategory TEXT NOT NULL,
+                  name TEXT NOT NULL,
+                  note TEXT NOT NULL,
+                  description TEXT NOT NULL DEFAULT '',
+                  official INTEGER NOT NULL,
+                  discounted INTEGER,
+                  revision INTEGER NOT NULL DEFAULT 0,
+                  favorite INTEGER NOT NULL DEFAULT 0,
+                  sort_order INTEGER NOT NULL,
+                  created_at INTEGER NOT NULL DEFAULT 0,
+                  deleted_at INTEGER
+                )
+                """.trimIndent(),
             )
+
+            var columns = tableColumns(db)
+            if ("description" !in columns) {
+                db.execSQL("ALTER TABLE medicines ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+            }
+            if ("created_at" !in columns) {
+                db.execSQL("ALTER TABLE medicines ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "UPDATE medicines SET created_at = (strftime('%s','now') * 1000) + sort_order WHERE created_at = 0",
+                )
+            }
+
+            columns = tableColumns(db)
+            if ("deleted_at" !in columns) {
+                // A nullable column deliberately leaves every existing medicine active.
+                db.execSQL("ALTER TABLE medicines ADD COLUMN deleted_at INTEGER")
+            }
+
+            db.execSQL("PRAGMA user_version = $DATABASE_VERSION")
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
-        db.execSQL("PRAGMA user_version = 1")
+    }
+
+    private fun medicineFromCursor(cursor: Cursor): Medicine {
+        val discounted = cursor.getColumnIndexOrThrow("discounted")
+        val createdAt = cursor.getColumnIndexOrThrow("created_at")
+        return Medicine(
+            id = cursor.getString(cursor.getColumnIndexOrThrow("id")),
+            category = cursor.getString(cursor.getColumnIndexOrThrow("category")),
+            subcategory = cursor.getString(cursor.getColumnIndexOrThrow("subcategory")),
+            name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
+            note = cursor.getString(cursor.getColumnIndexOrThrow("note")),
+            description = cursor.getString(cursor.getColumnIndexOrThrow("description")) ?: "",
+            official = cursor.getLong(cursor.getColumnIndexOrThrow("official")),
+            discounted = if (cursor.isNull(discounted)) null else cursor.getLong(discounted),
+            revision = cursor.getInt(cursor.getColumnIndexOrThrow("revision")),
+            favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
+            createdAt = if (cursor.isNull(createdAt)) null else cursor.getLong(createdAt),
+        )
     }
 
     fun loadMedicines(): List<Medicine> {
         val result = mutableListOf<Medicine>()
-        open().rawQuery("SELECT * FROM medicines ORDER BY sort_order", null).use { cursor ->
-            val id = cursor.getColumnIndexOrThrow("id")
-            val category = cursor.getColumnIndexOrThrow("category")
-            val subcategory = cursor.getColumnIndexOrThrow("subcategory")
-            val name = cursor.getColumnIndexOrThrow("name")
-            val note = cursor.getColumnIndexOrThrow("note")
-            val description = cursor.getColumnIndexOrThrow("description")
-            val official = cursor.getColumnIndexOrThrow("official")
-            val discounted = cursor.getColumnIndexOrThrow("discounted")
-            val revision = cursor.getColumnIndexOrThrow("revision")
-            val favorite = cursor.getColumnIndexOrThrow("favorite")
-            val createdAt = cursor.getColumnIndexOrThrow("created_at")
+        open().rawQuery(
+            "SELECT * FROM medicines WHERE deleted_at IS NULL ORDER BY sort_order",
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) result += medicineFromCursor(cursor)
+        }
+        return result
+    }
+
+    fun loadTrash(): List<TrashedMedicine> {
+        val result = mutableListOf<TrashedMedicine>()
+        open().rawQuery(
+            "SELECT * FROM medicines WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, sort_order ASC",
+            null,
+        ).use { cursor ->
+            val deletedAt = cursor.getColumnIndexOrThrow("deleted_at")
             while (cursor.moveToNext()) {
-                result += Medicine(
-                    id = cursor.getString(id),
-                    category = cursor.getString(category),
-                    subcategory = cursor.getString(subcategory),
-                    name = cursor.getString(name),
-                    note = cursor.getString(note),
-                    description = cursor.getString(description) ?: "",
-                    official = cursor.getLong(official),
-                    discounted = if (cursor.isNull(discounted)) null else cursor.getLong(discounted),
-                    revision = cursor.getInt(revision),
-                    favorite = cursor.getInt(favorite) != 0,
-                    createdAt = if (cursor.isNull(createdAt)) null else cursor.getLong(createdAt),
+                result += TrashedMedicine(
+                    medicine = medicineFromCursor(cursor),
+                    deletedAt = cursor.getLong(deletedAt),
                 )
             }
         }
         return result
     }
 
+    fun trashCount(): Int =
+        open().rawQuery(
+            "SELECT COUNT(*) FROM medicines WHERE deleted_at IS NOT NULL",
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getInt(0) else 0
+        }
+
     private fun existing(db: SQLiteDatabase, id: String): ExistingRow? =
         db.rawQuery(
-            "SELECT sort_order, favorite, created_at FROM medicines WHERE id = ?",
+            "SELECT sort_order, favorite, created_at, deleted_at FROM medicines WHERE id = ?",
             arrayOf(id),
         ).use { cursor ->
             if (!cursor.moveToFirst()) null
@@ -120,6 +172,7 @@ private class MedicineDatabase(context: Context) {
                 sortOrder = cursor.getLong(0),
                 favorite = cursor.getInt(1) != 0,
                 createdAt = if (cursor.isNull(2)) null else cursor.getLong(2),
+                deletedAt = if (cursor.isNull(3)) null else cursor.getLong(3),
             )
         }
 
@@ -147,9 +200,34 @@ private class MedicineDatabase(context: Context) {
             put("favorite", if (current?.favorite ?: item.favorite) 1 else 0)
             put("sort_order", current?.sortOrder ?: newSortOrder ?: maxSortOrder(db) + 1)
             put("created_at", createdAt)
+            putNull("deleted_at")
         }
         db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
         return isNew
+    }
+
+    private fun writeReplacementMedicine(
+        db: SQLiteDatabase,
+        item: Medicine,
+        sortOrder: Long,
+        createdAtFallback: Long,
+    ) {
+        val values = ContentValues().apply {
+            put("id", item.id)
+            put("category", item.category)
+            put("subcategory", subcategoryLabel(item.subcategory))
+            put("name", item.name)
+            put("note", item.note)
+            put("description", item.description)
+            put("official", item.official)
+            if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
+            put("revision", item.revision)
+            put("favorite", if (item.favorite) 1 else 0)
+            put("sort_order", sortOrder)
+            put("created_at", item.createdAt?.takeIf { it >= 0 } ?: createdAtFallback)
+            putNull("deleted_at")
+        }
+        db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     fun saveMedicine(item: Medicine) {
@@ -165,12 +243,95 @@ private class MedicineDatabase(context: Context) {
 
     fun toggleFavorite(id: String): Boolean? {
         val db = open()
-        val current = db.rawQuery("SELECT favorite FROM medicines WHERE id = ?", arrayOf(id)).use { cursor ->
+        val current = db.rawQuery(
+            "SELECT favorite FROM medicines WHERE id = ? AND deleted_at IS NULL",
+            arrayOf(id),
+        ).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) != 0 else return null
         }
         val next = !current
-        db.execSQL("UPDATE medicines SET favorite = ? WHERE id = ?", arrayOf<Any>(if (next) 1 else 0, id))
+        db.execSQL(
+            "UPDATE medicines SET favorite = ? WHERE id = ? AND deleted_at IS NULL",
+            arrayOf<Any>(if (next) 1 else 0, id),
+        )
         return next
+    }
+
+    fun moveMedicineToTrash(id: String, deletedAt: Long = System.currentTimeMillis()): Boolean {
+        val db = open()
+        db.beginTransaction()
+        return try {
+            val values = ContentValues().apply { put("deleted_at", deletedAt) }
+            val changed = db.update(
+                "medicines",
+                values,
+                "id = ? AND deleted_at IS NULL",
+                arrayOf(id),
+            ) == 1
+            db.setTransactionSuccessful()
+            changed
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun restoreMedicine(id: String): Boolean {
+        val db = open()
+        db.beginTransaction()
+        return try {
+            val values = ContentValues().apply { putNull("deleted_at") }
+            val changed = db.update(
+                "medicines",
+                values,
+                "id = ? AND deleted_at IS NOT NULL",
+                arrayOf(id),
+            ) == 1
+            db.setTransactionSuccessful()
+            changed
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun permanentlyDeleteMedicine(id: String): Boolean {
+        val db = open()
+        db.beginTransaction()
+        return try {
+            val changed = db.delete(
+                "medicines",
+                "id = ? AND deleted_at IS NOT NULL",
+                arrayOf(id),
+            ) == 1
+            db.setTransactionSuccessful()
+            changed
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun emptyTrash(): Int {
+        val db = open()
+        db.beginTransaction()
+        return try {
+            val deleted = db.delete("medicines", "deleted_at IS NOT NULL", null)
+            db.setTransactionSuccessful()
+            deleted
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun restoreAll(): Int {
+        val db = open()
+        db.beginTransaction()
+        return try {
+            val values = ContentValues().apply { putNull("deleted_at") }
+            val restored = db.update("medicines", values, "deleted_at IS NOT NULL", null)
+            db.setTransactionSuccessful()
+            restored
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun mergeMedicines(items: List<Medicine>) {
@@ -191,24 +352,38 @@ private class MedicineDatabase(context: Context) {
         val db = open()
         db.beginTransaction()
         try {
-            db.delete("medicines", null, null)
+            val incomingIds = items.mapTo(HashSet(items.size)) { it.id }
             val now = System.currentTimeMillis()
-            items.forEachIndexed { index, item ->
-                val values = ContentValues().apply {
-                    put("id", item.id)
-                    put("category", item.category)
-                    put("subcategory", subcategoryLabel(item.subcategory))
-                    put("name", item.name)
-                    put("note", item.note)
-                    put("description", item.description)
-                    put("official", item.official)
-                    if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
-                    put("revision", item.revision)
-                    put("favorite", if (item.favorite) 1 else 0)
-                    put("sort_order", index)
-                    put("created_at", item.createdAt?.takeIf { it >= 0 } ?: now + index)
+            val omittedActiveIds = mutableListOf<String>()
+            db.rawQuery(
+                "SELECT id FROM medicines WHERE deleted_at IS NULL",
+                null,
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(0)
+                    if (id !in incomingIds) omittedActiveIds += id
                 }
-                db.insertOrThrow("medicines", null, values)
+            }
+
+            if (omittedActiveIds.isNotEmpty()) {
+                val values = ContentValues().apply { put("deleted_at", now) }
+                omittedActiveIds.forEach { id ->
+                    db.update(
+                        "medicines",
+                        values,
+                        "id = ? AND deleted_at IS NULL",
+                        arrayOf(id),
+                    )
+                }
+            }
+
+            items.forEachIndexed { index, item ->
+                writeReplacementMedicine(
+                    db = db,
+                    item = item,
+                    sortOrder = index.toLong(),
+                    createdAtFallback = now + index,
+                )
             }
             db.setTransactionSuccessful()
         } finally {
@@ -330,11 +505,51 @@ class PharmacyRepository(context: Context) {
             largeText = preferences.largeText(),
             currency = preferences.currency(),
             themePreference = preferences.themePreference(),
+            trashCount = database.trashCount(),
         )
     }
 
     suspend fun loadSnapshot(): AppSnapshot = withContext(Dispatchers.IO) {
         mutex.withLock { snapshotUnsafe() }
+    }
+
+    suspend fun loadTrash(): List<TrashedMedicine> = withContext(Dispatchers.IO) {
+        mutex.withLock { database.loadTrash() }
+    }
+
+    suspend fun moveMedicineToTrash(id: String): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(database.moveMedicineToTrash(id)) { "Medicine is no longer available to move to Trash." }
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun restoreMedicine(id: String): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(database.restoreMedicine(id)) { "Medicine is no longer in Trash." }
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun permanentlyDeleteMedicine(id: String): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            check(database.permanentlyDeleteMedicine(id)) { "Only medicines in Trash can be permanently deleted." }
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun emptyTrash(): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            database.emptyTrash()
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun restoreAllTrash(): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            database.restoreAll()
+            snapshotUnsafe()
+        }
     }
 
     suspend fun saveMedicine(item: Medicine): AppSnapshot = withContext(Dispatchers.IO) {
