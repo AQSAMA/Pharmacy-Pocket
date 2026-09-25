@@ -241,6 +241,38 @@ class TrashStorageTest {
     }
 
     @Test
+    fun replaceKeepsSortOrderUniqueAcrossActiveAndTrash() {
+        storage.saveMedicine(medicine("old-a"))
+        storage.saveMedicine(medicine("old-b"))
+        storage.saveMedicine(medicine("old-trash"))
+        storage.moveMedicineToTrash("old-trash", deletedAt = 5L)
+
+        storage.replaceMedicines(
+            listOf(
+                medicine("import-a"),
+                medicine("import-b"),
+            ),
+        )
+
+        SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+            val counts = db.rawQuery(
+                "SELECT COUNT(*), COUNT(DISTINCT sort_order) FROM medicines",
+                null,
+            ).use { cursor ->
+                cursor.moveToFirst()
+                cursor.getInt(0) to cursor.getInt(1)
+            }
+            assertEquals(counts.first, counts.second)
+        }
+
+        assertEquals(3, storage.restoreAll())
+        assertEquals(
+            listOf("old-a", "old-b", "old-trash", "import-a", "import-b"),
+            storage.loadMedicines().map { it.id },
+        )
+    }
+
+    @Test
     fun replaceReactivatesIncomingIdThatWasAlreadyInTrash() {
         storage.saveMedicine(medicine("same", name = "Old"))
         storage.moveMedicineToTrash("same", deletedAt = 20L)
