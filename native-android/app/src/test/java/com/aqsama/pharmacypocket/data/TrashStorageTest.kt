@@ -133,6 +133,14 @@ class TrashStorageTest {
             }
             assertNull(deletedAt)
         }
+
+        storage.close()
+        storage = MedicineDatabase(context)
+        val reopened = storage.loadMedicines().single()
+        assertEquals("legacy", reopened.id)
+        assertEquals(123_456L, reopened.createdAt)
+        assertTrue(reopened.favorite)
+        assertEquals(0, storage.trashCount())
     }
 
     @Test
@@ -141,7 +149,11 @@ class TrashStorageTest {
         storage.saveMedicine(medicine("b", createdAt = 222L))
 
         assertTrue(storage.moveMedicineToTrash("a", deletedAt = 1_000L))
+        assertFalse(storage.moveMedicineToTrash("a", deletedAt = 2_000L))
         assertEquals(listOf("b"), storage.loadMedicines().map { it.id })
+
+        storage.close()
+        storage = MedicineDatabase(context)
 
         val trashed = storage.loadTrash().single()
         assertEquals("a", trashed.medicine.id)
@@ -150,6 +162,7 @@ class TrashStorageTest {
         assertEquals(1_000L, trashed.deletedAt)
 
         assertTrue(storage.restoreMedicine("a"))
+        assertFalse(storage.restoreMedicine("a"))
         val restored = storage.loadMedicines()
         assertEquals(listOf("a", "b"), restored.map { it.id })
         assertTrue(restored.first().favorite)
