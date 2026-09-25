@@ -162,6 +162,13 @@ internal class MedicineDatabase(context: Context) {
             if (cursor.moveToFirst()) cursor.getInt(0) else 0
         }
 
+    internal fun close() {
+        synchronized(lock) {
+            database?.close()
+            database = null
+        }
+    }
+
     private fun existing(db: SQLiteDatabase, id: String): ExistingRow? =
         db.rawQuery(
             "SELECT sort_order, favorite, created_at, deleted_at FROM medicines WHERE id = ?",
