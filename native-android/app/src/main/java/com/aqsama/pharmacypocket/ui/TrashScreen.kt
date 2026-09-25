@@ -43,7 +43,7 @@ import com.aqsama.pharmacypocket.data.subcategoryLabel
 @Composable
 fun TrashScreen(
     snapshot: AppSnapshot,
-    items: List<TrashedMedicine>?,
+    trashItems: List<TrashedMedicine>?,
     busy: Boolean,
     onBack: () -> Unit,
     onRestore: (TrashedMedicine) -> Unit,
@@ -57,15 +57,15 @@ fun TrashScreen(
     var confirmRestoreAll by remember { mutableStateOf(false) }
     var confirmEmpty by remember { mutableStateOf(false) }
 
-    val filtered = remember(items, query) {
-        filterTrash(items.orEmpty(), query)
+    val filtered = remember(trashItems, query) {
+        filterTrash(trashItems.orEmpty(), query)
     }
 
     Scaffold(
         topBar = { ScreenTopBar("Trash", onBack) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        if (items == null) {
+        if (trashItems == null) {
             Column(
                 Modifier
                     .fillMaxSize()
@@ -95,7 +95,7 @@ fun TrashScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Text(
-                                    "${items.size} ${if (items.size == 1) "medicine" else "medicines"} in Trash",
+                                    "${trashItems.size} ${if (items.size == 1) "medicine" else "medicines"} in Trash",
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -109,7 +109,7 @@ fun TrashScreen(
                             }
                         }
 
-                        if (items.isNotEmpty()) {
+                        if (trashItems.isNotEmpty()) {
                             OutlinedTextField(
                                 value = query,
                                 onValueChange = { query = it },
@@ -156,7 +156,7 @@ fun TrashScreen(
                     }
                 }
 
-                if (items.isEmpty()) {
+                if (trashItems.isEmpty()) {
                     item {
                         Surface(
                             modifier = Modifier
@@ -314,7 +314,7 @@ fun TrashScreen(
     if (confirmEmpty) {
         AlertDialog(
             onDismissRequest = { if (!busy) confirmEmpty = false },
-            title = { Text("Permanently delete all ${items?.size ?: 0} medicines in Trash?") },
+            title = { Text("Permanently delete all ${trashItems?.size ?: 0} medicines in Trash?") },
             text = { Text("This cannot be undone.") },
             dismissButton = {
                 TextButton(
@@ -343,7 +343,7 @@ fun TrashScreen(
     if (confirmRestoreAll) {
         AlertDialog(
             onDismissRequest = { if (!busy) confirmRestoreAll = false },
-            title = { Text("Restore all ${items?.size ?: 0} medicines?") },
+            title = { Text("Restore all ${trashItems?.size ?: 0} medicines?") },
             text = { Text("All items in Trash will become active again.") },
             dismissButton = {
                 TextButton(
