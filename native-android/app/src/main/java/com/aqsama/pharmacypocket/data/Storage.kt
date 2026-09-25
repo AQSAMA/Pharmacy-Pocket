@@ -19,7 +19,6 @@ private data class ExistingRow(
     val sortOrder: Long,
     val favorite: Boolean,
     val createdAt: Long?,
-    val deletedAt: Long?,
 )
 
 internal class MedicineDatabase(context: Context) {
@@ -38,7 +37,12 @@ internal class MedicineDatabase(context: Context) {
                 SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY,
             )
             runCatching { db.enableWriteAheadLogging() }
-            ensureSchema(db)
+            try {
+                ensureSchema(db)
+            } catch (error: Throwable) {
+                db.close()
+                throw error
+            }
             database = db
             return db
         }
@@ -171,7 +175,7 @@ internal class MedicineDatabase(context: Context) {
 
     private fun existing(db: SQLiteDatabase, id: String): ExistingRow? =
         db.rawQuery(
-            "SELECT sort_order, favorite, created_at, deleted_at FROM medicines WHERE id = ?",
+            "SELECT sort_order, favorite, created_at FROM medicines WHERE id = ?",
             arrayOf(id),
         ).use { cursor ->
             if (!cursor.moveToFirst()) null
@@ -179,7 +183,6 @@ internal class MedicineDatabase(context: Context) {
                 sortOrder = cursor.getLong(0),
                 favorite = cursor.getInt(1) != 0,
                 createdAt = if (cursor.isNull(2)) null else cursor.getLong(2),
-                deletedAt = if (cursor.isNull(3)) null else cursor.getLong(3),
             )
         }
 
@@ -359,7 +362,7 @@ internal class MedicineDatabase(context: Context) {
         val db = open()
         db.beginTransaction()
         try {
-            val incomingIds = items.mapTo(HashSet(items.size)) { it.id }
+            val incomingIds = items.mapTo(HashSet<String>(items.size)) { it.id }
             val now = System.currentTimeMillis()
             val omittedActiveIds = mutableListOf<String>()
             db.rawQuery(
