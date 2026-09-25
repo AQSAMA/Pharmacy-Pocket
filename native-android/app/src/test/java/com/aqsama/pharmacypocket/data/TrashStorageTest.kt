@@ -21,6 +21,7 @@ import java.io.File
 class TrashStorageTest {
     private lateinit var context: Context
     private lateinit var dbFile: File
+    private lateinit var storage: MedicineDatabase
 
     @Before
     fun setUp() {
@@ -29,10 +30,12 @@ class TrashStorageTest {
         dbFile.delete()
         File(dbFile.absolutePath + "-wal").delete()
         File(dbFile.absolutePath + "-shm").delete()
+        storage = MedicineDatabase(context)
     }
 
     @After
     fun tearDown() {
+        storage.close()
         dbFile.delete()
         File(dbFile.absolutePath + "-wal").delete()
         File(dbFile.absolutePath + "-shm").delete()
@@ -96,7 +99,6 @@ class TrashStorageTest {
             db.execSQL("PRAGMA user_version = 1")
         }
 
-        val storage = MedicineDatabase(context)
         val item = storage.loadMedicines().single()
 
         assertEquals("legacy", item.id)
@@ -134,7 +136,6 @@ class TrashStorageTest {
 
     @Test
     fun softDeleteHidesMedicineAndRestorePreservesIdentityFavoriteDateAndOrder() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("a", favorite = true, createdAt = 111L))
         storage.saveMedicine(medicine("b", createdAt = 222L))
 
@@ -156,7 +157,6 @@ class TrashStorageTest {
 
     @Test
     fun permanentDeleteOnlyRemovesRowsAlreadyInTrash() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("active"))
         storage.saveMedicine(medicine("trashed"))
 
@@ -170,7 +170,6 @@ class TrashStorageTest {
 
     @Test
     fun emptyTrashNeverTouchesActiveRows() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("active"))
         storage.saveMedicine(medicine("trash-1"))
         storage.saveMedicine(medicine("trash-2"))
@@ -184,7 +183,6 @@ class TrashStorageTest {
 
     @Test
     fun mergeReactivatesMatchingTrashIdUsingCurrentMergeSemantics() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("same", name = "Old", favorite = true, createdAt = 50L))
         storage.moveMedicineToTrash("same", deletedAt = 10L)
 
@@ -211,7 +209,6 @@ class TrashStorageTest {
 
     @Test
     fun replaceMovesOmittedActiveItemsToTrashAndKeepsUnrelatedTrash() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("keep", name = "Before"))
         storage.saveMedicine(medicine("omit"))
         storage.saveMedicine(medicine("old-trash"))
@@ -231,7 +228,6 @@ class TrashStorageTest {
 
     @Test
     fun replaceReactivatesIncomingIdThatWasAlreadyInTrash() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("same", name = "Old"))
         storage.moveMedicineToTrash("same", deletedAt = 20L)
 
@@ -248,8 +244,20 @@ class TrashStorageTest {
     }
 
     @Test
+    fun restoreAllRestoresEveryTrashItemWithoutChangingOrder() {
+        storage.saveMedicine(medicine("a", createdAt = 10L))
+        storage.saveMedicine(medicine("b", createdAt = 20L))
+        storage.saveMedicine(medicine("c", createdAt = 30L))
+        storage.moveMedicineToTrash("a", deletedAt = 100L)
+        storage.moveMedicineToTrash("c", deletedAt = 200L)
+
+        assertEquals(2, storage.restoreAll())
+        assertEquals(listOf("a", "b", "c"), storage.loadMedicines().map { it.id })
+        assertEquals(0, storage.trashCount())
+    }
+
+    @Test
     fun normalBackupExportExcludesTrashAndRestoredMedicineExportsAgain() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("active"))
         storage.saveMedicine(medicine("trash"))
         storage.moveMedicineToTrash("trash", deletedAt = 30L)
@@ -274,7 +282,6 @@ class TrashStorageTest {
 
     @Test
     fun trashIsOrderedNewestDeletedFirst() {
-        val storage = MedicineDatabase(context)
         storage.saveMedicine(medicine("older"))
         storage.saveMedicine(medicine("newer"))
         storage.moveMedicineToTrash("older", deletedAt = 100L)
