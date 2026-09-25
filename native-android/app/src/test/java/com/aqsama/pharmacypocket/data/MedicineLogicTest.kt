@@ -40,6 +40,20 @@ class MedicineLogicTest {
     }
 
     @Test
+    fun trashSearchUsesArabicNormalizationAcrossNameAndSubcategory() {
+        val item = medicine(
+            id = "arabic",
+            category = "tablets",
+            name = "أَقْرَاص",
+            subcategory = "مُسَكِّنات",
+        )
+        val trash = listOf(TrashedMedicine(item, deletedAt = 1L))
+
+        assertEquals(listOf("arabic"), filterTrash(trash, "اقراص").map { it.medicine.id })
+        assertEquals(listOf("arabic"), filterTrash(trash, "مسكنات").map { it.medicine.id })
+    }
+
+    @Test
     fun defaultSortUsesFullCategoryCountsThenNewestWithinCategory() {
         val items = listOf(
             medicine("a-old", "a", createdAt = 10, favorite = true),
