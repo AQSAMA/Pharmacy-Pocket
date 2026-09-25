@@ -17,7 +17,8 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+// Storage policy is API-independent; use a Robolectric-supported Android image.
+@Config(sdk = [34])
 class TrashStorageTest {
     private lateinit var context: Context
     private lateinit var dbFile: File
