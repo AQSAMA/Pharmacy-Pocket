@@ -236,6 +236,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             try {
                                 trashItems = repository.loadTrash()
                             } catch (error: Throwable) {
+                                trashItems = emptyList()
                                 Haptics.reject(view)
                                 errorMessage = error.message ?: "Could not load Trash."
                             }
