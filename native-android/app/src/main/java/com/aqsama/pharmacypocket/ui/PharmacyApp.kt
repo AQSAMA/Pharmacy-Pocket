@@ -29,6 +29,7 @@ import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.Medicine
 import com.aqsama.pharmacypocket.data.ParsedBackup
 import com.aqsama.pharmacypocket.data.PharmacyRepository
+import com.aqsama.pharmacypocket.data.ThemePreference
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -101,7 +102,8 @@ fun PharmacyApp(repository: PharmacyRepository) {
     BackHandler(enabled = backStack.size > 1) { pop() }
 
     val current = snapshot
-    Box(Modifier.fillMaxSize()) {
+    PharmacyPocketTheme(current?.themePreference ?: ThemePreference.SYSTEM) {
+        Box(Modifier.fillMaxSize()) {
         if (current == null) {
             CircularProgressIndicator(Modifier.align(Alignment.Center))
         } else {
@@ -145,6 +147,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         },
                         onSetCurrency = { value ->
                             runOperation("Currency saved") { repository.setCurrency(value) }
+                        },
+                        onSetTheme = { value ->
+                            runOperation { repository.setThemePreference(value) }
                         },
                         onImport = { data, mode ->
                             runOperation("Import complete") { repository.importBackup(data, mode) }
@@ -229,5 +234,6 @@ fun PharmacyApp(repository: PharmacyRepository) {
                 }
             },
         )
+    }
     }
 }

@@ -260,6 +260,14 @@ private class PreferenceStore(private val context: Context) {
     fun largeText(): Boolean = prefs.getBoolean("large-text", false)
     fun setLargeText(value: Boolean) = prefs.edit().putBoolean("large-text", value).apply()
 
+    fun themePreference(): ThemePreference = runCatching {
+        ThemePreference.valueOf(prefs.getString("theme-preference", ThemePreference.SYSTEM.name) ?: ThemePreference.SYSTEM.name)
+    }.getOrDefault(ThemePreference.SYSTEM)
+
+    fun setThemePreference(value: ThemePreference) {
+        prefs.edit().putString("theme-preference", value.name).apply()
+    }
+
     fun currency(): String = prefs.getString("currency-name", null)?.trim().takeUnless { it.isNullOrEmpty() } ?: "IQD"
     fun setCurrency(value: String) {
         prefs.edit().putString("currency-name", value.trim().ifEmpty { "IQD" }.take(24)).apply()
@@ -321,6 +329,7 @@ class PharmacyRepository(context: Context) {
             categories = complete,
             largeText = preferences.largeText(),
             currency = preferences.currency(),
+            themePreference = preferences.themePreference(),
         )
     }
 
@@ -344,6 +353,13 @@ class PharmacyRepository(context: Context) {
     suspend fun setLargeText(value: Boolean): AppSnapshot = withContext(Dispatchers.IO) {
         mutex.withLock {
             preferences.setLargeText(value)
+            snapshotUnsafe()
+        }
+    }
+
+    suspend fun setThemePreference(value: ThemePreference): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            preferences.setThemePreference(value)
             snapshotUnsafe()
         }
     }
