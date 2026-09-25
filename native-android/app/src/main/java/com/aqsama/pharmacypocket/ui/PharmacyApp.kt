@@ -130,6 +130,27 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
     }
 
+    fun runTrashOnlyOperation(
+        onSuccess: () -> Unit = {},
+        operation: suspend () -> Int,
+    ) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                val nextTrashCount = operation()
+                snapshot = snapshot?.copy(trashCount = nextTrashCount)
+                Haptics.confirm(view)
+                onSuccess()
+            } catch (error: Throwable) {
+                Haptics.reject(view)
+                errorMessage = error.message ?: "The Trash operation could not be completed."
+            } finally {
+                busy = false
+            }
+        }
+    }
+
     fun runOperation(
         successMessage: String? = null,
         onSuccess: () -> Unit = {},
@@ -250,13 +271,21 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                 runOperation { repository.restoreMedicine(trashed.medicine.id) }
                             },
                             onDeleteForever = { trashed ->
-                                runOperation { repository.permanentlyDeleteMedicine(trashed.medicine.id) }
+                                runTrashOnlyOperation(
+                                    onSuccess = {
+                                        trashItems = trashItems?.filterNot {
+                                            it.medicine.id == trashed.medicine.id
+                                        }
+                                    },
+                                ) { repository.permanentlyDeleteMedicine(trashed.medicine.id) }
                             },
                             onRestoreAll = {
                                 runOperation { repository.restoreAllTrash() }
                             },
                             onEmptyTrash = {
-                                runOperation { repository.emptyTrash() }
+                                runTrashOnlyOperation(
+                                    onSuccess = { trashItems = emptyList() },
+                                ) { repository.emptyTrash() }
                             },
                         )
                     }
