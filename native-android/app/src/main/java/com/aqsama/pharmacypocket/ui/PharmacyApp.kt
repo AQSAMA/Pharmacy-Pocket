@@ -280,6 +280,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                     is Destination.Detail -> MedicineDetailScreen(
                         snapshot = current,
                         medicineId = destination.medicineId,
+                        busy = busy,
                         onBack = ::pop,
                         onEdit = { push(Destination.Editor(destination.medicineId, null)) },
                         onToggleFavorite = { item ->
