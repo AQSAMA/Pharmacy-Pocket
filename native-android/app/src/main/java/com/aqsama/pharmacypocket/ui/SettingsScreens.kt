@@ -67,6 +67,7 @@ fun SettingsScreen(
     onSetCurrency: (String) -> Unit,
     onSetTheme: (ThemePreference) -> Unit,
     onImport: (ParsedBackup, ImportMode) -> Unit,
+    exportBackup: suspend () -> String,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -81,9 +82,7 @@ fun SettingsScreen(
         if (uri != null) {
             scope.launch {
                 try {
-                    val json = withContext(Dispatchers.Default) {
-                        BackupCodec.encode(snapshot.items, snapshot.currency, snapshot.categories)
-                    }
+                    val json = exportBackup()
                     withContext(Dispatchers.IO) { writeText(context, uri, json) }
                     Haptics.confirm(view)
                     android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()
@@ -374,9 +373,21 @@ fun SettingsScreen(
     }
 }
 
-private fun readText(context: Context, uri: Uri): String =
-    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+private fun readText(context: Context, uri: Uri): String {
+    val stream = context.contentResolver.openInputStream(uri)
         ?: throw IllegalStateException("Unable to read the selected file.")
+    return stream.use { input ->
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            require(output.size() + count <= PharmacyDefaults.maxBackupBytes) { "The backup exceeds 128 MB." }
+            output.write(buffer, 0, count)
+        }
+        output.toString(Charsets.UTF_8.name())
+    }
+}
 
 private fun writeText(context: Context, uri: Uri, text: String) {
     val stream = context.contentResolver.openOutputStream(uri, "wt")

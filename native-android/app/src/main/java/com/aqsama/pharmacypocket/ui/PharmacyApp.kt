@@ -18,10 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,18 +39,71 @@ import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
 import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.io.File
+import org.json.JSONObject
 
 private sealed interface Destination {
     data object Home : Destination
     data object Settings : Destination
     data object Categories : Destination
     data object Trash : Destination
-    data class Editor(val medicineId: String?, val category: String?) : Destination
+    data class Editor(val medicineId: String?, val category: String?, val initialCapture: String? = null) : Destination
     data class Detail(val medicineId: String) : Destination
 }
 
 private data class NavEntry(val id: String, val destination: Destination)
+
+private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<NavEntry>, String>(
+    save = { entries -> entries.map { entry ->
+        JSONObject().put("id", entry.id).apply {
+            when (val destination = entry.destination) {
+                Destination.Home -> put("screen", "home")
+                Destination.Settings -> put("screen", "settings")
+                Destination.Categories -> put("screen", "categories")
+                Destination.Trash -> put("screen", "trash")
+                is Destination.Editor -> {
+                    put("screen", "editor")
+                    put("medicineId", destination.medicineId)
+                    put("category", destination.category)
+                    put("capture", destination.initialCapture)
+                }
+                is Destination.Detail -> { put("screen", "detail"); put("medicineId", destination.medicineId) }
+            }
+        }.toString()
+    } },
+    restore = { encoded ->
+        val entries = encoded.mapNotNull { raw ->
+            runCatching {
+                val obj = JSONObject(raw)
+                val destination = when (obj.getString("screen")) {
+                    "home" -> Destination.Home
+                    "settings" -> Destination.Settings
+                    "categories" -> Destination.Categories
+                    "trash" -> Destination.Trash
+                    "editor" -> Destination.Editor(obj.optString("medicineId").takeUnless { it.isEmpty() || it == "null" },
+                        obj.optString("category").takeUnless { it.isEmpty() || it == "null" },
+                        obj.optString("capture").takeUnless { it.isEmpty() || it == "null" })
+                    "detail" -> Destination.Detail(obj.getString("medicineId"))
+                    else -> throw IllegalArgumentException("Unknown screen")
+                }
+                NavEntry(obj.getString("id"), destination)
+            }.getOrNull()
+        }
+        androidx.compose.runtime.mutableStateListOf<NavEntry>().apply {
+            addAll(if (entries.firstOrNull()?.destination == Destination.Home) entries else listOf(NavEntry("home", Destination.Home)))
+        }
+    },
+)
+
+private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
+    save = { drafts -> drafts.entries.flatMap { listOf(it.key, it.value) } },
+    restore = { parts -> androidx.compose.runtime.mutableStateMapOf<String, String>().apply {
+        parts.chunked(2).forEach { if (it.size == 2) put(it[0], it[1]) }
+    } },
+)
 
 @Composable
 fun PharmacyApp(repository: PharmacyRepository) {
@@ -55,13 +111,30 @@ fun PharmacyApp(repository: PharmacyRepository) {
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
-    val backStack = remember { mutableStateListOf(NavEntry("home", Destination.Home)) }
+    val backStack = rememberSaveable(saver = navSaver) { mutableStateListOf(NavEntry("home", Destination.Home)) }
+    val photoDrafts = rememberSaveable(saver = photoDraftSaver) { mutableStateMapOf<String, String>() }
+
+    fun discardDraft(entryId: String) {
+        photoDrafts.remove(entryId)?.let { File(it).delete() }
+    }
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        val retainedPaths = photoDrafts.values.toSet()
+        withContext(Dispatchers.IO) {
+            val staleBefore = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+            File(context.noBackupFilesDir, "medicine_drafts").listFiles()?.forEach { file ->
+                if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
+                    file.delete()
+                }
+            }
+        }
+    }
 
     fun push(destination: Destination) {
         Haptics.action(view)
@@ -72,6 +145,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         if (backStack.size <= 1) return
         Haptics.action(view)
         val removed = backStack.removeAt(backStack.lastIndex)
+        discardDraft(removed.id)
         stateHolder.removeState(removed.id)
     }
 
@@ -85,7 +159,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
         backStack
             .filterNot { it in retained }
-            .forEach { stateHolder.removeState(it.id) }
+            .forEach { stateHolder.removeState(it.id); discardDraft(it.id) }
         backStack.clear()
         if (retained.isEmpty()) {
             backStack += NavEntry("home", Destination.Home)
@@ -197,7 +271,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                     Destination.Home -> HomeScreen(
                         snapshot = current,
                         onSettings = { push(Destination.Settings) },
-                        onAddMedicine = { category -> push(Destination.Editor(null, category)) },
+                        onAddMedicine = { category, initialCapture -> push(Destination.Editor(null, category, initialCapture)) },
                         onOpenMedicine = { push(Destination.Detail(it)) },
                         onEditMedicine = { push(Destination.Editor(it, null)) },
                         onToggleFavorite = { item ->
@@ -242,6 +316,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onImport = { data, mode ->
                             runOperation("Import complete") { repository.importBackup(data, mode) }
                         },
+                        exportBackup = repository::exportBackup,
                     )
 
                     Destination.Categories -> CategoryManagerScreen(
@@ -294,14 +369,25 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         snapshot = current,
                         medicineId = destination.medicineId,
                         initialCategory = destination.category,
+                        initialCapture = destination.initialCapture,
                         busy = busy,
                         onBack = ::pop,
                         onManageCategories = { push(Destination.Categories) },
-                        onSave = { medicine ->
+                        loadPhoto = repository::loadPhoto,
+                        photoPath = photoDrafts[entry.id],
+                        onPhotoPath = { path ->
+                            if (busy) {
+                                path?.let { File(it).delete() }
+                            } else {
+                                photoDrafts.remove(entry.id)?.takeIf { it != path }?.let { File(it).delete() }
+                                if (path != null) photoDrafts[entry.id] = path
+                            }
+                        },
+                        onSave = { medicine, photo, removePhoto ->
                             runOperation(
                                 successMessage = "Medicine saved",
                                 onSuccess = ::pop,
-                            ) { repository.saveMedicine(medicine) }
+                            ) { repository.saveMedicine(medicine, photo, removePhoto) }
                         },
                         onMoveToTrash = ::moveToTrash,
                     )
@@ -330,6 +416,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             }
                         },
                         onMoveToTrash = ::moveToTrash,
+                        loadPhoto = repository::loadPhoto,
                     )
                 }
             }
