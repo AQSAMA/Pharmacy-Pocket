@@ -39,7 +39,10 @@ import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
 import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.io.File
 import org.json.JSONObject
 
 private sealed interface Destination {
@@ -95,6 +98,13 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
     },
 )
 
+private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
+    save = { drafts -> drafts.entries.flatMap { listOf(it.key, it.value) } },
+    restore = { parts -> androidx.compose.runtime.mutableStateMapOf<String, String>().apply {
+        parts.chunked(2).forEach { if (it.size == 2) put(it[0], it[1]) }
+    } },
+)
+
 @Composable
 fun PharmacyApp(repository: PharmacyRepository) {
     val context = LocalContext.current
@@ -102,7 +112,11 @@ fun PharmacyApp(repository: PharmacyRepository) {
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
     val backStack = rememberSaveable(saver = navSaver) { mutableStateListOf(NavEntry("home", Destination.Home)) }
-    val photoDrafts = remember { mutableStateMapOf<String, ByteArray>() }
+    val photoDrafts = rememberSaveable(saver = photoDraftSaver) { mutableStateMapOf<String, String>() }
+
+    fun discardDraft(entryId: String) {
+        photoDrafts.remove(entryId)?.let { File(it).delete() }
+    }
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -119,7 +133,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         if (backStack.size <= 1) return
         Haptics.action(view)
         val removed = backStack.removeAt(backStack.lastIndex)
-        photoDrafts.remove(removed.id)
+        discardDraft(removed.id)
         stateHolder.removeState(removed.id)
     }
 
@@ -133,7 +147,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
         backStack
             .filterNot { it in retained }
-            .forEach { stateHolder.removeState(it.id); photoDrafts.remove(it.id) }
+            .forEach { stateHolder.removeState(it.id); discardDraft(it.id) }
         backStack.clear()
         if (retained.isEmpty()) {
             backStack += NavEntry("home", Destination.Home)
@@ -348,15 +362,19 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onBack = ::pop,
                         onManageCategories = { push(Destination.Categories) },
                         loadPhoto = repository::loadPhoto,
-                        photoBytes = photoDrafts[entry.id],
-                        onPhotoBytes = { bytes ->
-                            if (bytes == null) photoDrafts.remove(entry.id) else photoDrafts[entry.id] = bytes
+                        photoPath = photoDrafts[entry.id],
+                        onPhotoPath = { path ->
+                            photoDrafts.remove(entry.id)?.takeIf { it != path }?.let { File(it).delete() }
+                            if (path != null) photoDrafts[entry.id] = path
                         },
-                        onSave = { medicine, photo, removePhoto ->
+                        onSave = { medicine, photoPath, removePhoto ->
                             runOperation(
                                 successMessage = "Medicine saved",
                                 onSuccess = ::pop,
-                            ) { repository.saveMedicine(medicine, photo, removePhoto) }
+                            ) {
+                                val photo = photoPath?.let { path -> withContext(Dispatchers.IO) { File(path).readBytes() } }
+                                repository.saveMedicine(medicine, photo, removePhoto)
+                            }
                         },
                         onMoveToTrash = ::moveToTrash,
                     )

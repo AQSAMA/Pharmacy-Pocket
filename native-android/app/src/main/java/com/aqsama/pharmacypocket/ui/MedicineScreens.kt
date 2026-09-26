@@ -79,12 +79,12 @@ fun MedicineEditorScreen(
     busy: Boolean,
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
-    onSave: (Medicine, ByteArray?, Boolean) -> Unit,
+    onSave: (Medicine, String?, Boolean) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
-    photoBytes: ByteArray?,
-    onPhotoBytes: (ByteArray?) -> Unit,
+    photoPath: String?,
+    onPhotoPath: (String?) -> Unit,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -112,6 +112,7 @@ fun MedicineEditorScreen(
     var showScanner by remember { mutableStateOf(false) }
     var scannerStickerOnly by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
+    var draftPhoto by remember(photoPath) { mutableStateOf<ByteArray?>(null) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
     var cameraPath by rememberSaveable(medicineId) { mutableStateOf<String?>(null) }
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
@@ -121,11 +122,23 @@ fun MedicineEditorScreen(
     LaunchedEffect(existing?.id, existing?.hasPhoto) {
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
     }
+    LaunchedEffect(photoPath) {
+        draftPhoto = photoPath?.let { path -> withContext(Dispatchers.IO) {
+            File(path).takeIf { it.isFile }?.readBytes()
+        } }
+    }
 
     fun acceptPhoto(uri: Uri) {
         scope.launch {
             try {
-                onPhotoBytes(withContext(Dispatchers.IO) { prepareMedicinePhoto(context, uri) })
+                val path = withContext(Dispatchers.IO) {
+                    val bytes = prepareMedicinePhoto(context, uri)
+                    val draft = File(context.cacheDir, "medicine_capture/draft-${UUID.randomUUID()}.jpg")
+                    draft.parentFile?.mkdirs()
+                    draft.writeBytes(bytes)
+                    draft.absolutePath
+                }
+                onPhotoPath(path)
                 removePhoto = false
             } catch (error: Exception) {
                 validationError = error.message ?: "Could not open this photo."
@@ -219,7 +232,7 @@ fun MedicineEditorScreen(
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                 codes = codes,
             ),
-            photoBytes,
+            photoPath,
             removePhoto,
         )
     }
@@ -266,10 +279,13 @@ fun MedicineEditorScreen(
                     }
 
                     Text("Medicine photo", fontWeight = FontWeight.Bold)
-                    (photoBytes ?: if (removePhoto) null else savedPhoto)?.let { bytes ->
+                    (draftPhoto ?: if (removePhoto) null else savedPhoto)?.let { bytes ->
                         val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
                         bitmap?.let { Image(it, contentDescription = "Medicine photo", modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
-                        TextButton(onClick = { onPhotoBytes(null); removePhoto = true }) { Text("Remove photo") }
+                        TextButton(onClick = { onPhotoPath(null); removePhoto = true }) { Text("Remove photo") }
+                    }
+                    if (photoPath != null && draftPhoto == null) {
+                        Text("Photo is unavailable. Choose it again before saving.", color = MaterialTheme.colorScheme.error)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = ::takePhoto) { Text("Take photo") }
