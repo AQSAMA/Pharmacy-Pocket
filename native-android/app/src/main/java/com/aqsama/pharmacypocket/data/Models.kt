@@ -94,7 +94,24 @@ data class ParsedBackup(
     val currency: String,
     val hasCurrency: Boolean,
     val sourceVersion: Int,
+    val richFields: Map<String, RichFieldPresence> = emptyMap(),
 )
+
+data class RichFieldPresence(
+    val tags: Boolean,
+    val checklist: Boolean,
+    val reminder: Boolean,
+)
+
+fun mergeImportedRichFields(imported: Medicine, local: Medicine?, presence: RichFieldPresence?): Medicine {
+    if (local == null) return imported
+    return imported.copy(
+        tags = if (presence?.tags == true) imported.tags else local.tags,
+        checklist = if (presence?.checklist == true) imported.checklist else local.checklist,
+        reminderAt = if (presence?.reminder == true) imported.reminderAt else local.reminderAt,
+        reminderRepeat = if (presence?.reminder == true) imported.reminderRepeat else local.reminderRepeat,
+    )
+}
 
 object PharmacyDefaults {
     const val maxCategories = 256

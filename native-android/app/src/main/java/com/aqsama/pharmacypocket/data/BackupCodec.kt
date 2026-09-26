@@ -39,10 +39,10 @@ object BackupCodec {
                     put("name", item.name)
                     put("note", item.note)
                     put("description", item.description)
-                    if (item.tags.isNotEmpty()) put("tags", JSONArray(item.tags))
-                    item.reminderAt?.let { put("reminderAt", it) }
-                    if (item.reminderRepeat != ReminderRepeat.NONE) put("reminderRepeat", item.reminderRepeat.name)
-                    if (item.checklist.isNotEmpty()) put("checklist", JSONArray().apply {
+                    put("tags", JSONArray(item.tags))
+                    put("reminderAt", item.reminderAt ?: JSONObject.NULL)
+                    put("reminderRepeat", item.reminderRepeat.name)
+                    put("checklist", JSONArray().apply {
                         item.checklist.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
                     })
                     put("official", item.official)
@@ -77,12 +77,18 @@ object BackupCodec {
             }
 
             val medicines = mutableListOf<Medicine>()
+            val richFields = mutableMapOf<String, RichFieldPresence>()
             val ids = mutableSetOf<String>()
             for (index in 0 until medicineArray.length()) {
                 val obj = medicineArray.optJSONObject(index)
                     ?: throw IllegalArgumentException("One or more medicines in this file are invalid.")
                 val item = parseMedicine(obj, favoriteIds)
                 require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
+                richFields[item.id] = RichFieldPresence(
+                    tags = obj.has("tags"),
+                    checklist = obj.has("checklist"),
+                    reminder = obj.has("reminderAt"),
+                )
                 medicines += item
             }
 
@@ -131,6 +137,7 @@ object BackupCodec {
                 currency = currency,
                 hasCurrency = hasCurrency,
                 sourceVersion = sourceVersion,
+                richFields = richFields,
             )
         } catch (error: IllegalArgumentException) {
             throw error

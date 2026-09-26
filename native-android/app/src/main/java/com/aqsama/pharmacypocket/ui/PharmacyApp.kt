@@ -15,6 +15,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -27,6 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
@@ -54,6 +58,7 @@ private data class NavEntry(val id: String, val destination: Destination)
 fun PharmacyApp(repository: PharmacyRepository) {
     val context = LocalContext.current
     val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
     val backStack = remember { mutableStateListOf(NavEntry("home", Destination.Home)) }
@@ -183,6 +188,21 @@ fun PharmacyApp(repository: PharmacyRepository) {
         } catch (error: Throwable) {
             errorMessage = error.message ?: "Unable to open local storage."
         }
+    }
+
+    // A reminder can advance in a receiver while the activity is paused. Refresh
+    // before showing its detail screen again so an edit cannot restore the old date.
+    DisposableEffect(lifecycleOwner, repository) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    try { snapshot = repository.loadSnapshot() }
+                    catch (error: Throwable) { errorMessage = error.message ?: "Unable to refresh local storage." }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(snapshot?.items) {

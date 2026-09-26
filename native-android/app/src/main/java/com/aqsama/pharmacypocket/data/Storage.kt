@@ -670,7 +670,12 @@ class PharmacyRepository(context: Context) {
                 data.medicines.map { it.category },
             )
             when (mode) {
-                ImportMode.MERGE -> database.mergeMedicines(data.medicines)
+                ImportMode.MERGE -> {
+                    val local = database.loadMedicines().associateBy { it.id }
+                    database.mergeMedicines(data.medicines.map { imported ->
+                        mergeImportedRichFields(imported, local[imported.id], data.richFields[imported.id])
+                    })
+                }
                 ImportMode.REPLACE -> database.replaceMedicines(data.medicines)
             }
             if (shouldApplyImportedCurrency(mode, data.hasCurrency)) {
