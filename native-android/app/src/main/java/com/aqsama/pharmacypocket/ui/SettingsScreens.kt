@@ -382,7 +382,7 @@ private fun readText(context: Context, uri: Uri): String {
         while (true) {
             val count = input.read(buffer)
             if (count < 0) break
-            require(output.size() + count <= 128 * 1024 * 1024) { "The backup exceeds 128 MB." }
+            require(output.size() + count <= PharmacyDefaults.maxBackupBytes) { "The backup exceeds 128 MB." }
             output.write(buffer, 0, count)
         }
         output.toString(Charsets.UTF_8.name())

@@ -113,7 +113,7 @@ fun MedicineEditorScreen(
     var scannerStickerOnly by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
-    var cameraFile by remember { mutableStateOf<File?>(null) }
+    var cameraPath by rememberSaveable(medicineId) { mutableStateOf<String?>(null) }
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
@@ -130,8 +130,8 @@ fun MedicineEditorScreen(
             } catch (error: Exception) {
                 validationError = error.message ?: "Could not open this photo."
             } finally {
-                cameraFile?.delete()
-                cameraFile = null
+                cameraPath?.let(::File)?.delete()
+                cameraPath = null
             }
         }
     }
@@ -140,14 +140,14 @@ fun MedicineEditorScreen(
         if (uri != null) acceptPhoto(uri)
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val file = cameraFile
+        val file = cameraPath?.let(::File)
         if (success && file != null) acceptPhoto(FileProvider.getUriForFile(context, "${context.packageName}.files", file))
-        else { file?.delete(); cameraFile = null }
+        else { file?.delete(); cameraPath = null }
     }
     fun takePhoto() {
         val file = File(context.cacheDir, "medicine_capture/${UUID.randomUUID()}.jpg")
         file.parentFile?.mkdirs()
-        cameraFile = file
+        cameraPath = file.absolutePath
         camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.files", file))
     }
 

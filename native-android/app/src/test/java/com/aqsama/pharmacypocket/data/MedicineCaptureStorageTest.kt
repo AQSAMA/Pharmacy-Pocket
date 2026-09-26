@@ -14,6 +14,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -77,5 +78,20 @@ class MedicineCaptureStorageTest {
             .replace(Regex(",?\\s*\"codes\": \\[.*?]", RegexOption.DOT_MATCHES_ALL), "")
         assertTrue(BackupCodec.parse(legacy).medicines.single().codes.isEmpty())
         assertFalse(BackupCodec.parse(legacy).medicines.single().codesSpecified)
+    }
+
+    @Test fun legacyMergeCannotRestoreTrashedCodeAlreadyAssignedToAnotherMedicine() = runBlocking {
+        storage.saveMedicine(item())
+        storage.moveMedicineToTrash("medicine-1")
+        storage.saveMedicine(item().copy(id = "other", name = "Other"))
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val legacy = item().copy(codes = emptyList(), codesSpecified = false)
+        val backup = ParsedBackup(listOf(legacy), emptyList(), emptyList(), "IQD", false, 2)
+
+        val result = runCatching { PharmacyRepository(context).importBackup(backup, ImportMode.MERGE) }
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf("other"), storage.loadMedicines().map { it.id })
+        assertEquals(listOf("medicine-1"), storage.loadTrash().map { it.medicine.id })
     }
 }

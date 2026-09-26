@@ -688,7 +688,9 @@ class PharmacyRepository(context: Context) {
             val incomingIds = data.medicines.mapTo(HashSet()) { it.id }
             val allCodes = mutableSetOf<String>()
             val currentItems = if (mode == ImportMode.MERGE) database.loadMedicines() else emptyList()
-            val currentById = currentItems.associateBy { it.id }
+            val currentById = (currentItems + if (mode == ImportMode.MERGE) {
+                database.loadTrash().map { it.medicine }
+            } else emptyList()).associateBy { it.id }
             currentItems.filter { it.id !in incomingIds }.forEach { item ->
                 item.codes.forEach { allCodes.add(it.value) }
             }

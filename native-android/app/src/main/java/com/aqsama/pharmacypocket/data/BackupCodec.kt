@@ -20,6 +20,10 @@ object BackupCodec {
         exportedAt: String = Instant.now().toString(),
         photos: Map<String, ByteArray> = emptyMap(),
     ): String {
+        val estimatedPhotoBytes = photos.values.sumOf { ((it.size.toLong() + 2L) / 3L) * 4L }
+        require(estimatedPhotoBytes < PharmacyDefaults.maxBackupBytes) {
+            "Photos exceed the 128 MB single-file backup limit. Remove some photos before exporting."
+        }
         val root = JSONObject()
             .put("schema", schema)
             .put("version", version)
@@ -60,7 +64,11 @@ object BackupCodec {
                 put(categoryToJson(category))
             }
         })
-        return root.toString(2)
+        val json = root.toString(2)
+        require(json.toByteArray(Charsets.UTF_8).size <= PharmacyDefaults.maxBackupBytes) {
+            "The backup exceeds 128 MB. Remove some photos or shorten large notes before exporting."
+        }
+        return json
     }
 
     fun parse(raw: String): ParsedBackup {

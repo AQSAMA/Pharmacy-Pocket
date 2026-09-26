@@ -110,6 +110,7 @@ data class ParsedBackup(
 object PharmacyDefaults {
     const val maxCategories = 256
     const val maxBackupMedicines = 5_000
+    const val maxBackupBytes = 128 * 1024 * 1024
     const val generalSubcategory = "General"
     val categoryColors = listOf(
         "#2f856d", "#596aab", "#9672ab", "#bc798b", "#c79749", "#4e9cab",

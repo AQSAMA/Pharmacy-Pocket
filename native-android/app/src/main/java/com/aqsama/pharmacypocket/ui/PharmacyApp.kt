@@ -23,6 +23,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,7 @@ import com.aqsama.pharmacypocket.data.ThemePreference
 import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
 import java.util.UUID
+import org.json.JSONObject
 
 private sealed interface Destination {
     data object Home : Destination
@@ -50,13 +53,55 @@ private sealed interface Destination {
 
 private data class NavEntry(val id: String, val destination: Destination)
 
+private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<NavEntry>, String>(
+    save = { entries -> entries.map { entry ->
+        JSONObject().put("id", entry.id).apply {
+            when (val destination = entry.destination) {
+                Destination.Home -> put("screen", "home")
+                Destination.Settings -> put("screen", "settings")
+                Destination.Categories -> put("screen", "categories")
+                Destination.Trash -> put("screen", "trash")
+                is Destination.Editor -> {
+                    put("screen", "editor")
+                    put("medicineId", destination.medicineId)
+                    put("category", destination.category)
+                    put("capture", destination.initialCapture)
+                }
+                is Destination.Detail -> { put("screen", "detail"); put("medicineId", destination.medicineId) }
+            }
+        }.toString()
+    } },
+    restore = { encoded ->
+        val entries = encoded.mapNotNull { raw ->
+            runCatching {
+                val obj = JSONObject(raw)
+                val destination = when (obj.getString("screen")) {
+                    "home" -> Destination.Home
+                    "settings" -> Destination.Settings
+                    "categories" -> Destination.Categories
+                    "trash" -> Destination.Trash
+                    "editor" -> Destination.Editor(obj.optString("medicineId").takeUnless { it.isEmpty() || it == "null" },
+                        obj.optString("category").takeUnless { it.isEmpty() || it == "null" },
+                        obj.optString("capture").takeUnless { it.isEmpty() || it == "null" })
+                    "detail" -> Destination.Detail(obj.getString("medicineId"))
+                    else -> throw IllegalArgumentException("Unknown screen")
+                }
+                NavEntry(obj.getString("id"), destination)
+            }.getOrNull()
+        }
+        androidx.compose.runtime.mutableStateListOf<NavEntry>().apply {
+            addAll(if (entries.firstOrNull()?.destination == Destination.Home) entries else listOf(NavEntry("home", Destination.Home)))
+        }
+    },
+)
+
 @Composable
 fun PharmacyApp(repository: PharmacyRepository) {
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
-    val backStack = remember { mutableStateListOf(NavEntry("home", Destination.Home)) }
+    val backStack = rememberSaveable(saver = navSaver) { mutableStateListOf(NavEntry("home", Destination.Home)) }
     val photoDrafts = remember { mutableStateMapOf<String, ByteArray>() }
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
