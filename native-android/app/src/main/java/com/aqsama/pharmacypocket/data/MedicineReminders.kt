@@ -17,6 +17,7 @@ import com.aqsama.pharmacypocket.MainActivity
 import kotlinx.coroutines.runBlocking
 import java.time.Instant
 import java.time.ZoneId
+import java.time.YearMonth
 
 private const val CHANNEL_ID = "medicine-reminders"
 
@@ -41,21 +42,25 @@ object MedicineReminders {
             cancel(context, item.id)
             return
         }
-        if (due <= System.currentTimeMillis()) return // Still visible as overdue in the app.
+        if (due <= System.currentTimeMillis()) return // Recovery delivers overdue reminders once.
         cancel(context, item.id)
         (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP, due, pending(context, item.id),
         )
     }
 
-    fun nextDue(due: Long, repeat: ReminderRepeat, now: Long): Long? {
+    fun nextDue(due: Long, repeat: ReminderRepeat, now: Long, monthlyDay: Int? = null): Long? {
         if (repeat == ReminderRepeat.NONE) return null
         var next = Instant.ofEpochMilli(due).atZone(ZoneId.systemDefault())
+        val day = (monthlyDay ?: next.dayOfMonth).coerceIn(1, 31)
         while (next.toInstant().toEpochMilli() <= now) {
             next = when (repeat) {
                 ReminderRepeat.DAILY -> next.plusDays(1)
                 ReminderRepeat.WEEKLY -> next.plusWeeks(1)
-                ReminderRepeat.MONTHLY -> next.plusMonths(1)
+                ReminderRepeat.MONTHLY -> {
+                    val month = YearMonth.from(next).plusMonths(1)
+                    next.withDayOfMonth(1).plusMonths(1).withDayOfMonth(day.coerceAtMost(month.lengthOfMonth()))
+                }
                 ReminderRepeat.NONE -> return null
             }
         }
@@ -78,9 +83,35 @@ object MedicineReminders {
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(item.name)
             .setContentText("Medicine reminder")
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setContentTitle("Pharmacy Pocket reminder")
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .build())
             .setContentIntent(open)
             .setAutoCancel(true)
             .build())
+    }
+
+    /** Recover alarms missed during shutdown or while Android could not deliver them. */
+    fun recover(context: Context, items: List<Medicine>) {
+        items.forEach { item ->
+            val due = item.reminderAt ?: return@forEach
+            if (due > System.currentTimeMillis()) return@forEach
+            deliver(context, item)
+        }
+    }
+
+    fun deliver(context: Context, item: Medicine) {
+        val due = item.reminderAt ?: return
+        val now = System.currentTimeMillis()
+        val next = nextDue(due, item.reminderRepeat, now, item.reminderDay)
+        val database = MedicineDatabase(context)
+        val stillPending = try { database.advanceReminder(item.id, due, next) } finally { database.close() }
+        if (!stillPending) return
+        if (next != null) schedule(context, item.copy(reminderAt = next))
+        notify(context, item)
     }
 }
 
@@ -99,12 +130,7 @@ class MedicineReminderReceiver : BroadcastReceiver() {
                         MedicineReminders.schedule(context, item)
                         return@runBlocking
                     }
-                    val next = MedicineReminders.nextDue(due, item.reminderRepeat, now)
-                    val database = MedicineDatabase(context)
-                    val stillPending = try { database.advanceReminder(id, due, next) } finally { database.close() }
-                    if (!stillPending) return@runBlocking
-                    if (next != null) MedicineReminders.schedule(context, item.copy(reminderAt = next))
-                    MedicineReminders.notify(context, item)
+                    MedicineReminders.deliver(context, item)
                 }
             } finally {
                 pendingResult.finish()
@@ -120,6 +146,8 @@ class ReminderBootReceiver : BroadcastReceiver() {
         Thread {
             try {
                 runBlocking {
+                    val items = PharmacyRepository(context).loadSnapshot().items
+                    MedicineReminders.recover(context, items)
                     PharmacyRepository(context).loadSnapshot().items.forEach { MedicineReminders.schedule(context, it) }
                 }
             } finally {

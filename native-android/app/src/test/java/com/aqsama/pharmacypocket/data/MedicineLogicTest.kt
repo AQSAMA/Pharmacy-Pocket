@@ -3,6 +3,8 @@ package com.aqsama.pharmacypocket.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 class MedicineLogicTest {
     private fun medicine(
@@ -48,6 +50,16 @@ class MedicineLogicTest {
         val day = 86_400_000L
         assertEquals(3 * day, MedicineReminders.nextDue(day, ReminderRepeat.DAILY, 2 * day))
         assertEquals(null, MedicineReminders.nextDue(day, ReminderRepeat.NONE, 2 * day))
+    }
+
+    @Test
+    fun monthlyReminderReturnsToSelectedDayAfterShortMonth() {
+        fun millis(month: Int, day: Int) = LocalDateTime.of(2026, month, day, 9, 0)
+            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val january = millis(1, 31)
+        val february = MedicineReminders.nextDue(january, ReminderRepeat.MONTHLY, january, 31)
+        assertEquals(millis(2, 28), february)
+        assertEquals(millis(3, 31), MedicineReminders.nextDue(february!!, ReminderRepeat.MONTHLY, february, 31))
     }
 
     @Test

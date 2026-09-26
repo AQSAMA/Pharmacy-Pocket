@@ -4,6 +4,9 @@ import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.os.Build
+import android.content.pm.PackageManager
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
@@ -61,8 +64,22 @@ import java.util.UUID
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
+
+internal fun reconcileChecklist(lines: List<String>, previous: List<ChecklistItem>): List<ChecklistItem> {
+    val used = mutableSetOf<Int>()
+    val exact = lines.map { line ->
+        previous.indices.firstOrNull { it !in used && previous[it].text == line }?.also { used.add(it) }
+    }
+    return lines.mapIndexed { index, line ->
+        val match = exact[index] ?: index.takeIf { lines.size == previous.size && it in previous.indices && it !in used }
+        if (match != null) used += match
+        ChecklistItem(line, match?.let { previous[it].done } ?: false)
+    }
+}
 
 @Composable
 fun MedicineEditorScreen(
@@ -77,7 +94,10 @@ fun MedicineEditorScreen(
 ) {
     val view = LocalView.current
     val context = LocalContext.current
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    var notificationPermissionGranted by remember { mutableStateOf(true) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notificationPermissionGranted = it
+    }
     val existing = remember(snapshot.items, medicineId) { snapshot.items.firstOrNull { it.id == medicineId } }
     val fallbackCategory = initialCategory
         ?.takeIf { candidate -> candidate != "all" && snapshot.categories.any { it.id == candidate } }
@@ -103,6 +123,15 @@ fun MedicineEditorScreen(
     }
 
     fun submit() {
+        notificationPermissionGranted = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED)
+        if (reminderAt != null && !notificationPermissionGranted) {
+            validationError = "Notifications are disabled. Enable them in Android settings or clear the reminder before saving."
+            Haptics.reject(view)
+            return
+        }
         val officialNumber = official.trim().toLongOrNull()
         val discountedNumber = discounted.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
         val discountWasInvalid = discounted.trim().isNotEmpty() && discountedNumber == null
@@ -134,9 +163,11 @@ fun MedicineEditorScreen(
                 tags = normalizeTags(tags).map { it.take(40) },
                 reminderAt = reminderAt,
                 reminderRepeat = if (reminderAt == null) ReminderRepeat.NONE else reminderRepeat,
-                checklist = checklistLines.mapIndexed { index, line ->
-                    ChecklistItem(line, existing?.checklist?.getOrNull(index)?.let { it.text == line && it.done } == true)
+                reminderDay = reminderAt?.let { due ->
+                    if (due == existing?.reminderAt && existing.reminderDay != null) existing.reminderDay
+                    else Instant.ofEpochMilli(due).atZone(ZoneId.systemDefault()).dayOfMonth
                 },
+                checklist = reconcileChecklist(checklistLines, existing?.checklist.orEmpty()),
                 revision = existing?.revision ?: 0,
                 favorite = existing?.favorite ?: false,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
@@ -264,6 +295,10 @@ fun MedicineEditorScreen(
                         }
                     }
                     if (reminderAt != null) {
+                        if (!notificationPermissionGranted) Text(
+                            "Notifications are disabled. Enable them in Android settings to save this reminder.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                             ReminderRepeat.entries.forEach { repeat ->
                                 SoftChip(repeat.label, selected = reminderRepeat == repeat) { reminderRepeat = repeat }

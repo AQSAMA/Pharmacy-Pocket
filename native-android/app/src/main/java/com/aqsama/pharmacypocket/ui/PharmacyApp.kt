@@ -41,6 +41,8 @@ import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
 import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private sealed interface Destination {
@@ -184,6 +186,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
 
     LaunchedEffect(repository, loadAttempt) {
         try {
+            withContext(Dispatchers.IO) {
+                MedicineReminders.recover(context, repository.loadSnapshot().items)
+            }
             snapshot = repository.loadSnapshot()
         } catch (error: Throwable) {
             errorMessage = error.message ?: "Unable to open local storage."
@@ -362,14 +367,12 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         },
                         onCompleteReminder = { item ->
                             runOperation("Reminder cleared") {
-                                repository.saveMedicine(item.copy(reminderAt = null, reminderRepeat = com.aqsama.pharmacypocket.data.ReminderRepeat.NONE))
+                                repository.clearReminder(item.id)
                             }
                         },
                         onToggleChecklist = { item, index ->
                             runOperation {
-                                repository.saveMedicine(item.copy(checklist = item.checklist.mapIndexed { position, task ->
-                                    if (position == index) task.copy(done = !task.done) else task
-                                }))
+                                repository.toggleChecklist(item.id, index)
                             }
                         },
                         onMoveToTrash = ::moveToTrash,

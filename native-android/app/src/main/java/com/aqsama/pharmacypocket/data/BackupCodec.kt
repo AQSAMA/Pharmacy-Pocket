@@ -42,6 +42,7 @@ object BackupCodec {
                     put("tags", JSONArray(item.tags))
                     put("reminderAt", item.reminderAt ?: JSONObject.NULL)
                     put("reminderRepeat", item.reminderRepeat.name)
+                    item.reminderDay?.let { put("reminderDay", it) }
                     put("checklist", JSONArray().apply {
                         item.checklist.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
                     })
@@ -198,6 +199,9 @@ object BackupCodec {
         val reminderRepeat = if (reminderAt == null) ReminderRepeat.NONE else runCatching {
             ReminderRepeat.valueOf(obj.getString("reminderRepeat"))
         }.getOrDefault(ReminderRepeat.NONE)
+        val reminderDay = if (reminderAt != null && obj.has("reminderDay") && !obj.isNull("reminderDay")) {
+            requiredSafeLong(obj, "reminderDay").also { require(it in 1..31) { "Invalid reminder day." } }.toInt()
+        } else null
         val checklist = if (!obj.has("checklist")) emptyList() else {
             val array = obj.optJSONArray("checklist") ?: throw IllegalArgumentException("Invalid checklist.")
             require(array.length() <= 30) { "Too many checklist items." }
@@ -226,6 +230,7 @@ object BackupCodec {
             tags = tags,
             reminderAt = reminderAt,
             reminderRepeat = reminderRepeat,
+            reminderDay = reminderDay,
             checklist = checklist,
         )
     }

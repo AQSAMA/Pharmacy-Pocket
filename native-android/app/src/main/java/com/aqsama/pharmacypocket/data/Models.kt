@@ -22,6 +22,7 @@ data class Medicine(
     val reminderAt: Long? = null,
     val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
     val checklist: List<ChecklistItem> = emptyList(),
+    val reminderDay: Int? = null,
 )
 
 data class ChecklistItem(val text: String, val done: Boolean = false)
@@ -110,6 +111,7 @@ fun mergeImportedRichFields(imported: Medicine, local: Medicine?, presence: Rich
         checklist = if (presence?.checklist == true) imported.checklist else local.checklist,
         reminderAt = if (presence?.reminder == true) imported.reminderAt else local.reminderAt,
         reminderRepeat = if (presence?.reminder == true) imported.reminderRepeat else local.reminderRepeat,
+        reminderDay = if (presence?.reminder == true) imported.reminderDay else local.reminderDay,
     )
 }
 
