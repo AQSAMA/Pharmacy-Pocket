@@ -95,8 +95,7 @@ fun MedicineCameraScreen(
     val latestPendingCaptureFile by rememberUpdatedState(pendingCaptureFile)
     val disposed = remember { AtomicBoolean(false) }
     var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
-    var ignoredCode by remember { mutableStateOf<String?>(null) }
-    var ignoredUntil by remember { mutableStateOf(0L) }
+    val skippedCodes = remember { mutableSetOf<String>() }
     val seen = remember { mutableSetOf<String>() }
     val currentCodes by rememberUpdatedState(existingCodes)
     val currentOnCode by rememberUpdatedState(onCode)
@@ -106,7 +105,7 @@ fun MedicineCameraScreen(
 
     fun receive(code: MedicineCode) {
         if (capturedFile != null || capturing || saving || pendingCode != null ||
-            (code.value == ignoredCode && System.currentTimeMillis() < ignoredUntil) ||
+            code.value in skippedCodes ||
             !handling.compareAndSet(false, true)) return
         if (code.value in currentCodes || code.value in seen) {
             message = "Code already added"
@@ -218,9 +217,9 @@ fun MedicineCameraScreen(
         var kind by remember(detected.value) { mutableStateOf(detected.kind) }
         AlertDialog(
             onDismissRequest = {
-                ignoredCode = detected.value
-                ignoredUntil = System.currentTimeMillis() + 2_000L
+                skippedCodes.add(detected.value)
                 pendingCode = null
+                message = "Code skipped · take a photo or scan another"
                 handling.set(false)
             },
             title = { Text("Add detected code?") },
@@ -240,9 +239,9 @@ fun MedicineCameraScreen(
                 }
             },
             dismissButton = { TextButton(onClick = {
-                ignoredCode = detected.value
-                ignoredUntil = System.currentTimeMillis() + 2_000L
+                skippedCodes.add(detected.value)
                 pendingCode = null
+                message = "Code skipped · take a photo or scan another"
                 handling.set(false)
             }) { Text("Skip") } },
             confirmButton = { TextButton(onClick = {
