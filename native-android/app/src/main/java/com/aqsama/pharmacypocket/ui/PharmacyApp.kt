@@ -34,6 +34,8 @@ import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.MedicineCode
+import com.aqsama.pharmacypocket.data.validateCodes
 import com.aqsama.pharmacypocket.data.ParsedBackup
 import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
@@ -122,6 +124,8 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var busy by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
+    var quickCaptureId by remember { mutableStateOf<String?>(null) }
+    val photoVersions = remember { mutableStateMapOf<String, Int>() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -294,6 +298,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onSetLargeText = { value ->
                             runOperation { repository.setLargeText(value) }
                         },
+                        onQuickCapture = { quickCaptureId = it },
+                        loadPhoto = repository::loadPhoto,
+                        photoVersions = photoVersions,
                     )
 
                     Destination.Settings -> SettingsScreen(
@@ -419,6 +426,51 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         loadPhoto = repository::loadPhoto,
                     )
                 }
+            }
+            quickCaptureId?.let { id ->
+                val medicine = current.items.firstOrNull { it.id == id }
+                if (medicine != null) MedicineCameraScreen(
+                    title = medicine.name,
+                    existingCodes = medicine.codes.mapTo(mutableSetOf()) { it.value },
+                    onCode = { code, acknowledge ->
+                        scope.launch {
+                            try {
+                                val latest = snapshot ?: throw IllegalStateException("Medicine unavailable")
+                                val item = latest.items.firstOrNull { it.id == id }
+                                    ?: throw IllegalStateException("Medicine unavailable")
+                                val validated = validateCodes(listOf(code)).single()
+                                val owner = latest.items.firstOrNull { candidate ->
+                                    candidate.codes.any { it.value == validated.value }
+                                }
+                                when {
+                                    owner?.id == id -> acknowledge("Code already added")
+                                    owner != null -> acknowledge("Code belongs to ${owner.name}")
+                                    item.codes.size >= 20 -> acknowledge("A medicine can have up to 20 codes")
+                                    else -> {
+                                        snapshot = repository.saveMedicine(item.copy(codes = item.codes + validated))
+                                        acknowledge("Saved ${if (validated.kind == com.aqsama.pharmacypocket.data.CodeKind.PRICE_STICKER_QR) "QR" else "barcode"}")
+                                    }
+                                }
+                            } catch (error: Exception) {
+                                acknowledge(error.message ?: "Could not save code")
+                            }
+                        }
+                    },
+                    onPhoto = { bytes, acknowledge ->
+                        scope.launch {
+                            try {
+                                val item = snapshot?.items?.firstOrNull { it.id == id }
+                                    ?: throw IllegalStateException("Medicine unavailable")
+                                snapshot = repository.saveMedicine(item, bytes)
+                                photoVersions[id] = (photoVersions[id] ?: 0) + 1
+                                acknowledge("Saved photo")
+                            } catch (error: Exception) {
+                                acknowledge(error.message ?: "Could not save photo")
+                            }
+                        }
+                    },
+                    onDismiss = { quickCaptureId = null },
+                )
             }
         }
 
