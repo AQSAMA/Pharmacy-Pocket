@@ -48,7 +48,7 @@ object BackupCodec {
                     item.createdAt?.let { put("createdAt", it) }
                     put("codes", JSONArray().apply {
                         item.codes.forEach { code ->
-                            put(JSONObject().put("kind", code.kind.name).put("value", code.value))
+                            put(JSONObject().put("kind", code.kind.name).put("value", code.value).put("label", code.label))
                         }
                     })
                     photos[item.id]?.let { jpeg -> put("photoJpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)) }
@@ -208,7 +208,7 @@ object BackupCodec {
                         ?: throw IllegalArgumentException("The codes in this file are invalid.")
                     val kind = runCatching { CodeKind.valueOf(requiredString(code, "kind")) }
                         .getOrElse { throw IllegalArgumentException("The code type in this file is invalid.") }
-                    add(MedicineCode(kind, requiredString(code, "value")))
+                    add(MedicineCode(kind, requiredString(code, "value"), code.optString("label", "")))
                 }
             })
         } else emptyList()

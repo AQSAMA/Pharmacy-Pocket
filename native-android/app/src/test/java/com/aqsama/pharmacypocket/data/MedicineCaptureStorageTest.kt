@@ -41,7 +41,7 @@ class MedicineCaptureStorageTest {
         id = "medicine-1", category = "tablets", subcategory = "General", name = "Medicine",
         note = "", official = 1000, discounted = null,
         codes = listOf(
-            MedicineCode(CodeKind.BARCODE, "8901111701119"),
+            MedicineCode(CodeKind.BARCODE, "8901111701119", "Company A"),
             MedicineCode(CodeKind.PRICE_STICKER_QR, "sticker:opaque"),
         ),
     )

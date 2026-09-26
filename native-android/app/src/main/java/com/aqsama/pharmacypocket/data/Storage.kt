@@ -442,14 +442,14 @@ internal class MedicineDatabase(context: Context) {
 }
 
 private fun codesToJson(codes: List<MedicineCode>): String = JSONArray().apply {
-    validateCodes(codes).forEach { put(JSONObject().put("kind", it.kind.name).put("value", it.value)) }
+    validateCodes(codes).forEach { put(JSONObject().put("kind", it.kind.name).put("value", it.value).put("label", it.label)) }
 }.toString()
 
 private fun codesFromJson(raw: String): List<MedicineCode> = buildList {
     val array = JSONArray(raw)
     for (index in 0 until array.length()) {
         val obj = array.getJSONObject(index)
-        add(MedicineCode(CodeKind.valueOf(obj.getString("kind")), obj.getString("value")))
+        add(MedicineCode(CodeKind.valueOf(obj.getString("kind")), obj.getString("value"), obj.optString("label", "")))
     }
 }
 

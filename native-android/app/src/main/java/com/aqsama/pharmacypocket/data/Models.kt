@@ -25,7 +25,7 @@ data class Medicine(
 
 enum class CodeKind { BARCODE, PRICE_STICKER_QR }
 
-data class MedicineCode(val kind: CodeKind, val value: String)
+data class MedicineCode(val kind: CodeKind, val value: String, val label: String = "")
 
 fun validateCodes(codes: List<MedicineCode>): List<MedicineCode> {
     require(codes.size <= 20) { "A medicine can have up to 20 codes." }
@@ -34,7 +34,11 @@ fun validateCodes(codes: List<MedicineCode>): List<MedicineCode> {
         require(value.isNotEmpty() && value.length <= 2048 && value.none { Character.isISOControl(it) }) {
             "A scanned code is empty, too long, or contains control characters."
         }
-        MedicineCode(code.kind, value)
+        val label = code.label.trim()
+        require(label.length <= 80 && label.none { Character.isISOControl(it) }) {
+            "A company or variant label is too long or contains control characters."
+        }
+        MedicineCode(code.kind, value, label)
     }
     require(cleaned.map { it.value }.distinct().size == cleaned.size) { "Duplicate codes are not allowed." }
     return cleaned

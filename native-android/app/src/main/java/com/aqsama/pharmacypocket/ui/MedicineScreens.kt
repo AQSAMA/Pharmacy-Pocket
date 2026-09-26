@@ -103,8 +103,8 @@ fun MedicineEditorScreen(
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
     var codes by rememberSaveable(medicineId, stateSaver = listSaver<List<MedicineCode>, String>(
-        save = { items -> items.flatMap { listOf(it.kind.name, it.value) } },
-        restore = { parts -> parts.chunked(2).map { MedicineCode(CodeKind.valueOf(it[0]), it[1]) } },
+        save = { items -> items.flatMap { listOf(it.kind.name, it.value, it.label) } },
+        restore = { parts -> parts.chunked(3).map { MedicineCode(CodeKind.valueOf(it[0]), it[1], it[2]) } },
     )) { mutableStateOf(existing?.codes ?: emptyList()) }
     var codeDraft by rememberSaveable(medicineId) { mutableStateOf("") }
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
@@ -245,7 +245,7 @@ fun MedicineEditorScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     codes.forEach { code ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${if (code.kind == CodeKind.PRICE_STICKER_QR) "Sticker QR" else "Barcode"}: ${code.value.take(45)}",
+                            Text("${if (code.kind == CodeKind.PRICE_STICKER_QR) "Sticker QR" else "Barcode"}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
                                 modifier = Modifier.weight(1f), maxLines = 2)
                             TextButton(onClick = { codes = codes.filterNot { it == code } }) { Text("Remove") }
                         }
@@ -414,10 +414,16 @@ fun MedicineEditorScreen(
         AlertDialog(
             onDismissRequest = { pendingCode = null },
             title = { Text("Add scanned code?") },
-            text = { Text("${code.kind.name.replace('_', ' ')}: ${code.value.take(160)}${if (code.value.length > 160) "…" else ""}\n\nCheck the package before saving.") },
+            text = { Column {
+                Text("${code.kind.name.replace('_', ' ')}: ${code.value.take(160)}${if (code.value.length > 160) "…" else ""}\nCheck the package before saving.")
+                OutlinedTextField(value = code.label, onValueChange = { pendingCode = code.copy(label = it.take(80)) },
+                    label = { Text("Company / variant (optional)") }, singleLine = true)
+            } },
             dismissButton = { TextButton(onClick = { pendingCode = null }) { Text("Cancel") } },
             confirmButton = { TextButton(onClick = {
-                codes = codes + code
+                val validated = runCatching { validateCodes(listOf(code)).single() }
+                    .getOrElse { validationError = it.message; return@TextButton }
+                codes = codes + validated
                 codeDraft = ""
                 pendingCode = null
             }) { Text("Add code") } },
@@ -649,7 +655,7 @@ fun MedicineDetailScreen(
                         if (item.codes.isNotEmpty()) InfoCard("Package codes") {
                             item.codes.forEach { code ->
                                 InfoValue(if (code.kind == CodeKind.PRICE_STICKER_QR) "PRICE STICKER QR" else "BARCODE",
-                                    code.value, snapshot.largeText)
+                                    "${code.label.takeIf { it.isNotEmpty() }?.let { "$it · " } ?: ""}${code.value}", snapshot.largeText)
                             }
                         }
 

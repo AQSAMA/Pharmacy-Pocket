@@ -44,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aqsama.pharmacypocket.data.AppSnapshot
+import com.aqsama.pharmacypocket.data.BackupCodec
 import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.ParsedBackup
