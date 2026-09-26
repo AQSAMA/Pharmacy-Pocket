@@ -113,6 +113,8 @@ fun MedicineEditorScreen(
     var scannerStickerOnly by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     var draftPhoto by remember(photoPath) { mutableStateOf<ByteArray?>(null) }
+    var draftLoading by remember(photoPath) { mutableStateOf(photoPath != null) }
+    var photoProcessing by remember { mutableStateOf(false) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
     var cameraPath by rememberSaveable(medicineId) { mutableStateOf<String?>(null) }
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
@@ -123,12 +125,17 @@ fun MedicineEditorScreen(
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
     }
     LaunchedEffect(photoPath) {
-        draftPhoto = photoPath?.let { path -> withContext(Dispatchers.IO) {
-            File(path).takeIf { it.isFile }?.readBytes()
-        } }
+        try {
+            draftPhoto = photoPath?.let { path -> withContext(Dispatchers.IO) {
+                File(path).takeIf { it.isFile }?.readBytes()
+            } }
+        } finally {
+            draftLoading = false
+        }
     }
 
     fun acceptPhoto(uri: Uri) {
+        photoProcessing = true
         scope.launch {
             try {
                 val path = withContext(Dispatchers.IO) {
@@ -145,6 +152,7 @@ fun MedicineEditorScreen(
             } finally {
                 cameraPath?.let(::File)?.delete()
                 cameraPath = null
+                photoProcessing = false
             }
         }
     }
@@ -284,13 +292,13 @@ fun MedicineEditorScreen(
                         bitmap?.let { Image(it, contentDescription = "Medicine photo", modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
                         TextButton(enabled = !busy, onClick = { onPhotoPath(null); removePhoto = true }) { Text("Remove photo") }
                     }
-                    if (photoPath != null && draftPhoto == null) {
+                    if (photoPath != null && draftPhoto == null && !draftLoading) {
                         Text("Photo is unavailable. Choose it again before saving.", color = MaterialTheme.colorScheme.error)
-                        TextButton(enabled = !busy, onClick = { onPhotoPath(null); removePhoto = true }) { Text("Discard missing photo") }
+                        TextButton(enabled = !busy, onClick = { onPhotoPath(null); removePhoto = false }) { Text("Discard missing photo") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(enabled = !busy, onClick = ::takePhoto) { Text("Take photo") }
-                        TextButton(enabled = !busy, onClick = { photoPicker.launch("image/*") }) { Text("Choose image") }
+                        TextButton(enabled = !busy && !photoProcessing, onClick = ::takePhoto) { Text("Take photo") }
+                        TextButton(enabled = !busy && !photoProcessing, onClick = { photoPicker.launch("image/*") }) { Text("Choose image") }
                     }
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -377,7 +385,7 @@ fun MedicineEditorScreen(
                         lineHeight = 19.sp,
                     )
                     Button(
-                        enabled = !busy && (photoPath == null || draftPhoto != null),
+                        enabled = !busy && !photoProcessing && !draftLoading && (photoPath == null || draftPhoto != null),
                         onClick = ::submit,
                         modifier = Modifier
                             .fillMaxWidth()
