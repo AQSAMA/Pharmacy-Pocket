@@ -130,6 +130,7 @@ fun HomeScreen(
     onSetLargeText: (Boolean) -> Unit,
     onQuickCapture: (String) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
+    photoVersions: Map<String, Int>,
 ) {
     val view = LocalView.current
     val listState = rememberLazyListState()
@@ -409,6 +410,7 @@ fun HomeScreen(
                                 },
                                 onCamera = { onQuickCapture(row.item.id) },
                                 loadPhoto = loadPhoto,
+                                photoVersion = photoVersions[row.item.id] ?: 0,
                             )
                         }
                     }

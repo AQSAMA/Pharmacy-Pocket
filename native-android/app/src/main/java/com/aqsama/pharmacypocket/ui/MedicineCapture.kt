@@ -231,7 +231,7 @@ private fun LiveMedicineCamera(
                     } else {
                         scanner.process(InputImage.fromMediaImage(media, frame.imageInfo.rotationDegrees))
                             .addOnSuccessListener(main) { results ->
-                                results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
+                                if (!disposed && currentEnabled) results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
                                     currentDetected(MedicineCode(
                                         if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.PRICE_STICKER_QR else CodeKind.BARCODE,
                                         barcode.rawValue.orEmpty(),
@@ -326,7 +326,7 @@ private fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap {
 }
 
 internal fun cropMedicineBitmap(bitmap: Bitmap, square: Boolean, horizontal: Float, vertical: Float): Bitmap {
-    val ratio = if (square) 1f else 4f / 3f
+    val ratio = if (square) 1f else if (bitmap.height > bitmap.width) 3f / 4f else 4f / 3f
     val width = minOf(bitmap.width, (bitmap.height * ratio).toInt()).coerceAtLeast(1)
     val height = minOf(bitmap.height, (bitmap.width / ratio).toInt()).coerceAtLeast(1)
     val x = ((bitmap.width - width) * horizontal.coerceIn(0f, 1f)).toInt()

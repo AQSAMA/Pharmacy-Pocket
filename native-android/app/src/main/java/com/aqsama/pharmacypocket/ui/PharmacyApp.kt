@@ -125,6 +125,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
     var quickCaptureId by remember { mutableStateOf<String?>(null) }
+    val photoVersions = remember { mutableStateMapOf<String, Int>() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -299,6 +300,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         },
                         onQuickCapture = { quickCaptureId = it },
                         loadPhoto = repository::loadPhoto,
+                        photoVersions = photoVersions,
                     )
 
                     Destination.Settings -> SettingsScreen(
@@ -460,6 +462,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                 val item = snapshot?.items?.firstOrNull { it.id == id }
                                     ?: throw IllegalStateException("Medicine unavailable")
                                 snapshot = repository.saveMedicine(item, bytes)
+                                photoVersions[id] = (photoVersions[id] ?: 0) + 1
                                 acknowledge("Saved photo")
                             } catch (error: Exception) {
                                 acknowledge(error.message ?: "Could not save photo")

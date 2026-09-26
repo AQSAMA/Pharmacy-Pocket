@@ -27,4 +27,11 @@ class MedicinePhotoCropTest {
         assertEquals(Color.BLUE, leftSquare.getPixel(200, 0))
         assertEquals(Color.BLUE, rightSquare.getPixel(0, 0))
     }
+
+    @Test fun portraitPackageUsesPortraitRectangle() {
+        val source = Bitmap.createBitmap(600, 1000, Bitmap.Config.ARGB_8888)
+        val cropped = cropMedicineBitmap(source, square = false, horizontal = 0.5f, vertical = 0.5f)
+        assertEquals(600, cropped.width)
+        assertEquals(800, cropped.height)
+    }
 }
