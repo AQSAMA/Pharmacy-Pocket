@@ -29,7 +29,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -86,8 +88,15 @@ fun MedicineCameraScreen(
 
     var message by remember { mutableStateOf("Point at a barcode or QR, or take a photo") }
     var capturedFile by remember { mutableStateOf<File?>(null) }
+    var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
+    var capturing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     val latestCapturedFile by rememberUpdatedState(capturedFile)
+    val latestPendingCaptureFile by rememberUpdatedState(pendingCaptureFile)
+    val disposed = remember { AtomicBoolean(false) }
+    var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
+    var ignoredCode by remember { mutableStateOf<String?>(null) }
+    var ignoredUntil by remember { mutableStateOf(0L) }
     val seen = remember { mutableSetOf<String>() }
     val currentCodes by rememberUpdatedState(existingCodes)
     val currentOnCode by rememberUpdatedState(onCode)
@@ -96,21 +105,19 @@ fun MedicineCameraScreen(
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
 
     fun receive(code: MedicineCode) {
-        if (capturedFile != null || saving || !handling.compareAndSet(false, true)) return
+        if (capturedFile != null || capturing || saving || pendingCode != null ||
+            (code.value == ignoredCode && System.currentTimeMillis() < ignoredUntil) ||
+            !handling.compareAndSet(false, true)) return
         if (code.value in currentCodes || code.value in seen) {
             message = "Code already added"
             handling.set(false)
             return
         }
-        currentOnCode(code) { result ->
-            if (result.startsWith("Saved") || result.startsWith("Added")) seen.add(code.value)
-            message = result
-            handling.set(false)
-        }
+        pendingCode = code
     }
 
     Dialog(
-        onDismissRequest = { if (!saving) onDismiss() },
+        onDismissRequest = { if (!saving && !capturing) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -122,7 +129,7 @@ fun MedicineCameraScreen(
                     TextButton(onClick = { if (capturedFile != null) {
                         capturedFile?.delete()
                         capturedFile = null
-                    } else onDismiss() }, enabled = !saving) { Text(if (capturedFile == null) "Close" else "Retake") }
+                    } else onDismiss() }, enabled = !saving && !capturing) { Text(if (capturedFile == null) "Close" else "Retake") }
                     Text(title, modifier = Modifier.weight(1f), maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
                 }
                 if (!allowed) {
@@ -133,7 +140,7 @@ fun MedicineCameraScreen(
                 } else {
                     Box(Modifier.weight(1f).fillMaxWidth()) {
                         LiveMedicineCamera(
-                            enabled = capturedFile == null && !saving,
+                            enabled = capturedFile == null && pendingCode == null && !capturing && !saving,
                             onCaptureReady = { imageCapture = it },
                             onDetected = ::receive,
                             onError = { message = it },
@@ -166,24 +173,39 @@ fun MedicineCameraScreen(
                         Button(
                             onClick = {
                                 val capture = imageCapture ?: return@Button
+                                if (capturing || handling.get()) return@Button
                                 val file = File(context.cacheDir, "medicine_capture/${UUID.randomUUID()}.jpg")
                                 file.parentFile?.mkdirs()
-                                capture.takePicture(
+                                pendingCaptureFile = file
+                                capturing = true
+                                try { capture.takePicture(
                                     ImageCapture.OutputFileOptions.Builder(file).build(),
                                     ContextCompat.getMainExecutor(context),
                                     object : ImageCapture.OnImageSavedCallback {
                                         override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                                            capturedFile = file
-                                            message = "Frame the package and save"
+                                            pendingCaptureFile = null
+                                            capturing = false
+                                            if (disposed.get()) file.delete()
+                                            else {
+                                                capturedFile = file
+                                                message = "Frame the package and save"
+                                            }
                                         }
                                         override fun onError(exception: ImageCaptureException) {
                                             file.delete()
-                                            message = "Could not take photo. Try again."
+                                            pendingCaptureFile = null
+                                            capturing = false
+                                            if (!disposed.get()) message = "Could not take photo. Try again."
                                         }
                                     },
-                                )
+                                ) } catch (error: Exception) {
+                                    file.delete()
+                                    pendingCaptureFile = null
+                                    capturing = false
+                                    message = "Could not open shutter. Try again."
+                                }
                             },
-                            enabled = imageCapture != null && !saving,
+                            enabled = imageCapture != null && !saving && !capturing && pendingCode == null,
                             modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 18.dp),
                         ) { Text("●  Take photo") }
                     }
@@ -191,7 +213,55 @@ fun MedicineCameraScreen(
             }
         }
     }
-    DisposableEffect(Unit) { onDispose { latestCapturedFile?.delete() } }
+    pendingCode?.let { detected ->
+        var label by remember(detected.value) { mutableStateOf("") }
+        var kind by remember(detected.value) { mutableStateOf(detected.kind) }
+        AlertDialog(
+            onDismissRequest = {
+                ignoredCode = detected.value
+                ignoredUntil = System.currentTimeMillis() + 2_000L
+                pendingCode = null
+                handling.set(false)
+            },
+            title = { Text("Add detected code?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(detected.value.take(180) + if (detected.value.length > 180) "…" else "")
+                    if (detected.kind == CodeKind.QR) {
+                        Row {
+                            TextButton(onClick = { kind = CodeKind.QR }) { Text(if (kind == CodeKind.QR) "✓ QR" else "QR") }
+                            TextButton(onClick = { kind = CodeKind.PRICE_STICKER_QR }) {
+                                Text(if (kind == CodeKind.PRICE_STICKER_QR) "✓ Sticker QR" else "Sticker QR")
+                            }
+                        }
+                    }
+                    OutlinedTextField(value = label, onValueChange = { label = it.take(80) },
+                        label = { Text("Company / variant (optional)") }, singleLine = true)
+                }
+            },
+            dismissButton = { TextButton(onClick = {
+                ignoredCode = detected.value
+                ignoredUntil = System.currentTimeMillis() + 2_000L
+                pendingCode = null
+                handling.set(false)
+            }) { Text("Skip") } },
+            confirmButton = { TextButton(onClick = {
+                pendingCode = null
+                currentOnCode(detected.copy(kind = kind, label = label)) { result ->
+                    if (result.startsWith("Saved") || result.startsWith("Added")) seen.add(detected.value)
+                    message = result
+                    handling.set(false)
+                }
+            }) { Text("Add code") } },
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            disposed.set(true)
+            latestCapturedFile?.delete()
+            latestPendingCaptureFile?.delete()
+        }
+    }
 }
 
 @Composable
@@ -233,7 +303,7 @@ private fun LiveMedicineCamera(
                             .addOnSuccessListener(main) { results ->
                                 if (!disposed && currentEnabled) results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
                                     currentDetected(MedicineCode(
-                                        if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.PRICE_STICKER_QR else CodeKind.BARCODE,
+                                        if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.QR else CodeKind.BARCODE,
                                         barcode.rawValue.orEmpty(),
                                     ))
                                 }

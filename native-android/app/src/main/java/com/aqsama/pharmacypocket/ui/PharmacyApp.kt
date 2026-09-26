@@ -43,6 +43,8 @@ import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.UUID
 import java.io.File
 import org.json.JSONObject
@@ -126,6 +128,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
     var quickCaptureId by remember { mutableStateOf<String?>(null) }
     val photoVersions = remember { mutableStateMapOf<String, Int>() }
+    val cameraSaveMutex = remember { Mutex() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -434,7 +437,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                     existingCodes = medicine.codes.mapTo(mutableSetOf()) { it.value },
                     onCode = { code, acknowledge ->
                         scope.launch {
-                            try {
+                            try { cameraSaveMutex.withLock {
                                 val latest = snapshot ?: throw IllegalStateException("Medicine unavailable")
                                 val item = latest.items.firstOrNull { it.id == id }
                                     ?: throw IllegalStateException("Medicine unavailable")
@@ -448,23 +451,23 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                     item.codes.size >= 20 -> acknowledge("A medicine can have up to 20 codes")
                                     else -> {
                                         snapshot = repository.saveMedicine(item.copy(codes = item.codes + validated))
-                                        acknowledge("Saved ${if (validated.kind == com.aqsama.pharmacypocket.data.CodeKind.PRICE_STICKER_QR) "QR" else "barcode"}")
+                                        acknowledge("Saved ${if (validated.kind == com.aqsama.pharmacypocket.data.CodeKind.BARCODE) "barcode" else "QR"}")
                                     }
                                 }
-                            } catch (error: Exception) {
+                            } } catch (error: Exception) {
                                 acknowledge(error.message ?: "Could not save code")
                             }
                         }
                     },
                     onPhoto = { bytes, acknowledge ->
                         scope.launch {
-                            try {
+                            try { cameraSaveMutex.withLock {
                                 val item = snapshot?.items?.firstOrNull { it.id == id }
                                     ?: throw IllegalStateException("Medicine unavailable")
                                 snapshot = repository.saveMedicine(item, bytes)
                                 photoVersions[id] = (photoVersions[id] ?: 0) + 1
                                 acknowledge("Saved photo")
-                            } catch (error: Exception) {
+                            } } catch (error: Exception) {
                                 acknowledge(error.message ?: "Could not save photo")
                             }
                         }

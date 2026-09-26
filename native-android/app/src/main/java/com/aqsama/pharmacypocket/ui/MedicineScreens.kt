@@ -161,8 +161,8 @@ fun MedicineEditorScreen(
         }
     }
 
-    fun proposeCode(value: String, kind: CodeKind): String {
-        val proposed = runCatching { validateCodes(listOf(MedicineCode(kind, value))).single() }
+    fun proposeCode(value: String, kind: CodeKind, label: String = ""): String {
+        val proposed = runCatching { validateCodes(listOf(MedicineCode(kind, value, label))).single() }
             .getOrElse { validationError = it.message; return it.message ?: "Invalid code" }
         val owner = snapshot.items.firstOrNull { it.id != existing?.id && it.codes.any { code -> code.value == proposed.value } }
         return when {
@@ -172,7 +172,7 @@ fun MedicineEditorScreen(
             else -> {
                 codes = codes + proposed
                 codeDraft = ""
-                "Added ${if (kind == CodeKind.PRICE_STICKER_QR) "QR" else "barcode"}"
+                "Added ${if (kind == CodeKind.BARCODE) "barcode" else "QR"}"
             }
         }
     }
@@ -238,7 +238,7 @@ fun MedicineEditorScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     codes.forEach { code ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${if (code.kind == CodeKind.PRICE_STICKER_QR) "Sticker QR" else "Barcode"}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
+                            Text("${when (code.kind) { CodeKind.PRICE_STICKER_QR -> "Sticker QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "Barcode" }}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
                                 modifier = Modifier.weight(1f), maxLines = 2)
                             TextButton(onClick = { codes = codes.filterNot { it == code } }) { Text("Remove") }
                         }
@@ -247,12 +247,15 @@ fun MedicineEditorScreen(
                         TextButton(onClick = ::openCamera) { Text("Camera · scan or photo") }
                     }
                     Field("Enter code manually", codeDraft, { codeDraft = it })
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { codeKind = CodeKind.BARCODE }) {
                             Text(if (codeKind == CodeKind.BARCODE) "✓ Barcode" else "Barcode")
                         }
                         TextButton(onClick = { codeKind = CodeKind.PRICE_STICKER_QR }) {
                             Text(if (codeKind == CodeKind.PRICE_STICKER_QR) "✓ Sticker QR" else "Sticker QR")
+                        }
+                        TextButton(onClick = { codeKind = CodeKind.QR }) {
+                            Text(if (codeKind == CodeKind.QR) "✓ QR" else "QR")
                         }
                         TextButton(onClick = { proposeCode(codeDraft, codeKind) }) { Text("Add") }
                     }
@@ -400,7 +403,7 @@ fun MedicineEditorScreen(
     if (showScanner) MedicineCameraScreen(
         title = existing?.name ?: "New medicine",
         existingCodes = codes.mapTo(mutableSetOf()) { it.value },
-        onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind)) },
+        onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind, code.label)) },
         onPhoto = { bytes, acknowledge ->
             scope.launch {
                 try {
@@ -644,7 +647,7 @@ fun MedicineDetailScreen(
                         }
                         if (item.codes.isNotEmpty()) InfoCard("Package codes") {
                             item.codes.forEach { code ->
-                                InfoValue(if (code.kind == CodeKind.PRICE_STICKER_QR) "PRICE STICKER QR" else "BARCODE",
+                                InfoValue(when (code.kind) { CodeKind.PRICE_STICKER_QR -> "PRICE STICKER QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "BARCODE" },
                                     "${code.label.takeIf { it.isNotEmpty() }?.let { "$it · " } ?: ""}${code.value}", snapshot.largeText)
                             }
                         }
