@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -386,6 +387,27 @@ fun MedicineDetailScreen(
 
     Scaffold(
         topBar = { ScreenTopBar("Medicine", onBack) },
+        bottomBar = {
+            if (item != null) {
+                Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 8.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        TextButton(onClick = { Haptics.selection(view); onToggleFavorite(item) },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text(if (item.favorite) "★ Saved" else "☆ Save", maxLines = 1)
+                        }
+                        Button(onClick = { Haptics.action(view); onEdit() },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("✎ Edit", maxLines = 1) }
+                        TextButton(enabled = !busy, onClick = { Haptics.action(view); confirmTrash = true },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                            Text("Trash", color = MaterialTheme.colorScheme.error, maxLines = 1)
+                        }
+                    }
+                }
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (item == null) {
@@ -431,16 +453,6 @@ fun MedicineDetailScreen(
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 12.sp,
                                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                        )
-                                    }
-                                    TextButton(onClick = {
-                                        Haptics.selection(view)
-                                        onToggleFavorite(item)
-                                    }) {
-                                        Text(
-                                            if (item.favorite) "★ Favorite" else "☆ Favorite",
-                                            color = if (item.favorite) Color(0xFFFFD166) else MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.82f),
-                                            fontWeight = FontWeight.Bold,
                                         )
                                     }
                                 }
@@ -581,43 +593,6 @@ fun MedicineDetailScreen(
                             }
                         }
 
-                        Button(
-                            onClick = {
-                                Haptics.action(view)
-                                onEdit()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            ),
-                        ) {
-                            Text("✎ Edit medicine", fontWeight = FontWeight.ExtraBold)
-                        }
-                        Button(
-                            enabled = !busy,
-                            onClick = {
-                                Haptics.action(view)
-                                confirmTrash = true
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            ),
-                        ) {
-                            Text("Move to Trash", fontWeight = FontWeight.ExtraBold)
-                        }
-                        TextButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 50.dp),
-                        ) { Text("Done", fontWeight = FontWeight.Bold) }
                     }
                 }
             }
