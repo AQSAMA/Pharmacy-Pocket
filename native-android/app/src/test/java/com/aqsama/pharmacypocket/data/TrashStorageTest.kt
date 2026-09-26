@@ -103,6 +103,9 @@ class TrashStorageTest {
         val item = storage.loadMedicines().single()
 
         assertEquals("legacy", item.id)
+        assertEquals(emptyList<String>(), item.tags)
+        assertEquals(emptyList<ChecklistItem>(), item.checklist)
+        assertNull(item.reminderAt)
         assertEquals("Legacy", item.name)
         assertEquals("keep-desc", item.description)
         assertEquals(3_000L, item.official)
@@ -324,6 +327,24 @@ class TrashStorageTest {
         assertEquals(setOf("active"), exportedIds())
         storage.restoreMedicine("trash")
         assertEquals(setOf("active", "trash"), exportedIds())
+    }
+
+    @Test
+    fun richMedicineSurvivesStorageAndSingleFileBackup() {
+        val item = medicine("rich").copy(
+            tags = listOf("Stock", "إبر"),
+            checklist = listOf(ChecklistItem("Check shelf", true), ChecklistItem("Call supplier")),
+            reminderAt = 1_900_000_000_000L,
+            reminderRepeat = ReminderRepeat.WEEKLY,
+        )
+        storage.saveMedicine(item)
+        assertEquals(item, storage.loadMedicines().single())
+
+        val json = BackupCodec.encode(storage.loadMedicines(), "IQD", PharmacyDefaults.categories)
+        val restored = BackupCodec.parse(json).medicines.single()
+        assertEquals(item, restored)
+        storage.moveMedicineToTrash(item.id)
+        assertEquals(item, storage.loadTrash().single().medicine)
     }
 
     @Test

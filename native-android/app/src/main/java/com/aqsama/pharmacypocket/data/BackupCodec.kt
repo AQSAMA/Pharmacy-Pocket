@@ -39,6 +39,12 @@ object BackupCodec {
                     put("name", item.name)
                     put("note", item.note)
                     put("description", item.description)
+                    if (item.tags.isNotEmpty()) put("tags", JSONArray(item.tags))
+                    item.reminderAt?.let { put("reminderAt", it) }
+                    if (item.reminderRepeat != ReminderRepeat.NONE) put("reminderRepeat", item.reminderRepeat.name)
+                    if (item.checklist.isNotEmpty()) put("checklist", JSONArray().apply {
+                        item.checklist.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
+                    })
                     put("official", item.official)
                     put("discounted", item.discounted ?: JSONObject.NULL)
                     put("revision", item.revision.coerceAtLeast(0))
@@ -172,6 +178,29 @@ object BackupCodec {
         require(revisionLong <= Int.MAX_VALUE) { "One or more medicines in this file are invalid." }
         val createdAt = if (!obj.has("createdAt") || obj.isNull("createdAt")) null
         else requiredSafeLong(obj, "createdAt")
+        val tags = if (!obj.has("tags")) emptyList() else {
+            val array = obj.optJSONArray("tags") ?: throw IllegalArgumentException("Invalid medicine tags.")
+            require(array.length() <= 12) { "Too many medicine tags." }
+            (0 until array.length()).map { index ->
+                (array.opt(index) as? String)?.trim()?.takeIf { it.isNotEmpty() && it.length <= 40 }
+                    ?: throw IllegalArgumentException("Invalid medicine tag.")
+            }.distinctBy(::normalizeSearch)
+        }
+        val reminderAt = if (!obj.has("reminderAt") || obj.isNull("reminderAt")) null
+        else requiredSafeLong(obj, "reminderAt")
+        val reminderRepeat = if (reminderAt == null) ReminderRepeat.NONE else runCatching {
+            ReminderRepeat.valueOf(obj.getString("reminderRepeat"))
+        }.getOrDefault(ReminderRepeat.NONE)
+        val checklist = if (!obj.has("checklist")) emptyList() else {
+            val array = obj.optJSONArray("checklist") ?: throw IllegalArgumentException("Invalid checklist.")
+            require(array.length() <= 30) { "Too many checklist items." }
+            (0 until array.length()).map { index ->
+                val entry = array.optJSONObject(index) ?: throw IllegalArgumentException("Invalid checklist item.")
+                val text = entry.optString("text", "").trim()
+                require(text.isNotEmpty() && text.length <= 200) { "Invalid checklist item." }
+                ChecklistItem(text, entry.optBoolean("done", false))
+            }
+        }
         require(official >= 0 && (discounted == null || discounted >= 0) && revisionLong >= 0) {
             "One or more medicines in this file are invalid."
         }
@@ -187,6 +216,10 @@ object BackupCodec {
             revision = revisionLong.toInt(),
             favorite = favoriteIds.contains(id) || obj.optBoolean("favorite", false),
             createdAt = createdAt,
+            tags = tags,
+            reminderAt = reminderAt,
+            reminderRepeat = reminderRepeat,
+            checklist = checklist,
         )
     }
 

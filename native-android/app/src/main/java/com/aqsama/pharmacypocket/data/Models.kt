@@ -18,7 +18,21 @@ data class Medicine(
     val revision: Int = 0,
     val favorite: Boolean = false,
     val createdAt: Long? = null,
+    val tags: List<String> = emptyList(),
+    val reminderAt: Long? = null,
+    val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
+    val checklist: List<ChecklistItem> = emptyList(),
 )
+
+data class ChecklistItem(val text: String, val done: Boolean = false)
+
+enum class ReminderRepeat(val label: String) {
+    NONE("Once"), DAILY("Daily"), WEEKLY("Weekly"), MONTHLY("Monthly"),
+}
+
+fun normalizeTags(raw: String): List<String> = raw.split(',')
+    .map { it.trim() }.filter { it.isNotEmpty() }
+    .distinctBy(::normalizeSearch).take(12)
 
 data class Category(
     val id: String,
@@ -207,7 +221,7 @@ data class SubcategoryOption(val key: String, val label: String)
 fun buildSearchIndex(items: List<Medicine>): List<MedicineSearchEntry> = items.map { item ->
     MedicineSearchEntry(
         item,
-        normalizeSearch("${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)}"),
+        normalizeSearch("${item.name} ${item.note} ${item.description} ${item.tags.joinToString(" ")} ${item.checklist.joinToString(" ") { it.text }} ${subcategoryLabel(item.subcategory)}"),
         subcategoryKey(item.subcategory),
     )
 }

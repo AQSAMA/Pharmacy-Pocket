@@ -33,6 +33,24 @@ class MedicineLogicTest {
     }
 
     @Test
+    fun tagsAndChecklistAreSearchableAndTagsDeduplicate() {
+        assertEquals(listOf("إبر", "Stock"), normalizeTags(" إبر, ابر, Stock, stock "))
+        val item = medicine("m", "tablets").copy(
+            tags = listOf("إبر"), checklist = listOf(ChecklistItem("Check shelf")),
+        )
+        val index = buildSearchIndex(listOf(item))
+        assertEquals(listOf(item), filterSortedMedicines(index, MedicineFilters(), "ابر"))
+        assertEquals(listOf(item), filterSortedMedicines(index, MedicineFilters(), "shelf"))
+    }
+
+    @Test
+    fun repeatingReminderAdvancesPastCurrentTime() {
+        val day = 86_400_000L
+        assertEquals(3 * day, MedicineReminders.nextDue(day, ReminderRepeat.DAILY, 2 * day))
+        assertEquals(null, MedicineReminders.nextDue(day, ReminderRepeat.NONE, 2 * day))
+    }
+
+    @Test
     fun blankAndEquivalentSubcategoriesShareAKey() {
         assertEquals(subcategoryKey("   "), subcategoryKey("General"))
         assertEquals(subcategoryKey(" أَقْرَاص "), subcategoryKey("اقراص"))

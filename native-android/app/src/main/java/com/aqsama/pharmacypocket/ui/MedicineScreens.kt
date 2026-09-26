@@ -1,5 +1,11 @@
 package com.aqsama.pharmacypocket.ui
 
+import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -29,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -38,6 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.ChecklistItem
+import com.aqsama.pharmacypocket.data.ReminderRepeat
+import com.aqsama.pharmacypocket.data.normalizeTags
 import com.aqsama.pharmacypocket.data.buildSearchIndex
 import com.aqsama.pharmacypocket.data.categoryById
 import com.aqsama.pharmacypocket.data.formatAddedDate
@@ -46,6 +57,9 @@ import com.aqsama.pharmacypocket.data.listSubcategories
 import com.aqsama.pharmacypocket.data.subcategoryKey
 import com.aqsama.pharmacypocket.data.subcategoryLabel
 import java.util.UUID
+import java.text.DateFormat
+import java.util.Calendar
+import java.util.Date
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
@@ -61,6 +75,8 @@ fun MedicineEditorScreen(
     onMoveToTrash: (Medicine) -> Unit,
 ) {
     val view = LocalView.current
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val existing = remember(snapshot.items, medicineId) { snapshot.items.firstOrNull { it.id == medicineId } }
     val fallbackCategory = initialCategory
         ?.takeIf { candidate -> candidate != "all" && snapshot.categories.any { it.id == candidate } }
@@ -74,6 +90,10 @@ fun MedicineEditorScreen(
     var discounted by rememberSaveable(medicineId) { mutableStateOf(existing?.discounted?.toString() ?: "") }
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
+    var tags by rememberSaveable(medicineId) { mutableStateOf(existing?.tags?.joinToString(", ") ?: "") }
+    var checklistDraft by rememberSaveable(medicineId) { mutableStateOf(existing?.checklist?.joinToString("\n") { it.text } ?: "") }
+    var reminderAt by rememberSaveable(medicineId) { mutableStateOf(existing?.reminderAt) }
+    var reminderRepeat by rememberSaveable(medicineId) { mutableStateOf(existing?.reminderRepeat ?: ReminderRepeat.NONE) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
 
@@ -85,15 +105,18 @@ fun MedicineEditorScreen(
         val officialNumber = official.trim().toLongOrNull()
         val discountedNumber = discounted.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
         val discountWasInvalid = discounted.trim().isNotEmpty() && discountedNumber == null
+        val checklistLines = checklistDraft.lines().map(String::trim).filter(String::isNotEmpty)
         if (
             name.trim().isEmpty() ||
+            checklistLines.size > 30 || checklistLines.any { it.length > 200 } ||
+            (reminderAt != null && reminderAt != existing?.reminderAt && reminderAt!! <= System.currentTimeMillis()) ||
             officialNumber == null ||
             officialNumber !in 0..MAX_SAFE_INTEGER ||
             discountWasInvalid ||
             (discountedNumber != null && discountedNumber !in 0..MAX_SAFE_INTEGER)
         ) {
             Haptics.reject(view)
-            validationError = "Enter a medicine name and whole-number ${snapshot.currency} prices."
+            validationError = "Enter a medicine name, valid ${snapshot.currency} prices, and a future reminder date."
             return
         }
         Haptics.action(view)
@@ -107,6 +130,12 @@ fun MedicineEditorScreen(
                 discounted = discountedNumber,
                 note = note.trim(),
                 description = description.trim(),
+                tags = normalizeTags(tags).map { it.take(40) },
+                reminderAt = reminderAt,
+                reminderRepeat = if (reminderAt == null) ReminderRepeat.NONE else reminderRepeat,
+                checklist = checklistLines.mapIndexed { index, line ->
+                    ChecklistItem(line, existing?.checklist?.getOrNull(index)?.let { it.text == line && it.done } == true)
+                },
                 revision = existing?.revision ?: 0,
                 favorite = existing?.favorite ?: false,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
@@ -206,6 +235,40 @@ fun MedicineEditorScreen(
                         minLines = 5,
                         placeholder = "Details shown on the medicine page",
                     )
+                    Field("Tags", tags, { tags = it }, placeholder = "Optional, separated by commas")
+                    Field("Checklist", checklistDraft, { checklistDraft = it }, minLines = 3,
+                        placeholder = "One task per line, e.g. Check stock")
+
+                    Text("Reminder", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Button(modifier = Modifier.fillMaxWidth(), onClick = {
+                            val initial = Calendar.getInstance().apply { timeInMillis = reminderAt ?: System.currentTimeMillis() }
+                            DatePickerDialog(context, { _, year, month, day ->
+                                val selected = Calendar.getInstance().apply {
+                                    set(year, month, day)
+                                }
+                                TimePickerDialog(context, { _, hour, minute ->
+                                    selected.set(Calendar.HOUR_OF_DAY, hour)
+                                    selected.set(Calendar.MINUTE, minute)
+                                    selected.set(Calendar.SECOND, 0)
+                                    reminderAt = selected.timeInMillis
+                                    if (Build.VERSION.SDK_INT >= 33) {
+                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                }, initial.get(Calendar.HOUR_OF_DAY), initial.get(Calendar.MINUTE), true).show()
+                            }, initial.get(Calendar.YEAR), initial.get(Calendar.MONTH), initial.get(Calendar.DAY_OF_MONTH)).show()
+                        }) { Text(if (reminderAt == null) "Set date & time" else DateFormat.getDateTimeInstance().format(Date(reminderAt!!)), maxLines = 2) }
+                        if (reminderAt != null) TextButton(onClick = { reminderAt = null; reminderRepeat = ReminderRepeat.NONE }) {
+                            Text("Clear")
+                        }
+                    }
+                    if (reminderAt != null) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            ReminderRepeat.entries.forEach { repeat ->
+                                SoftChip(repeat.label, selected = reminderRepeat == repeat) { reminderRepeat = repeat }
+                            }
+                        }
+                    }
 
                     Text(
                         "Prices use ${snapshot.currency}. A blank discounted price means no second price was supplied.",
@@ -313,6 +376,8 @@ fun MedicineDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onToggleFavorite: (Medicine) -> Unit,
+    onCompleteReminder: (Medicine) -> Unit,
+    onToggleChecklist: (Medicine, Int) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
 ) {
     val view = LocalView.current
@@ -461,6 +526,46 @@ fun MedicineDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                             )
+                        }
+
+                        if (item.tags.isNotEmpty()) {
+                            InfoCard("Tags") {
+                                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    item.tags.forEach { tag ->
+                                        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer) {
+                                            Text(tag, Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (item.checklist.isNotEmpty()) {
+                            InfoCard("Checklist") {
+                                item.checklist.forEachIndexed { index, task ->
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        Checkbox(checked = task.done, enabled = !busy,
+                                            onCheckedChange = { onToggleChecklist(item, index) })
+                                        Text(task.text, color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
+                        }
+                        item.reminderAt?.let { due ->
+                            InfoCard("Reminder") {
+                                Text(
+                                    DateFormat.getDateTimeInstance().format(Date(due)) + " · " + item.reminderRepeat.label,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                if (due <= System.currentTimeMillis()) {
+                                    Text("Overdue", color = MaterialTheme.colorScheme.error)
+                                }
+                                TextButton(enabled = !busy, onClick = { onCompleteReminder(item) }) {
+                                    Text("Done / clear reminder")
+                                }
+                            }
                         }
 
                         if (item.description.isNotBlank()) {

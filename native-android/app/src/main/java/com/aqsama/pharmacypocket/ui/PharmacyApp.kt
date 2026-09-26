@@ -31,6 +31,7 @@ import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.MedicineReminders
 import com.aqsama.pharmacypocket.data.ParsedBackup
 import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
@@ -61,6 +62,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var busy by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
+    var scheduledIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     fun push(destination: Destination) {
@@ -180,6 +182,15 @@ fun PharmacyApp(repository: PharmacyRepository) {
             snapshot = repository.loadSnapshot()
         } catch (error: Throwable) {
             errorMessage = error.message ?: "Unable to open local storage."
+        }
+    }
+
+    LaunchedEffect(snapshot?.items) {
+        snapshot?.items?.let { items ->
+            val activeIds = items.mapTo(mutableSetOf()) { it.id }
+            (scheduledIds - activeIds).forEach { MedicineReminders.cancel(context, it) }
+            items.forEach { MedicineReminders.schedule(context, it) }
+            scheduledIds = activeIds
         }
     }
 
@@ -327,6 +338,18 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                     Haptics.reject(view)
                                     errorMessage = error.message ?: "Could not update favorite."
                                 }
+                            }
+                        },
+                        onCompleteReminder = { item ->
+                            runOperation("Reminder cleared") {
+                                repository.saveMedicine(item.copy(reminderAt = null, reminderRepeat = com.aqsama.pharmacypocket.data.ReminderRepeat.NONE))
+                            }
+                        },
+                        onToggleChecklist = { item, index ->
+                            runOperation {
+                                repository.saveMedicine(item.copy(checklist = item.checklist.mapIndexed { position, task ->
+                                    if (position == index) task.copy(done = !task.done) else task
+                                }))
                             }
                         },
                         onMoveToTrash = ::moveToTrash,

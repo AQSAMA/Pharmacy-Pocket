@@ -135,6 +135,7 @@ fun HomeScreen(
     var sortName by rememberSaveable { mutableStateOf(MedicineSort.DEFAULT.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    var remindersOnly by rememberSaveable { mutableStateOf(false) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 
@@ -157,8 +158,12 @@ fun HomeScreen(
     val filters = remember(category, selectedSubcategory, favoritesOnly) {
         MedicineFilters(category, selectedSubcategory, favoritesOnly)
     }
-    val visible = remember(sortedIndex, filters, query) {
-        filterSortedMedicines(sortedIndex, filters, query)
+    val visible = remember(sortedIndex, filters, query, remindersOnly, sort) {
+        filterSortedMedicines(sortedIndex, filters, query).let { results ->
+            if (!remindersOnly) results else results.filter { it.reminderAt != null }.let { reminders ->
+                if (sort == MedicineSort.DEFAULT) reminders.sortedBy { it.reminderAt } else reminders
+            }
+        }
     }
     val rows = remember(visible) { buildRows(visible) }
     val categoryCounts = remember(snapshot.items) {
@@ -170,13 +175,15 @@ fun HomeScreen(
         }
     }
     val favoriteCount = remember(snapshot.items) { snapshot.items.count { it.favorite } }
+    val reminderCount = remember(snapshot.items) { snapshot.items.count { it.reminderAt != null } }
     val activeCount = (if (favoritesOnly) 1 else 0) +
         (if (sort != MedicineSort.DEFAULT) 1 else 0) +
         (if (category != "all") 1 else 0) +
         (if (selectedSubcategory != null) 1 else 0) +
-        (if (query.isNotBlank()) 1 else 0)
+        (if (query.isNotBlank()) 1 else 0) +
+        (if (remindersOnly) 1 else 0)
 
-    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly"
+    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly|$remindersOnly"
     var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
     LaunchedEffect(filterKey) {
         if (filterKey != lastFilterKey) {
@@ -279,6 +286,11 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
                             SoftChip(
+                                label = "⏰ Reminders $reminderCount",
+                                selected = remindersOnly,
+                                onClick = { Haptics.selection(view); remindersOnly = !remindersOnly },
+                            )
+                            SoftChip(
                                 label = if (snapshot.largeText) "T Large ✓" else "T Large",
                                 selected = snapshot.largeText,
                                 onClick = {
@@ -303,6 +315,7 @@ fun HomeScreen(
                                     category = "all"
                                     selectedSubcategory = null
                                     favoritesOnly = false
+                                    remindersOnly = false
                                     sortName = MedicineSort.DEFAULT.name
                                 }
                             }
