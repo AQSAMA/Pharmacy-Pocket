@@ -18,7 +18,27 @@ data class Medicine(
     val revision: Int = 0,
     val favorite: Boolean = false,
     val createdAt: Long? = null,
+    val codes: List<MedicineCode> = emptyList(),
+    val hasPhoto: Boolean = false,
+    val codesSpecified: Boolean = true,
 )
+
+enum class CodeKind { BARCODE, PRICE_STICKER_QR }
+
+data class MedicineCode(val kind: CodeKind, val value: String)
+
+fun validateCodes(codes: List<MedicineCode>): List<MedicineCode> {
+    require(codes.size <= 20) { "A medicine can have up to 20 codes." }
+    val cleaned = codes.map { code ->
+        val value = code.value.trim()
+        require(value.isNotEmpty() && value.length <= 2048 && value.none { Character.isISOControl(it) }) {
+            "A scanned code is empty, too long, or contains control characters."
+        }
+        MedicineCode(code.kind, value)
+    }
+    require(cleaned.map { it.value }.distinct().size == cleaned.size) { "Duplicate codes are not allowed." }
+    return cleaned
+}
 
 data class Category(
     val id: String,
@@ -80,6 +100,7 @@ data class ParsedBackup(
     val currency: String,
     val hasCurrency: Boolean,
     val sourceVersion: Int,
+    val photos: Map<String, ByteArray> = emptyMap(),
 )
 
 object PharmacyDefaults {
@@ -207,7 +228,7 @@ data class SubcategoryOption(val key: String, val label: String)
 fun buildSearchIndex(items: List<Medicine>): List<MedicineSearchEntry> = items.map { item ->
     MedicineSearchEntry(
         item,
-        normalizeSearch("${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)}"),
+        normalizeSearch("${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)} ${item.codes.joinToString(" ") { it.value }}"),
         subcategoryKey(item.subcategory),
     )
 }

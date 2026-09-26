@@ -1,5 +1,14 @@
 package com.aqsama.pharmacypocket.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +30,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +39,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +52,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.MedicineCode
+import com.aqsama.pharmacypocket.data.CodeKind
+import com.aqsama.pharmacypocket.data.validateCodes
 import com.aqsama.pharmacypocket.data.buildSearchIndex
 import com.aqsama.pharmacypocket.data.categoryById
 import com.aqsama.pharmacypocket.data.formatAddedDate
@@ -46,6 +63,10 @@ import com.aqsama.pharmacypocket.data.listSubcategories
 import com.aqsama.pharmacypocket.data.subcategoryKey
 import com.aqsama.pharmacypocket.data.subcategoryLabel
 import java.util.UUID
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
@@ -57,10 +78,14 @@ fun MedicineEditorScreen(
     busy: Boolean,
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
-    onSave: (Medicine) -> Unit,
+    onSave: (Medicine, ByteArray?, Boolean) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
+    loadPhoto: suspend (String) -> ByteArray?,
+    initialCapture: String? = null,
 ) {
     val view = LocalView.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val existing = remember(snapshot.items, medicineId) { snapshot.items.firstOrNull { it.id == medicineId } }
     val fallbackCategory = initialCategory
         ?.takeIf { candidate -> candidate != "all" && snapshot.categories.any { it.id == candidate } }
@@ -74,8 +99,80 @@ fun MedicineEditorScreen(
     var discounted by rememberSaveable(medicineId) { mutableStateOf(existing?.discounted?.toString() ?: "") }
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
+    var codes by remember(medicineId) { mutableStateOf(existing?.codes ?: emptyList()) }
+    var codeDraft by rememberSaveable(medicineId) { mutableStateOf("") }
+    var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
+    var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
+    var showScanner by remember { mutableStateOf(false) }
+    var scannerStickerOnly by remember { mutableStateOf(false) }
+    var photoBytes by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
+    var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
+    var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
+    var cameraFile by remember { mutableStateOf<File?>(null) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
+
+    LaunchedEffect(existing?.id, existing?.hasPhoto) {
+        savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
+    }
+
+    fun acceptPhoto(uri: Uri) {
+        scope.launch {
+            try {
+                photoBytes = withContext(Dispatchers.IO) { prepareMedicinePhoto(context, uri) }
+                removePhoto = false
+            } catch (error: Exception) {
+                validationError = error.message ?: "Could not open this photo."
+            } finally {
+                cameraFile?.delete()
+                cameraFile = null
+            }
+        }
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) acceptPhoto(uri)
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = cameraFile
+        if (success && file != null) acceptPhoto(FileProvider.getUriForFile(context, "${context.packageName}.files", file))
+        else { file?.delete(); cameraFile = null }
+    }
+    fun takePhoto() {
+        val file = File(context.cacheDir, "medicine_capture/${UUID.randomUUID()}.jpg")
+        file.parentFile?.mkdirs()
+        cameraFile = file
+        camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.files", file))
+    }
+
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) showScanner = true else validationError = "Camera permission is needed to scan codes."
+    }
+    fun scan(sticker: Boolean) {
+        scannerStickerOnly = sticker
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            showScanner = true
+        } else permission.launch(Manifest.permission.CAMERA)
+    }
+    LaunchedEffect(initialCapture) {
+        when (initialCapture) {
+            "barcode" -> scan(false)
+            "sticker" -> scan(true)
+            "photo" -> takePhoto()
+        }
+    }
+
+    fun proposeCode(value: String, kind: CodeKind) {
+        val proposed = runCatching { validateCodes(listOf(MedicineCode(kind, value))).single() }
+            .getOrElse { validationError = it.message; return }
+        val owner = snapshot.items.firstOrNull { it.id != existing?.id && it.codes.any { code -> code.value == proposed.value } }
+        when {
+            codes.any { it.value == proposed.value } -> validationError = "This code is already on this medicine."
+            codes.size >= 20 -> validationError = "A medicine can have up to 20 codes."
+            owner != null -> validationError = "This code already belongs to ${owner.name}."
+            else -> pendingCode = proposed
+        }
+    }
 
     val existingSubcategories = remember(snapshot.items, category) {
         listSubcategories(buildSearchIndex(snapshot.items), category)
@@ -110,7 +207,10 @@ fun MedicineEditorScreen(
                 revision = existing?.revision ?: 0,
                 favorite = existing?.favorite ?: false,
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                codes = codes,
             ),
+            photoBytes,
+            removePhoto,
         )
     }
 
@@ -129,6 +229,42 @@ fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
+
+                    Text("Product codes and price stickers", fontWeight = FontWeight.Bold)
+                    Text("Codes identify a package. Sticker QR data does not set the price; verify and enter the price below.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    codes.forEach { code ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${if (code.kind == CodeKind.PRICE_STICKER_QR) "Sticker QR" else "Barcode"}: ${code.value.take(45)}",
+                                modifier = Modifier.weight(1f), maxLines = 2)
+                            TextButton(onClick = { codes = codes.filterNot { it == code } }) { Text("Remove") }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { scan(false) }) { Text("Scan barcode") }
+                        TextButton(onClick = { scan(true) }) { Text("Scan sticker QR") }
+                    }
+                    Field("Enter code manually", codeDraft, { codeDraft = it })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { codeKind = CodeKind.BARCODE }) {
+                            Text(if (codeKind == CodeKind.BARCODE) "✓ Barcode" else "Barcode")
+                        }
+                        TextButton(onClick = { codeKind = CodeKind.PRICE_STICKER_QR }) {
+                            Text(if (codeKind == CodeKind.PRICE_STICKER_QR) "✓ Sticker QR" else "Sticker QR")
+                        }
+                        TextButton(onClick = { proposeCode(codeDraft, codeKind) }) { Text("Add") }
+                    }
+
+                    Text("Medicine photo", fontWeight = FontWeight.Bold)
+                    (photoBytes ?: if (removePhoto) null else savedPhoto)?.let { bytes ->
+                        val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
+                        bitmap?.let { Image(it, contentDescription = "Medicine photo", modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
+                        TextButton(onClick = { photoBytes = null; removePhoto = true }) { Text("Remove photo") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = ::takePhoto) { Text("Take photo") }
+                        TextButton(onClick = { photoPicker.launch("image/*") }) { Text("Choose image") }
+                    }
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -255,6 +391,29 @@ fun MedicineEditorScreen(
         )
     }
 
+    if (showScanner) MedicineCodeScanner(
+        stickerOnly = scannerStickerOnly,
+        onCode = { value ->
+            showScanner = false
+            proposeCode(value, if (scannerStickerOnly) CodeKind.PRICE_STICKER_QR else CodeKind.BARCODE)
+        },
+        onDismiss = { showScanner = false },
+    )
+
+    pendingCode?.let { code ->
+        AlertDialog(
+            onDismissRequest = { pendingCode = null },
+            title = { Text("Add scanned code?") },
+            text = { Text("${code.kind.name.replace('_', ' ')}: ${code.value.take(160)}${if (code.value.length > 160) "…" else ""}\n\nCheck the package before saving.") },
+            dismissButton = { TextButton(onClick = { pendingCode = null }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = {
+                codes = codes + code
+                codeDraft = ""
+                pendingCode = null
+            }) { Text("Add code") } },
+        )
+    }
+
     if (confirmTrash && existing != null) {
         AlertDialog(
             onDismissRequest = { if (!busy) confirmTrash = false },
@@ -314,10 +473,15 @@ fun MedicineDetailScreen(
     onEdit: () -> Unit,
     onToggleFavorite: (Medicine) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
+    loadPhoto: suspend (String) -> ByteArray?,
 ) {
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
     var confirmTrash by remember { mutableStateOf(false) }
+    var photo by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(medicineId, snapshot.items) {
+        photo = if (item?.hasPhoto == true) loadPhoto(medicineId) else null
+    }
 
     Scaffold(
         topBar = { ScreenTopBar("Medicine", onBack) },
@@ -461,6 +625,22 @@ fun MedicineDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 12.sp,
                             )
+                        }
+
+                        photo?.let { bytes ->
+                            val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
+                            bitmap?.let {
+                                InfoCard("Photo") {
+                                    Image(it, contentDescription = "Photo of ${item.name}",
+                                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp), contentScale = ContentScale.Fit)
+                                }
+                            }
+                        }
+                        if (item.codes.isNotEmpty()) InfoCard("Package codes") {
+                            item.codes.forEach { code ->
+                                InfoValue(if (code.kind == CodeKind.PRICE_STICKER_QR) "PRICE STICKER QR" else "BARCODE",
+                                    code.value, snapshot.largeText)
+                            }
                         }
 
                         if (item.description.isNotBlank()) {

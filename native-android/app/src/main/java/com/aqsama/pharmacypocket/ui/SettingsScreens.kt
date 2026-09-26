@@ -67,6 +67,7 @@ fun SettingsScreen(
     onSetCurrency: (String) -> Unit,
     onSetTheme: (ThemePreference) -> Unit,
     onImport: (ParsedBackup, ImportMode) -> Unit,
+    exportBackup: suspend () -> String,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -81,9 +82,7 @@ fun SettingsScreen(
         if (uri != null) {
             scope.launch {
                 try {
-                    val json = withContext(Dispatchers.Default) {
-                        BackupCodec.encode(snapshot.items, snapshot.currency, snapshot.categories)
-                    }
+                    val json = exportBackup()
                     withContext(Dispatchers.IO) { writeText(context, uri, json) }
                     Haptics.confirm(view)
                     android.widget.Toast.makeText(context, "Backup exported", android.widget.Toast.LENGTH_SHORT).show()

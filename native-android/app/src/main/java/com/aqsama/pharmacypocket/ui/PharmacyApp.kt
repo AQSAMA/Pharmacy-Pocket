@@ -43,7 +43,7 @@ private sealed interface Destination {
     data object Settings : Destination
     data object Categories : Destination
     data object Trash : Destination
-    data class Editor(val medicineId: String?, val category: String?) : Destination
+    data class Editor(val medicineId: String?, val category: String?, val initialCapture: String? = null) : Destination
     data class Detail(val medicineId: String) : Destination
 }
 
@@ -197,7 +197,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                     Destination.Home -> HomeScreen(
                         snapshot = current,
                         onSettings = { push(Destination.Settings) },
-                        onAddMedicine = { category -> push(Destination.Editor(null, category)) },
+                        onAddMedicine = { category, initialCapture -> push(Destination.Editor(null, category, initialCapture)) },
                         onOpenMedicine = { push(Destination.Detail(it)) },
                         onEditMedicine = { push(Destination.Editor(it, null)) },
                         onToggleFavorite = { item ->
@@ -242,6 +242,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onImport = { data, mode ->
                             runOperation("Import complete") { repository.importBackup(data, mode) }
                         },
+                        exportBackup = repository::exportBackup,
                     )
 
                     Destination.Categories -> CategoryManagerScreen(
@@ -294,14 +295,16 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         snapshot = current,
                         medicineId = destination.medicineId,
                         initialCategory = destination.category,
+                        initialCapture = destination.initialCapture,
                         busy = busy,
                         onBack = ::pop,
                         onManageCategories = { push(Destination.Categories) },
-                        onSave = { medicine ->
+                        loadPhoto = repository::loadPhoto,
+                        onSave = { medicine, photo, removePhoto ->
                             runOperation(
                                 successMessage = "Medicine saved",
                                 onSuccess = ::pop,
-                            ) { repository.saveMedicine(medicine) }
+                            ) { repository.saveMedicine(medicine, photo, removePhoto) }
                         },
                         onMoveToTrash = ::moveToTrash,
                     )
@@ -330,6 +333,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             }
                         },
                         onMoveToTrash = ::moveToTrash,
+                        loadPhoto = repository::loadPhoto,
                     )
                 }
             }

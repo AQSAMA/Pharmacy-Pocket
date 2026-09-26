@@ -13,12 +13,13 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-private const val DATABASE_VERSION = 2
+private const val DATABASE_VERSION = 3
 
 private data class ExistingRow(
     val sortOrder: Long,
     val favorite: Boolean,
     val createdAt: Long?,
+    val codes: List<MedicineCode>,
 )
 
 internal class MedicineDatabase(context: Context) {
@@ -83,7 +84,8 @@ internal class MedicineDatabase(context: Context) {
                   favorite INTEGER NOT NULL DEFAULT 0,
                   sort_order INTEGER NOT NULL,
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  deleted_at INTEGER
+                  deleted_at INTEGER,
+                  codes TEXT NOT NULL DEFAULT '[]'
                 )
                 """.trimIndent(),
             )
@@ -104,6 +106,10 @@ internal class MedicineDatabase(context: Context) {
                 // A nullable column deliberately leaves every existing medicine active.
                 db.execSQL("ALTER TABLE medicines ADD COLUMN deleted_at INTEGER")
             }
+            if ("codes" !in columns) {
+                db.execSQL("ALTER TABLE medicines ADD COLUMN codes TEXT NOT NULL DEFAULT '[]'")
+            }
+            db.execSQL("CREATE TABLE IF NOT EXISTS medicine_photos (medicine_id TEXT PRIMARY KEY NOT NULL, jpeg BLOB NOT NULL)")
 
             db.execSQL("PRAGMA user_version = $DATABASE_VERSION")
             db.setTransactionSuccessful()
@@ -127,13 +133,15 @@ internal class MedicineDatabase(context: Context) {
             revision = cursor.getInt(cursor.getColumnIndexOrThrow("revision")),
             favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
             createdAt = if (cursor.isNull(createdAt)) null else cursor.getLong(createdAt),
+            codes = codesFromJson(cursor.getString(cursor.getColumnIndexOrThrow("codes"))),
+            hasPhoto = cursor.getInt(cursor.getColumnIndexOrThrow("has_photo")) != 0,
         )
     }
 
     fun loadMedicines(): List<Medicine> {
         val result = mutableListOf<Medicine>()
         open().rawQuery(
-            "SELECT * FROM medicines WHERE deleted_at IS NULL ORDER BY sort_order",
+            "SELECT m.*, EXISTS(SELECT 1 FROM medicine_photos p WHERE p.medicine_id = m.id) AS has_photo FROM medicines m WHERE deleted_at IS NULL ORDER BY sort_order",
             null,
         ).use { cursor ->
             while (cursor.moveToNext()) result += medicineFromCursor(cursor)
@@ -144,7 +152,7 @@ internal class MedicineDatabase(context: Context) {
     fun loadTrash(): List<TrashedMedicine> {
         val result = mutableListOf<TrashedMedicine>()
         open().rawQuery(
-            "SELECT * FROM medicines WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, sort_order ASC",
+            "SELECT m.*, EXISTS(SELECT 1 FROM medicine_photos p WHERE p.medicine_id = m.id) AS has_photo FROM medicines m WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC, sort_order ASC",
             null,
         ).use { cursor ->
             val deletedAt = cursor.getColumnIndexOrThrow("deleted_at")
@@ -175,7 +183,7 @@ internal class MedicineDatabase(context: Context) {
 
     private fun existing(db: SQLiteDatabase, id: String): ExistingRow? =
         db.rawQuery(
-            "SELECT sort_order, favorite, created_at FROM medicines WHERE id = ?",
+            "SELECT sort_order, favorite, created_at, codes FROM medicines WHERE id = ?",
             arrayOf(id),
         ).use { cursor ->
             if (!cursor.moveToFirst()) null
@@ -183,6 +191,7 @@ internal class MedicineDatabase(context: Context) {
                 sortOrder = cursor.getLong(0),
                 favorite = cursor.getInt(1) != 0,
                 createdAt = if (cursor.isNull(2)) null else cursor.getLong(2),
+                codes = codesFromJson(cursor.getString(3)),
             )
         }
 
@@ -210,6 +219,7 @@ internal class MedicineDatabase(context: Context) {
             put("favorite", if (current?.favorite ?: item.favorite) 1 else 0)
             put("sort_order", current?.sortOrder ?: newSortOrder ?: maxSortOrder(db) + 1)
             put("created_at", createdAt)
+            put("codes", codesToJson(if (item.codesSpecified) item.codes else current?.codes ?: item.codes))
             putNull("deleted_at")
         }
         db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -235,16 +245,19 @@ internal class MedicineDatabase(context: Context) {
             put("favorite", if (item.favorite) 1 else 0)
             put("sort_order", sortOrder)
             put("created_at", item.createdAt?.takeIf { it >= 0 } ?: createdAtFallback)
+            put("codes", codesToJson(if (item.codesSpecified) item.codes else existing(db, item.id)?.codes ?: item.codes))
             putNull("deleted_at")
         }
         db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    fun saveMedicine(item: Medicine) {
+    fun saveMedicine(item: Medicine, photo: ByteArray? = null, removePhoto: Boolean = false) {
         val db = open()
         db.beginTransaction()
         try {
             writeMedicine(db, item)
+            if (removePhoto) db.delete("medicine_photos", "medicine_id = ?", arrayOf(item.id))
+            if (photo != null) writePhoto(db, item.id, photo)
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -312,6 +325,7 @@ internal class MedicineDatabase(context: Context) {
                 "id = ? AND deleted_at IS NOT NULL",
                 arrayOf(id),
             ) == 1
+            if (changed) db.delete("medicine_photos", "medicine_id = ?", arrayOf(id))
             db.setTransactionSuccessful()
             changed
         } finally {
@@ -324,6 +338,7 @@ internal class MedicineDatabase(context: Context) {
         db.beginTransaction()
         return try {
             val deleted = db.delete("medicines", "deleted_at IS NOT NULL", null)
+            db.execSQL("DELETE FROM medicine_photos WHERE medicine_id NOT IN (SELECT id FROM medicines)")
             db.setTransactionSuccessful()
             deleted
         } finally {
@@ -344,7 +359,7 @@ internal class MedicineDatabase(context: Context) {
         }
     }
 
-    fun mergeMedicines(items: List<Medicine>) {
+    fun mergeMedicines(items: List<Medicine>, photos: Map<String, ByteArray> = emptyMap()) {
         val db = open()
         db.beginTransaction()
         try {
@@ -352,13 +367,14 @@ internal class MedicineDatabase(context: Context) {
             items.forEach { item ->
                 if (writeMedicine(db, item, nextSortOrder)) nextSortOrder += 1
             }
+            photos.forEach { (id, jpeg) -> writePhoto(db, id, jpeg) }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
     }
 
-    fun replaceMedicines(items: List<Medicine>) {
+    fun replaceMedicines(items: List<Medicine>, photos: Map<String, ByteArray> = emptyMap(), replacePhotos: Boolean = false) {
         val db = open()
         db.beginTransaction()
         try {
@@ -398,10 +414,42 @@ internal class MedicineDatabase(context: Context) {
                     createdAtFallback = now + index,
                 )
             }
+            if (replacePhotos) items.forEach { item ->
+                if (item.id !in photos) db.delete("medicine_photos", "medicine_id = ?", arrayOf(item.id))
+            }
+            photos.forEach { (id, jpeg) -> writePhoto(db, id, jpeg) }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
+    }
+
+    private fun writePhoto(db: SQLiteDatabase, id: String, jpeg: ByteArray) {
+        require(jpeg.size in 1..256_000) { "The photo must be 256 KB or less." }
+        db.insertWithOnConflict("medicine_photos", null, ContentValues().apply {
+            put("medicine_id", id)
+            put("jpeg", jpeg)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun loadPhoto(id: String): ByteArray? = open().rawQuery(
+        "SELECT jpeg FROM medicine_photos WHERE medicine_id = ?", arrayOf(id),
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getBlob(0) else null }
+
+    fun exportPhotos(ids: List<String>): Map<String, ByteArray> = buildMap {
+        ids.forEach { id -> loadPhoto(id)?.let { put(id, it) } }
+    }
+}
+
+private fun codesToJson(codes: List<MedicineCode>): String = JSONArray().apply {
+    validateCodes(codes).forEach { put(JSONObject().put("kind", it.kind.name).put("value", it.value)) }
+}.toString()
+
+private fun codesFromJson(raw: String): List<MedicineCode> = buildList {
+    val array = JSONArray(raw)
+    for (index in 0 until array.length()) {
+        val obj = array.getJSONObject(index)
+        add(MedicineCode(CodeKind.valueOf(obj.getString("kind")), obj.getString("value")))
     }
 }
 
@@ -565,12 +613,28 @@ class PharmacyRepository(context: Context) {
         }
     }
 
-    suspend fun saveMedicine(item: Medicine): AppSnapshot = withContext(Dispatchers.IO) {
+    suspend fun saveMedicine(item: Medicine, photo: ByteArray? = null, removePhoto: Boolean = false): AppSnapshot = withContext(Dispatchers.IO) {
         require(item.id.isNotBlank() && item.name.isNotBlank() && item.category.isNotBlank())
         require(item.official >= 0 && (item.discounted == null || item.discounted >= 0))
         mutex.withLock {
-            database.saveMedicine(item)
+            val codes = validateCodes(item.codes)
+            val conflicts = database.loadMedicines().filter { it.id != item.id }
+                .flatMap { other -> other.codes.map { it.value to other.name } }.toMap()
+            codes.forEach { require(it.value !in conflicts) { "Code already belongs to ${conflicts[it.value]}." } }
+            database.saveMedicine(item.copy(codes = codes), photo, removePhoto)
             snapshotUnsafe()
+        }
+    }
+
+    suspend fun loadPhoto(id: String): ByteArray? = withContext(Dispatchers.IO) {
+        mutex.withLock { database.loadPhoto(id) }
+    }
+
+    suspend fun exportBackup(): String = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val snapshot = snapshotUnsafe()
+            BackupCodec.encode(snapshot.items, snapshot.currency, snapshot.categories,
+                photos = database.exportPhotos(snapshot.items.filter { it.hasPhoto }.map { it.id }))
         }
     }
 
@@ -615,6 +679,21 @@ class PharmacyRepository(context: Context) {
 
     suspend fun importBackup(data: ParsedBackup, mode: ImportMode): AppSnapshot = withContext(Dispatchers.IO) {
         mutex.withLock {
+            val incomingIds = data.medicines.mapTo(HashSet()) { it.id }
+            val allCodes = mutableSetOf<String>()
+            val currentItems = if (mode == ImportMode.MERGE) database.loadMedicines() else emptyList()
+            val currentById = currentItems.associateBy { it.id }
+            currentItems.filter { it.id !in incomingIds }.forEach { item ->
+                item.codes.forEach { allCodes.add(it.value) }
+            }
+            data.medicines.forEach { item ->
+                val existingCodes = if (mode == ImportMode.MERGE && !item.codesSpecified) {
+                    currentById[item.id]?.codes ?: emptyList()
+                } else validateCodes(item.codes)
+                existingCodes.forEach { code ->
+                    require(allCodes.add(code.value)) { "The backup assigns a code to more than one medicine." }
+                }
+            }
             val currentCategories = preferences.categories()
             val nextCategories = resolveCategoryImport(
                 currentCategories,
@@ -623,8 +702,8 @@ class PharmacyRepository(context: Context) {
                 data.medicines.map { it.category },
             )
             when (mode) {
-                ImportMode.MERGE -> database.mergeMedicines(data.medicines)
-                ImportMode.REPLACE -> database.replaceMedicines(data.medicines)
+                ImportMode.MERGE -> database.mergeMedicines(data.medicines, data.photos)
+                ImportMode.REPLACE -> database.replaceMedicines(data.medicines, data.photos, data.sourceVersion >= 3)
             }
             if (shouldApplyImportedCurrency(mode, data.hasCurrency)) {
                 preferences.setCurrency(data.currency)

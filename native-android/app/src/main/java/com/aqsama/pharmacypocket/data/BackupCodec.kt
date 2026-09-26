@@ -5,10 +5,12 @@ import org.json.JSONException
 import org.json.JSONObject
 import java.time.Instant
 import java.util.Locale
+import android.util.Base64
+import android.graphics.BitmapFactory
 
 object BackupCodec {
     const val schema = "pharmacy-pocket-backup"
-    const val version = 2
+    const val version = 3
     private const val maxSafeJsInteger = 9_007_199_254_740_991L
 
     fun encode(
@@ -16,6 +18,7 @@ object BackupCodec {
         currency: String,
         categoryDefinitions: List<Category>,
         exportedAt: String = Instant.now().toString(),
+        photos: Map<String, ByteArray> = emptyMap(),
     ): String {
         val root = JSONObject()
             .put("schema", schema)
@@ -43,6 +46,12 @@ object BackupCodec {
                     put("discounted", item.discounted ?: JSONObject.NULL)
                     put("revision", item.revision.coerceAtLeast(0))
                     item.createdAt?.let { put("createdAt", it) }
+                    put("codes", JSONArray().apply {
+                        item.codes.forEach { code ->
+                            put(JSONObject().put("kind", code.kind.name).put("value", code.value))
+                        }
+                    })
+                    photos[item.id]?.let { jpeg -> put("photoJpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)) }
                 })
             }
         })
@@ -71,6 +80,7 @@ object BackupCodec {
             }
 
             val medicines = mutableListOf<Medicine>()
+            val photos = mutableMapOf<String, ByteArray>()
             val ids = mutableSetOf<String>()
             for (index in 0 until medicineArray.length()) {
                 val obj = medicineArray.optJSONObject(index)
@@ -78,6 +88,21 @@ object BackupCodec {
                 val item = parseMedicine(obj, favoriteIds)
                 require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
                 medicines += item
+                if (obj.has("photoJpeg")) {
+                    val encoded = requiredString(obj, "photoJpeg")
+                    require(encoded.length <= 342_000) { "A photo in this backup is too large." }
+                    val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                    require(bytes.size in 1..256_000 && bytes.size >= 3 &&
+                        bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()) {
+                        "A photo in this backup is invalid."
+                    }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    require(bounds.outWidth in 1..2000 && bounds.outHeight in 1..2000) {
+                        "A photo in this backup has invalid dimensions."
+                    }
+                    photos[item.id] = bytes
+                }
             }
 
             val sections = if (root.has("sections")) {
@@ -125,6 +150,7 @@ object BackupCodec {
                 currency = currency,
                 hasCurrency = hasCurrency,
                 sourceVersion = sourceVersion,
+                photos = photos,
             )
         } catch (error: IllegalArgumentException) {
             throw error
@@ -172,6 +198,20 @@ object BackupCodec {
         require(revisionLong <= Int.MAX_VALUE) { "One or more medicines in this file are invalid." }
         val createdAt = if (!obj.has("createdAt") || obj.isNull("createdAt")) null
         else requiredSafeLong(obj, "createdAt")
+        val codes = if (obj.has("codes")) {
+            val array = obj.optJSONArray("codes")
+                ?: throw IllegalArgumentException("The codes in this file are invalid.")
+            require(array.length() <= 20) { "A medicine has too many codes." }
+            validateCodes(buildList {
+                for (index in 0 until array.length()) {
+                    val code = array.optJSONObject(index)
+                        ?: throw IllegalArgumentException("The codes in this file are invalid.")
+                    val kind = runCatching { CodeKind.valueOf(requiredString(code, "kind")) }
+                        .getOrElse { throw IllegalArgumentException("The code type in this file is invalid.") }
+                    add(MedicineCode(kind, requiredString(code, "value")))
+                }
+            })
+        } else emptyList()
         require(official >= 0 && (discounted == null || discounted >= 0) && revisionLong >= 0) {
             "One or more medicines in this file are invalid."
         }
@@ -187,6 +227,8 @@ object BackupCodec {
             revision = revisionLong.toInt(),
             favorite = favoriteIds.contains(id) || obj.optBoolean("favorite", false),
             createdAt = createdAt,
+            codes = codes,
+            codesSpecified = obj.has("codes"),
         )
     }
 

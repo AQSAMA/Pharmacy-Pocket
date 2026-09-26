@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -122,7 +123,7 @@ private fun buildRows(items: List<Medicine>): List<HomeRow> {
 fun HomeScreen(
     snapshot: AppSnapshot,
     onSettings: () -> Unit,
-    onAddMedicine: (String) -> Unit,
+    onAddMedicine: (String, String?) -> Unit,
     onOpenMedicine: (String) -> Unit,
     onEditMedicine: (String) -> Unit,
     onToggleFavorite: (Medicine) -> Unit,
@@ -136,6 +137,7 @@ fun HomeScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
+    var addMenu by remember { mutableStateOf(false) }
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 
     val searchIndex = remember(snapshot.items) { buildSearchIndex(snapshot.items) }
@@ -325,7 +327,7 @@ fun HomeScreen(
                 },
                 onAdd = {
                     Haptics.action(view)
-                    onAddMedicine(if (category == "all") snapshot.categories.getOrNull(1)?.id ?: "syrups" else category)
+                    addMenu = true
                 },
             )
         },
@@ -411,6 +413,27 @@ fun HomeScreen(
             }
         }
     }
+
+    if (addMenu) AlertDialog(
+        onDismissRequest = { addMenu = false },
+        title = { Text("Add medicine") },
+        text = {
+            Column {
+                listOf(
+                    "Enter details" to null,
+                    "Scan product barcode" to "barcode",
+                    "Scan price sticker QR" to "sticker",
+                    "Take medicine photo" to "photo",
+                ).forEach { (label, start) ->
+                    TextButton(onClick = {
+                        addMenu = false
+                        onAddMedicine(if (category == "all") snapshot.categories.getOrNull(1)?.id ?: "syrups" else category, start)
+                    }) { Text(label) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { addMenu = false }) { Text("Cancel") } },
+    )
 }
 
 /** Renders a header action with its accessibility label and optional count badge. */
