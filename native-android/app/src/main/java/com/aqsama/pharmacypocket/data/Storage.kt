@@ -587,6 +587,12 @@ class PharmacyRepository(context: Context) {
 
     suspend fun restoreMedicine(id: String): AppSnapshot = withContext(Dispatchers.IO) {
         mutex.withLock {
+            val trashed = database.loadTrash().firstOrNull { it.medicine.id == id }
+                ?: throw IllegalStateException("Medicine is no longer in Trash.")
+            val activeCodes = database.loadMedicines().flatMap { item -> item.codes.map { it.value } }.toSet()
+            require(trashed.medicine.codes.none { it.value in activeCodes }) {
+                "A code now belongs to another active medicine. Remove it from that medicine before restoring."
+            }
             check(database.restoreMedicine(id)) { "Medicine is no longer in Trash." }
             snapshotUnsafe()
         }

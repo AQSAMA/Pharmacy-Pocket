@@ -424,6 +424,7 @@ fun HomeScreen(
                     "Scan product barcode" to "barcode",
                     "Scan price sticker QR" to "sticker",
                     "Take medicine photo" to "photo",
+                    "Choose medicine image" to "gallery",
                 ).forEach { (label, start) ->
                     TextButton(onClick = {
                         addMenu = false

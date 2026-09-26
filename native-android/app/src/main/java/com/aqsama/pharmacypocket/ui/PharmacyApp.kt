@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,6 +57,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
     val backStack = remember { mutableStateListOf(NavEntry("home", Destination.Home)) }
+    val photoDrafts = remember { mutableStateMapOf<String, ByteArray>() }
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -72,6 +74,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         if (backStack.size <= 1) return
         Haptics.action(view)
         val removed = backStack.removeAt(backStack.lastIndex)
+        photoDrafts.remove(removed.id)
         stateHolder.removeState(removed.id)
     }
 
@@ -85,7 +88,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
         backStack
             .filterNot { it in retained }
-            .forEach { stateHolder.removeState(it.id) }
+            .forEach { stateHolder.removeState(it.id); photoDrafts.remove(it.id) }
         backStack.clear()
         if (retained.isEmpty()) {
             backStack += NavEntry("home", Destination.Home)
@@ -300,6 +303,10 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onBack = ::pop,
                         onManageCategories = { push(Destination.Categories) },
                         loadPhoto = repository::loadPhoto,
+                        photoBytes = photoDrafts[entry.id],
+                        onPhotoBytes = { bytes ->
+                            if (bytes == null) photoDrafts.remove(entry.id) else photoDrafts[entry.id] = bytes
+                        },
                         onSave = { medicine, photo, removePhoto ->
                             runOperation(
                                 successMessage = "Medicine saved",

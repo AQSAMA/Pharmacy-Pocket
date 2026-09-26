@@ -36,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -82,6 +83,8 @@ fun MedicineEditorScreen(
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
+    photoBytes: ByteArray?,
+    onPhotoBytes: (ByteArray?) -> Unit,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -99,16 +102,19 @@ fun MedicineEditorScreen(
     var discounted by rememberSaveable(medicineId) { mutableStateOf(existing?.discounted?.toString() ?: "") }
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
-    var codes by remember(medicineId) { mutableStateOf(existing?.codes ?: emptyList()) }
+    var codes by rememberSaveable(medicineId, stateSaver = listSaver<List<MedicineCode>, String>(
+        save = { items -> items.flatMap { listOf(it.kind.name, it.value) } },
+        restore = { parts -> parts.chunked(2).map { MedicineCode(CodeKind.valueOf(it[0]), it[1]) } },
+    )) { mutableStateOf(existing?.codes ?: emptyList()) }
     var codeDraft by rememberSaveable(medicineId) { mutableStateOf("") }
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
     var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
     var showScanner by remember { mutableStateOf(false) }
     var scannerStickerOnly by remember { mutableStateOf(false) }
-    var photoBytes by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
     var cameraFile by remember { mutableStateOf<File?>(null) }
+    var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
 
@@ -119,7 +125,7 @@ fun MedicineEditorScreen(
     fun acceptPhoto(uri: Uri) {
         scope.launch {
             try {
-                photoBytes = withContext(Dispatchers.IO) { prepareMedicinePhoto(context, uri) }
+                onPhotoBytes(withContext(Dispatchers.IO) { prepareMedicinePhoto(context, uri) })
                 removePhoto = false
             } catch (error: Exception) {
                 validationError = error.message ?: "Could not open this photo."
@@ -155,10 +161,14 @@ fun MedicineEditorScreen(
         } else permission.launch(Manifest.permission.CAMERA)
     }
     LaunchedEffect(initialCapture) {
-        when (initialCapture) {
-            "barcode" -> scan(false)
-            "sticker" -> scan(true)
-            "photo" -> takePhoto()
+        if (!initialCaptureStarted) {
+            initialCaptureStarted = true
+            when (initialCapture) {
+                "barcode" -> scan(false)
+                "sticker" -> scan(true)
+                "photo" -> takePhoto()
+                "gallery" -> photoPicker.launch("image/*")
+            }
         }
     }
 
@@ -259,7 +269,7 @@ fun MedicineEditorScreen(
                     (photoBytes ?: if (removePhoto) null else savedPhoto)?.let { bytes ->
                         val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
                         bitmap?.let { Image(it, contentDescription = "Medicine photo", modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
-                        TextButton(onClick = { photoBytes = null; removePhoto = true }) { Text("Remove photo") }
+                        TextButton(onClick = { onPhotoBytes(null); removePhoto = true }) { Text("Remove photo") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = ::takePhoto) { Text("Take photo") }

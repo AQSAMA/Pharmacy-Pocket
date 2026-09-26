@@ -44,7 +44,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aqsama.pharmacypocket.data.AppSnapshot
-import com.aqsama.pharmacypocket.data.BackupCodec
 import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.ParsedBackup
@@ -373,9 +372,21 @@ fun SettingsScreen(
     }
 }
 
-private fun readText(context: Context, uri: Uri): String =
-    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+private fun readText(context: Context, uri: Uri): String {
+    val stream = context.contentResolver.openInputStream(uri)
         ?: throw IllegalStateException("Unable to read the selected file.")
+    return stream.use { input ->
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            require(output.size() + count <= 128 * 1024 * 1024) { "The backup exceeds 128 MB." }
+            output.write(buffer, 0, count)
+        }
+        output.toString(Charsets.UTF_8.name())
+    }
+}
 
 private fun writeText(context: Context, uri: Uri, text: String) {
     val stream = context.contentResolver.openOutputStream(uri, "wt")
