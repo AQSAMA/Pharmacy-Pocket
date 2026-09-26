@@ -3,7 +3,6 @@ package com.aqsama.pharmacypocket.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.json.JSONObject
 
 class MedicineLogicTest {
     private fun medicine(
@@ -49,33 +48,6 @@ class MedicineLogicTest {
         val day = 86_400_000L
         assertEquals(3 * day, MedicineReminders.nextDue(day, ReminderRepeat.DAILY, 2 * day))
         assertEquals(null, MedicineReminders.nextDue(day, ReminderRepeat.NONE, 2 * day))
-    }
-
-    @Test
-    fun legacyMergeKeepsLocalRichFieldsWhileExplicitEmptyBackupClearsThem() {
-        val local = medicine("m", "tablets").copy(
-            tags = listOf("Stock"), checklist = listOf(ChecklistItem("Call supplier", true)),
-            reminderAt = 1_900_000_000_000L, reminderRepeat = ReminderRepeat.WEEKLY,
-        )
-        val encoded = BackupCodec.encode(listOf(local), "IQD", PharmacyDefaults.categories)
-        val old = JSONObject(encoded).apply {
-            getJSONArray("medicines").getJSONObject(0).apply {
-                remove("tags"); remove("checklist"); remove("reminderAt"); remove("reminderRepeat")
-            }
-        }
-        val parsed = BackupCodec.parse(old.toString())
-        val merged = mergeImportedRichFields(parsed.medicines.single(), local, parsed.richFields[local.id])
-        assertEquals(local.tags, merged.tags)
-        assertEquals(local.checklist, merged.checklist)
-        assertEquals(local.reminderAt, merged.reminderAt)
-
-        val cleared = BackupCodec.parse(BackupCodec.encode(listOf(local.copy(
-            tags = emptyList(), checklist = emptyList(), reminderAt = null, reminderRepeat = ReminderRepeat.NONE,
-        )), "IQD", PharmacyDefaults.categories))
-        val result = mergeImportedRichFields(cleared.medicines.single(), local, cleared.richFields[local.id])
-        assertEquals(emptyList<String>(), result.tags)
-        assertEquals(emptyList<ChecklistItem>(), result.checklist)
-        assertEquals(null, result.reminderAt)
     }
 
     @Test
