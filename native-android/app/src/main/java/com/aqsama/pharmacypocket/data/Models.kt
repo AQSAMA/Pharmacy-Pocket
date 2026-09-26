@@ -23,7 +23,7 @@ data class Medicine(
     val codesSpecified: Boolean = true,
 )
 
-enum class CodeKind { BARCODE, PRICE_STICKER_QR }
+enum class CodeKind { BARCODE, QR, PRICE_STICKER_QR }
 
 data class MedicineCode(val kind: CodeKind, val value: String, val label: String = "")
 

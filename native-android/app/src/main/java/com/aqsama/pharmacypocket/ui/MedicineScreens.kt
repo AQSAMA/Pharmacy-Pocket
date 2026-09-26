@@ -1,13 +1,9 @@
 package com.aqsama.pharmacypocket.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -108,15 +104,12 @@ fun MedicineEditorScreen(
     )) { mutableStateOf(existing?.codes ?: emptyList()) }
     var codeDraft by rememberSaveable(medicineId) { mutableStateOf("") }
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
-    var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
     var showScanner by remember { mutableStateOf(false) }
-    var scannerStickerOnly by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     var draftPhoto by remember(photoPath) { mutableStateOf<ByteArray?>(null) }
     var draftLoading by remember(photoPath) { mutableStateOf(photoPath != null) }
     var photoProcessing by remember { mutableStateOf(false) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
-    var cameraPath by rememberSaveable(medicineId) { mutableStateOf<String?>(null) }
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
@@ -149,8 +142,6 @@ fun MedicineEditorScreen(
             } catch (error: Exception) {
                 validationError = error.message ?: "Could not open this photo."
             } finally {
-                cameraPath?.let(::File)?.delete()
-                cameraPath = null
                 photoProcessing = false
             }
         }
@@ -159,48 +150,30 @@ fun MedicineEditorScreen(
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) acceptPhoto(uri)
     }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        val file = cameraPath?.let(::File)
-        if (success && file != null) acceptPhoto(FileProvider.getUriForFile(context, "${context.packageName}.files", file))
-        else { file?.delete(); cameraPath = null }
-    }
-    fun takePhoto() {
-        val file = File(context.cacheDir, "medicine_capture/${UUID.randomUUID()}.jpg")
-        file.parentFile?.mkdirs()
-        cameraPath = file.absolutePath
-        camera.launch(FileProvider.getUriForFile(context, "${context.packageName}.files", file))
-    }
-
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (allowed) showScanner = true else validationError = "Camera permission is needed to scan codes."
-    }
-    fun scan(sticker: Boolean) {
-        scannerStickerOnly = sticker
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            showScanner = true
-        } else permission.launch(Manifest.permission.CAMERA)
-    }
+    fun openCamera() { showScanner = true }
     LaunchedEffect(initialCapture) {
         if (!initialCaptureStarted) {
             initialCaptureStarted = true
             when (initialCapture) {
-                "barcode" -> scan(false)
-                "sticker" -> scan(true)
-                "photo" -> takePhoto()
+                "barcode", "sticker", "photo" -> openCamera()
                 "gallery" -> photoPicker.launch("image/*")
             }
         }
     }
 
-    fun proposeCode(value: String, kind: CodeKind) {
-        val proposed = runCatching { validateCodes(listOf(MedicineCode(kind, value))).single() }
-            .getOrElse { validationError = it.message; return }
+    fun proposeCode(value: String, kind: CodeKind, label: String = ""): String {
+        val proposed = runCatching { validateCodes(listOf(MedicineCode(kind, value, label))).single() }
+            .getOrElse { validationError = it.message; return it.message ?: "Invalid code" }
         val owner = snapshot.items.firstOrNull { it.id != existing?.id && it.codes.any { code -> code.value == proposed.value } }
-        when {
-            codes.any { it.value == proposed.value } -> validationError = "This code is already on this medicine."
-            codes.size >= 20 -> validationError = "A medicine can have up to 20 codes."
-            owner != null -> validationError = "This code already belongs to ${owner.name}."
-            else -> pendingCode = proposed
+        return when {
+            codes.any { it.value == proposed.value } -> "Code already added"
+            codes.size >= 20 -> "A medicine can have up to 20 codes"
+            owner != null -> "This code belongs to ${owner.name}"
+            else -> {
+                codes = codes + proposed
+                codeDraft = ""
+                "Added ${if (kind == CodeKind.BARCODE) "barcode" else "QR"}"
+            }
         }
     }
 
@@ -265,22 +238,24 @@ fun MedicineEditorScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     codes.forEach { code ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${if (code.kind == CodeKind.PRICE_STICKER_QR) "Sticker QR" else "Barcode"}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
+                            Text("${when (code.kind) { CodeKind.PRICE_STICKER_QR -> "Sticker QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "Barcode" }}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
                                 modifier = Modifier.weight(1f), maxLines = 2)
                             TextButton(onClick = { codes = codes.filterNot { it == code } }) { Text("Remove") }
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { scan(false) }) { Text("Scan barcode") }
-                        TextButton(onClick = { scan(true) }) { Text("Scan sticker QR") }
+                        TextButton(onClick = ::openCamera) { Text("Camera · scan or photo") }
                     }
                     Field("Enter code manually", codeDraft, { codeDraft = it })
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { codeKind = CodeKind.BARCODE }) {
                             Text(if (codeKind == CodeKind.BARCODE) "✓ Barcode" else "Barcode")
                         }
                         TextButton(onClick = { codeKind = CodeKind.PRICE_STICKER_QR }) {
                             Text(if (codeKind == CodeKind.PRICE_STICKER_QR) "✓ Sticker QR" else "Sticker QR")
+                        }
+                        TextButton(onClick = { codeKind = CodeKind.QR }) {
+                            Text(if (codeKind == CodeKind.QR) "✓ QR" else "QR")
                         }
                         TextButton(onClick = { proposeCode(codeDraft, codeKind) }) { Text("Add") }
                     }
@@ -296,7 +271,7 @@ fun MedicineEditorScreen(
                         TextButton(enabled = !busy, onClick = { onPhotoPath(null) }) { Text("Discard missing photo") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(enabled = !busy && !photoProcessing, onClick = ::takePhoto) { Text("Take photo") }
+                        TextButton(enabled = !busy && !photoProcessing, onClick = ::openCamera) { Text("Take photo") }
                         TextButton(enabled = !busy && !photoProcessing, onClick = { photoPicker.launch("image/*") }) { Text("Choose image") }
                     }
 
@@ -425,34 +400,28 @@ fun MedicineEditorScreen(
         )
     }
 
-    if (showScanner) MedicineCodeScanner(
-        stickerOnly = scannerStickerOnly,
-        onCode = { value ->
-            showScanner = false
-            proposeCode(value, if (scannerStickerOnly) CodeKind.PRICE_STICKER_QR else CodeKind.BARCODE)
+    if (showScanner) MedicineCameraScreen(
+        title = existing?.name ?: "New medicine",
+        existingCodes = codes.mapTo(mutableSetOf()) { it.value },
+        onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind, code.label)) },
+        onPhoto = { bytes, acknowledge ->
+            scope.launch {
+                try {
+                    val path = withContext(Dispatchers.IO) {
+                        File(context.noBackupFilesDir, "medicine_drafts/draft-${UUID.randomUUID()}.jpg").also {
+                            it.parentFile?.mkdirs()
+                            it.writeBytes(bytes)
+                        }.absolutePath
+                    }
+                    onPhotoPath(path)
+                    acknowledge("Added photo")
+                } catch (error: Exception) {
+                    acknowledge(error.message ?: "Could not save photo")
+                }
+            }
         },
         onDismiss = { showScanner = false },
     )
-
-    pendingCode?.let { code ->
-        AlertDialog(
-            onDismissRequest = { pendingCode = null },
-            title = { Text("Add scanned code?") },
-            text = { Column {
-                Text("${code.kind.name.replace('_', ' ')}: ${code.value.take(160)}${if (code.value.length > 160) "…" else ""}\nCheck the package before saving.")
-                OutlinedTextField(value = code.label, onValueChange = { pendingCode = code.copy(label = it.take(80)) },
-                    label = { Text("Company / variant (optional)") }, singleLine = true)
-            } },
-            dismissButton = { TextButton(onClick = { pendingCode = null }) { Text("Cancel") } },
-            confirmButton = { TextButton(onClick = {
-                val validated = runCatching { validateCodes(listOf(code)).single() }
-                    .getOrElse { validationError = it.message; return@TextButton }
-                codes = codes + validated
-                codeDraft = ""
-                pendingCode = null
-            }) { Text("Add code") } },
-        )
-    }
 
     if (confirmTrash && existing != null) {
         AlertDialog(
@@ -678,7 +647,7 @@ fun MedicineDetailScreen(
                         }
                         if (item.codes.isNotEmpty()) InfoCard("Package codes") {
                             item.codes.forEach { code ->
-                                InfoValue(if (code.kind == CodeKind.PRICE_STICKER_QR) "PRICE STICKER QR" else "BARCODE",
+                                InfoValue(when (code.kind) { CodeKind.PRICE_STICKER_QR -> "PRICE STICKER QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "BARCODE" },
                                     "${code.label.takeIf { it.isNotEmpty() }?.let { "$it · " } ?: ""}${code.value}", snapshot.largeText)
                             }
                         }

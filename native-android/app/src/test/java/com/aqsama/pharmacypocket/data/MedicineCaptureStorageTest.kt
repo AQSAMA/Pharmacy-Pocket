@@ -80,6 +80,15 @@ class MedicineCaptureStorageTest {
         assertFalse(BackupCodec.parse(legacy).medicines.single().codesSpecified)
     }
 
+    @Test fun genericQrRemainsDistinctFromPriceStickerThroughStorageAndBackup() {
+        val generic = MedicineCode(CodeKind.QR, "https://example.org/package", "Manufacturer")
+        val medicine = item().copy(codes = item().codes + generic)
+        storage.saveMedicine(medicine)
+        assertEquals(generic, storage.loadMedicines().single().codes.last())
+        val json = BackupCodec.encode(listOf(medicine), "IQD", PharmacyDefaults.categories)
+        assertEquals(generic, BackupCodec.parse(json).medicines.single().codes.last())
+    }
+
     @Test fun legacyMergeCannotRestoreTrashedCodeAlreadyAssignedToAnotherMedicine() = runBlocking {
         storage.saveMedicine(item())
         storage.moveMedicineToTrash("medicine-1")
