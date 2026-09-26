@@ -128,6 +128,8 @@ fun HomeScreen(
     onEditMedicine: (String) -> Unit,
     onToggleFavorite: (Medicine) -> Unit,
     onSetLargeText: (Boolean) -> Unit,
+    onQuickCapture: (String) -> Unit,
+    loadPhoto: suspend (String) -> ByteArray?,
 ) {
     val view = LocalView.current
     val listState = rememberLazyListState()
@@ -405,6 +407,8 @@ fun HomeScreen(
                                     Haptics.selection(view)
                                     onToggleFavorite(row.item)
                                 },
+                                onCamera = { onQuickCapture(row.item.id) },
+                                loadPhoto = loadPhoto,
                             )
                         }
                     }

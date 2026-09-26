@@ -1,5 +1,7 @@
 package com.aqsama.pharmacypocket.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,13 +24,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -114,7 +123,13 @@ fun MedicineCard(
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
+    onCamera: () -> Unit,
+    loadPhoto: suspend (String) -> ByteArray?,
 ) {
+    var thumbnail by remember(item.id) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(item.id, item.hasPhoto) {
+        thumbnail = if (item.hasPhoto) loadPhoto(item.id) else null
+    }
     val shape = RoundedCornerShape(
         topStart = if (first) 18.dp else 0.dp,
         topEnd = if (first) 18.dp else 0.dp,
@@ -210,6 +225,17 @@ fun MedicineCard(
                     }
                 }
 
+                thumbnail?.let { bytes ->
+                    remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }?.let { bitmap ->
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = "Package photo of ${item.name}",
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 100.dp),
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                }
+
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text("OFFICIAL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
@@ -243,11 +269,23 @@ fun MedicineCard(
                     }
                 }
 
-                Text(
-                    "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
+                    if (!item.hasPhoto || item.codes.isEmpty()) {
+                        TextButton(
+                            onClick = onCamera,
+                            modifier = Modifier.size(48.dp).semantics {
+                                contentDescription = "Add photo or code to ${item.name}"
+                            },
+                            contentPadding = PaddingValues(0.dp),
+                        ) { Text("📷", fontSize = 20.sp) }
+                    }
+                }
             }
         }
     }
