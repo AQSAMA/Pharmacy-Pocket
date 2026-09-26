@@ -124,6 +124,18 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(Unit) {
+        val retainedPaths = photoDrafts.values.toSet()
+        withContext(Dispatchers.IO) {
+            val staleBefore = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+            File(context.noBackupFilesDir, "medicine_drafts").listFiles()?.forEach { file ->
+                if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
+                    file.delete()
+                }
+            }
+        }
+    }
+
     fun push(destination: Destination) {
         Haptics.action(view)
         backStack += NavEntry(UUID.randomUUID().toString(), destination)
@@ -364,17 +376,18 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         loadPhoto = repository::loadPhoto,
                         photoPath = photoDrafts[entry.id],
                         onPhotoPath = { path ->
-                            photoDrafts.remove(entry.id)?.takeIf { it != path }?.let { File(it).delete() }
-                            if (path != null) photoDrafts[entry.id] = path
+                            if (busy) {
+                                path?.let { File(it).delete() }
+                            } else {
+                                photoDrafts.remove(entry.id)?.takeIf { it != path }?.let { File(it).delete() }
+                                if (path != null) photoDrafts[entry.id] = path
+                            }
                         },
-                        onSave = { medicine, photoPath, removePhoto ->
+                        onSave = { medicine, photo, removePhoto ->
                             runOperation(
                                 successMessage = "Medicine saved",
                                 onSuccess = ::pop,
-                            ) {
-                                val photo = photoPath?.let { path -> withContext(Dispatchers.IO) { File(path).readBytes() } }
-                                repository.saveMedicine(medicine, photo, removePhoto)
-                            }
+                            ) { repository.saveMedicine(medicine, photo, removePhoto) }
                         },
                         onMoveToTrash = ::moveToTrash,
                     )
