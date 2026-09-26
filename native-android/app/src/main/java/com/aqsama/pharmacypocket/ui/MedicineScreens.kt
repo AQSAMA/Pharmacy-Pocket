@@ -146,7 +146,6 @@ fun MedicineEditorScreen(
                     draft.absolutePath
                 }
                 if (busy) File(path).delete() else onPhotoPath(path)
-                removePhoto = false
             } catch (error: Exception) {
                 validationError = error.message ?: "Could not open this photo."
             } finally {
@@ -294,7 +293,7 @@ fun MedicineEditorScreen(
                     }
                     if (photoPath != null && draftPhoto == null && !draftLoading) {
                         Text("Photo is unavailable. Choose it again before saving.", color = MaterialTheme.colorScheme.error)
-                        TextButton(enabled = !busy, onClick = { onPhotoPath(null); removePhoto = false }) { Text("Discard missing photo") }
+                        TextButton(enabled = !busy, onClick = { onPhotoPath(null) }) { Text("Discard missing photo") }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(enabled = !busy && !photoProcessing, onClick = ::takePhoto) { Text("Take photo") }
