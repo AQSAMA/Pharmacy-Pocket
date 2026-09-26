@@ -41,6 +41,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -95,7 +96,7 @@ fun MedicineCameraScreen(
     val latestPendingCaptureFile by rememberUpdatedState(pendingCaptureFile)
     val disposed = remember { AtomicBoolean(false) }
     var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
-    val skippedCodes = remember { mutableSetOf<String>() }
+    val skippedCodes = remember { mutableStateListOf<String>() }
     val seen = remember { mutableSetOf<String>() }
     val currentCodes by rememberUpdatedState(existingCodes)
     val currentOnCode by rememberUpdatedState(onCode)
@@ -168,6 +169,12 @@ fun MedicineCameraScreen(
                         Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
                         color = MaterialTheme.colorScheme.onSurface,
                     )
+                    if (skippedCodes.isNotEmpty() && capturedFile == null) {
+                        TextButton(
+                            onClick = { skippedCodes.clear(); message = "Scanning codes again" },
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        ) { Text("Scan skipped codes again") }
+                    }
                     if (capturedFile == null) {
                         Button(
                             onClick = {
