@@ -120,13 +120,16 @@ class TrashStorageTest {
                 cursor.moveToFirst()
                 cursor.getInt(0)
             }
-            assertEquals(2, version)
+            assertEquals(3, version)
             val columns = mutableSetOf<String>()
             db.rawQuery("PRAGMA table_info(medicines)", null).use { cursor ->
                 val nameIndex = cursor.getColumnIndexOrThrow("name")
                 while (cursor.moveToNext()) columns += cursor.getString(nameIndex)
             }
             assertTrue("deleted_at" in columns)
+            assertTrue("tags" in columns)
+            assertTrue("checklist" in columns)
+            assertTrue("reminder_at" in columns)
             val deletedAt = db.rawQuery(
                 "SELECT deleted_at FROM medicines WHERE id = 'legacy'",
                 null,
