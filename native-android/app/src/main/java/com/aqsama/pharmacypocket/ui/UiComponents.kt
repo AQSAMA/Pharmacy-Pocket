@@ -115,15 +115,11 @@ fun MedicineCard(
     onEdit: () -> Unit,
     onFavorite: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(
-        topStart = if (first) 18.dp else 0.dp,
-        topEnd = if (first) 18.dp else 0.dp,
-        bottomStart = if (last) 18.dp else 0.dp,
-        bottomEnd = if (last) 18.dp else 0.dp,
-    )
+    val shape = RoundedCornerShape(18.dp)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(vertical = 3.dp)
             .clip(shape)
             .clickable(onClick = onOpen),
         color = tintCategoryColor(category.color, 0.09f),
@@ -248,6 +244,18 @@ fun MedicineCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp,
                 )
+                if (item.tags.isNotEmpty() || item.reminderAt != null || item.checklist.isNotEmpty()) {
+                    Text(
+                        buildList {
+                            item.tags.take(2).forEach { add("#$it") }
+                            if (item.checklist.isNotEmpty()) add("☑ ${item.checklist.count { it.done }}/${item.checklist.size}")
+                            item.reminderAt?.let { add(if (it <= System.currentTimeMillis()) "⏰ Overdue" else "⏰ Reminder") }
+                        }.joinToString("   "),
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
     }

@@ -18,7 +18,22 @@ data class Medicine(
     val revision: Int = 0,
     val favorite: Boolean = false,
     val createdAt: Long? = null,
+    val tags: List<String> = emptyList(),
+    val reminderAt: Long? = null,
+    val reminderRepeat: ReminderRepeat = ReminderRepeat.NONE,
+    val checklist: List<ChecklistItem> = emptyList(),
+    val reminderDay: Int? = null,
 )
+
+data class ChecklistItem(val text: String, val done: Boolean = false)
+
+enum class ReminderRepeat(val label: String) {
+    NONE("Once"), DAILY("Daily"), WEEKLY("Weekly"), MONTHLY("Monthly"),
+}
+
+fun normalizeTags(raw: String): List<String> = raw.split(',')
+    .map { it.trim() }.filter { it.isNotEmpty() }
+    .distinctBy(::normalizeSearch).take(12)
 
 data class Category(
     val id: String,
@@ -80,7 +95,25 @@ data class ParsedBackup(
     val currency: String,
     val hasCurrency: Boolean,
     val sourceVersion: Int,
+    val richFields: Map<String, RichFieldPresence> = emptyMap(),
 )
+
+data class RichFieldPresence(
+    val tags: Boolean,
+    val checklist: Boolean,
+    val reminder: Boolean,
+)
+
+fun mergeImportedRichFields(imported: Medicine, local: Medicine?, presence: RichFieldPresence?): Medicine {
+    if (local == null) return imported
+    return imported.copy(
+        tags = if (presence?.tags == true) imported.tags else local.tags,
+        checklist = if (presence?.checklist == true) imported.checklist else local.checklist,
+        reminderAt = if (presence?.reminder == true) imported.reminderAt else local.reminderAt,
+        reminderRepeat = if (presence?.reminder == true) imported.reminderRepeat else local.reminderRepeat,
+        reminderDay = if (presence?.reminder == true) imported.reminderDay else local.reminderDay,
+    )
+}
 
 object PharmacyDefaults {
     const val maxCategories = 256
@@ -207,7 +240,7 @@ data class SubcategoryOption(val key: String, val label: String)
 fun buildSearchIndex(items: List<Medicine>): List<MedicineSearchEntry> = items.map { item ->
     MedicineSearchEntry(
         item,
-        normalizeSearch("${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)}"),
+        normalizeSearch("${item.name} ${item.note} ${item.description} ${item.tags.joinToString(" ")} ${item.checklist.joinToString(" ") { it.text }} ${subcategoryLabel(item.subcategory)}"),
         subcategoryKey(item.subcategory),
     )
 }

@@ -13,12 +13,14 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-private const val DATABASE_VERSION = 2
+private const val DATABASE_VERSION = 4
 
 private data class ExistingRow(
     val sortOrder: Long,
     val favorite: Boolean,
     val createdAt: Long?,
+    val reminderAt: Long?,
+    val reminderDelivered: Boolean,
 )
 
 internal class MedicineDatabase(context: Context) {
@@ -83,7 +85,13 @@ internal class MedicineDatabase(context: Context) {
                   favorite INTEGER NOT NULL DEFAULT 0,
                   sort_order INTEGER NOT NULL,
                   created_at INTEGER NOT NULL DEFAULT 0,
-                  deleted_at INTEGER
+                  deleted_at INTEGER,
+                  tags TEXT NOT NULL DEFAULT '[]',
+                  reminder_at INTEGER,
+                  reminder_repeat TEXT NOT NULL DEFAULT 'NONE',
+                  checklist TEXT NOT NULL DEFAULT '[]',
+                  reminder_day INTEGER,
+                  reminder_delivered INTEGER NOT NULL DEFAULT 0
                 )
                 """.trimIndent(),
             )
@@ -104,6 +112,14 @@ internal class MedicineDatabase(context: Context) {
                 // A nullable column deliberately leaves every existing medicine active.
                 db.execSQL("ALTER TABLE medicines ADD COLUMN deleted_at INTEGER")
             }
+
+            columns = tableColumns(db)
+            if ("tags" !in columns) db.execSQL("ALTER TABLE medicines ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+            if ("reminder_at" !in columns) db.execSQL("ALTER TABLE medicines ADD COLUMN reminder_at INTEGER")
+            if ("reminder_repeat" !in columns) db.execSQL("ALTER TABLE medicines ADD COLUMN reminder_repeat TEXT NOT NULL DEFAULT 'NONE'")
+            if ("checklist" !in columns) db.execSQL("ALTER TABLE medicines ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'")
+            if ("reminder_day" !in columns) db.execSQL("ALTER TABLE medicines ADD COLUMN reminder_day INTEGER")
+            if ("reminder_delivered" !in columns) db.execSQL("ALTER TABLE medicines ADD COLUMN reminder_delivered INTEGER NOT NULL DEFAULT 0")
 
             db.execSQL("PRAGMA user_version = $DATABASE_VERSION")
             db.setTransactionSuccessful()
@@ -127,6 +143,21 @@ internal class MedicineDatabase(context: Context) {
             revision = cursor.getInt(cursor.getColumnIndexOrThrow("revision")),
             favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
             createdAt = if (cursor.isNull(createdAt)) null else cursor.getLong(createdAt),
+            tags = runCatching {
+                val array = JSONArray(cursor.getString(cursor.getColumnIndexOrThrow("tags")))
+                (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotBlank) }
+            }.getOrDefault(emptyList()),
+            reminderAt = cursor.getColumnIndexOrThrow("reminder_at").let { if (cursor.isNull(it)) null else cursor.getLong(it) },
+            reminderRepeat = runCatching {
+                ReminderRepeat.valueOf(cursor.getString(cursor.getColumnIndexOrThrow("reminder_repeat")))
+            }.getOrDefault(ReminderRepeat.NONE),
+            reminderDay = cursor.getColumnIndexOrThrow("reminder_day").let { if (cursor.isNull(it)) null else cursor.getInt(it) },
+            checklist = runCatching {
+                val array = JSONArray(cursor.getString(cursor.getColumnIndexOrThrow("checklist")))
+                (0 until array.length()).map { index ->
+                    array.getJSONObject(index).let { ChecklistItem(it.getString("text"), it.optBoolean("done")) }
+                }
+            }.getOrDefault(emptyList()),
         )
     }
 
@@ -175,7 +206,7 @@ internal class MedicineDatabase(context: Context) {
 
     private fun existing(db: SQLiteDatabase, id: String): ExistingRow? =
         db.rawQuery(
-            "SELECT sort_order, favorite, created_at FROM medicines WHERE id = ?",
+            "SELECT sort_order, favorite, created_at, reminder_at, reminder_delivered FROM medicines WHERE id = ?",
             arrayOf(id),
         ).use { cursor ->
             if (!cursor.moveToFirst()) null
@@ -183,6 +214,8 @@ internal class MedicineDatabase(context: Context) {
                 sortOrder = cursor.getLong(0),
                 favorite = cursor.getInt(1) != 0,
                 createdAt = if (cursor.isNull(2)) null else cursor.getLong(2),
+                reminderAt = if (cursor.isNull(3)) null else cursor.getLong(3),
+                reminderDelivered = cursor.getInt(4) != 0,
             )
         }
 
@@ -204,6 +237,14 @@ internal class MedicineDatabase(context: Context) {
             put("name", item.name)
             put("note", item.note)
             put("description", item.description)
+            put("tags", JSONArray(item.tags).toString())
+            if (item.reminderAt == null) putNull("reminder_at") else put("reminder_at", item.reminderAt)
+            put("reminder_repeat", item.reminderRepeat.name)
+            if (item.reminderDay == null) putNull("reminder_day") else put("reminder_day", item.reminderDay)
+            put("reminder_delivered", if (current?.reminderAt == item.reminderAt && current?.reminderDelivered == true) 1 else 0)
+            put("checklist", JSONArray().apply {
+                item.checklist.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
+            }.toString())
             put("official", item.official)
             if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
             put("revision", item.revision)
@@ -229,6 +270,14 @@ internal class MedicineDatabase(context: Context) {
             put("name", item.name)
             put("note", item.note)
             put("description", item.description)
+            put("tags", JSONArray(item.tags).toString())
+            if (item.reminderAt == null) putNull("reminder_at") else put("reminder_at", item.reminderAt)
+            put("reminder_repeat", item.reminderRepeat.name)
+            if (item.reminderDay == null) putNull("reminder_day") else put("reminder_day", item.reminderDay)
+            put("reminder_delivered", 0)
+            put("checklist", JSONArray().apply {
+                item.checklist.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
+            }.toString())
             put("official", item.official)
             if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
             put("revision", item.revision)
@@ -265,6 +314,46 @@ internal class MedicineDatabase(context: Context) {
             arrayOf<Any>(if (next) 1 else 0, id),
         )
         return next
+    }
+
+    /** Advance only the reminder when this exact active reminder is still pending. */
+    fun advanceReminder(id: String, expected: Long, next: Long?): Boolean {
+        val values = ContentValues().apply {
+            if (next == null) put("reminder_at", expected) else put("reminder_at", next)
+            put("reminder_delivered", if (next == null) 1 else 0)
+        }
+        return open().update(
+            "medicines", values, "id = ? AND reminder_at = ? AND reminder_delivered = 0 AND deleted_at IS NULL",
+            arrayOf(id, expected.toString()),
+        ) == 1
+    }
+
+    fun toggleChecklist(id: String, index: Int) {
+        val db = open()
+        db.beginTransaction()
+        try {
+            val item = loadMedicines().firstOrNull { it.id == id }
+                ?: throw IllegalArgumentException("Medicine no longer exists.")
+            require(index in item.checklist.indices) { "Checklist item no longer exists." }
+            val updated = item.checklist.mapIndexed { position, task ->
+                if (position == index) task.copy(done = !task.done) else task
+            }
+            db.update("medicines", ContentValues().apply {
+                put("checklist", JSONArray().apply {
+                    updated.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
+                }.toString())
+            }, "id = ? AND deleted_at IS NULL", arrayOf(id))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun clearReminder(id: String) {
+        open().update("medicines", ContentValues().apply {
+            putNull("reminder_at")
+            putNull("reminder_day")
+            put("reminder_delivered", 0)
+            put("reminder_repeat", ReminderRepeat.NONE.name)
+        }, "id = ? AND deleted_at IS NULL", arrayOf(id))
     }
 
     fun moveMedicineToTrash(id: String, deletedAt: Long = System.currentTimeMillis()): Boolean {
@@ -574,6 +663,14 @@ class PharmacyRepository(context: Context) {
         }
     }
 
+    suspend fun toggleChecklist(id: String, index: Int): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock { database.toggleChecklist(id, index); snapshotUnsafe() }
+    }
+
+    suspend fun clearReminder(id: String): AppSnapshot = withContext(Dispatchers.IO) {
+        mutex.withLock { database.clearReminder(id); snapshotUnsafe() }
+    }
+
     suspend fun toggleFavorite(id: String): Boolean? = withContext(Dispatchers.IO) {
         mutex.withLock { database.toggleFavorite(id) }
     }
@@ -623,7 +720,12 @@ class PharmacyRepository(context: Context) {
                 data.medicines.map { it.category },
             )
             when (mode) {
-                ImportMode.MERGE -> database.mergeMedicines(data.medicines)
+                ImportMode.MERGE -> {
+                    val local = database.loadMedicines().associateBy { it.id }
+                    database.mergeMedicines(data.medicines.map { imported ->
+                        mergeImportedRichFields(imported, local[imported.id], data.richFields[imported.id])
+                    })
+                }
                 ImportMode.REPLACE -> database.replaceMedicines(data.medicines)
             }
             if (shouldApplyImportedCurrency(mode, data.hasCurrency)) {

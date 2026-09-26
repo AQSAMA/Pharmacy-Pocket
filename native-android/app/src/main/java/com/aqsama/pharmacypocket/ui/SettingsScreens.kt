@@ -317,7 +317,7 @@ fun SettingsScreen(
                         ) {
                             Text("About your data", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold)
                             Text(
-                                "One JSON file contains medicines, category sections, custom category names/colors, order, favorites, descriptions, and currency. Files exported by the original web and Expo apps remain supported.",
+                                "One JSON file contains medicines, categories, favorites, notes, tags, checklists, reminders, and currency. Older web and Expo backups remain supported.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp,
                                 lineHeight = 20.sp,

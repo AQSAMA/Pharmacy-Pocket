@@ -15,6 +15,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -27,15 +28,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Category
 import com.aqsama.pharmacypocket.data.ImportMode
 import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.MedicineReminders
 import com.aqsama.pharmacypocket.data.ParsedBackup
 import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
 import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 private sealed interface Destination {
@@ -53,6 +60,7 @@ private data class NavEntry(val id: String, val destination: Destination)
 fun PharmacyApp(repository: PharmacyRepository) {
     val context = LocalContext.current
     val view = LocalView.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
     val backStack = remember { mutableStateListOf(NavEntry("home", Destination.Home)) }
@@ -61,6 +69,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     var busy by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
+    var scheduledIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val snackbarHostState = remember { SnackbarHostState() }
 
     fun push(destination: Destination) {
@@ -177,9 +186,36 @@ fun PharmacyApp(repository: PharmacyRepository) {
 
     LaunchedEffect(repository, loadAttempt) {
         try {
+            withContext(Dispatchers.IO) {
+                MedicineReminders.recover(context, repository.loadSnapshot().items)
+            }
             snapshot = repository.loadSnapshot()
         } catch (error: Throwable) {
             errorMessage = error.message ?: "Unable to open local storage."
+        }
+    }
+
+    // A reminder can advance in a receiver while the activity is paused. Refresh
+    // before showing its detail screen again so an edit cannot restore the old date.
+    DisposableEffect(lifecycleOwner, repository) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch {
+                    try { snapshot = repository.loadSnapshot() }
+                    catch (error: Throwable) { errorMessage = error.message ?: "Unable to refresh local storage." }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(snapshot?.items) {
+        snapshot?.items?.let { items ->
+            val activeIds = items.mapTo(mutableSetOf()) { it.id }
+            (scheduledIds - activeIds).forEach { MedicineReminders.cancel(context, it) }
+            items.forEach { MedicineReminders.schedule(context, it) }
+            scheduledIds = activeIds
         }
     }
 
@@ -327,6 +363,16 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                     Haptics.reject(view)
                                     errorMessage = error.message ?: "Could not update favorite."
                                 }
+                            }
+                        },
+                        onCompleteReminder = { item ->
+                            runOperation("Reminder cleared") {
+                                repository.clearReminder(item.id)
+                            }
+                        },
+                        onToggleChecklist = { item, index ->
+                            runOperation {
+                                repository.toggleChecklist(item.id, index)
                             }
                         },
                         onMoveToTrash = ::moveToTrash,

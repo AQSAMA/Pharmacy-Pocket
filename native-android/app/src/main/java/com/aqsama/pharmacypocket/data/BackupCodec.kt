@@ -39,6 +39,13 @@ object BackupCodec {
                     put("name", item.name)
                     put("note", item.note)
                     put("description", item.description)
+                    put("tags", JSONArray(item.tags))
+                    put("reminderAt", item.reminderAt ?: JSONObject.NULL)
+                    put("reminderRepeat", item.reminderRepeat.name)
+                    item.reminderDay?.let { put("reminderDay", it) }
+                    put("checklist", JSONArray().apply {
+                        item.checklist.forEach { put(JSONObject().put("text", it.text).put("done", it.done)) }
+                    })
                     put("official", item.official)
                     put("discounted", item.discounted ?: JSONObject.NULL)
                     put("revision", item.revision.coerceAtLeast(0))
@@ -71,12 +78,18 @@ object BackupCodec {
             }
 
             val medicines = mutableListOf<Medicine>()
+            val richFields = mutableMapOf<String, RichFieldPresence>()
             val ids = mutableSetOf<String>()
             for (index in 0 until medicineArray.length()) {
                 val obj = medicineArray.optJSONObject(index)
                     ?: throw IllegalArgumentException("One or more medicines in this file are invalid.")
                 val item = parseMedicine(obj, favoriteIds)
                 require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
+                richFields[item.id] = RichFieldPresence(
+                    tags = obj.has("tags"),
+                    checklist = obj.has("checklist"),
+                    reminder = obj.has("reminderAt"),
+                )
                 medicines += item
             }
 
@@ -125,6 +138,7 @@ object BackupCodec {
                 currency = currency,
                 hasCurrency = hasCurrency,
                 sourceVersion = sourceVersion,
+                richFields = richFields,
             )
         } catch (error: IllegalArgumentException) {
             throw error
@@ -172,6 +186,32 @@ object BackupCodec {
         require(revisionLong <= Int.MAX_VALUE) { "One or more medicines in this file are invalid." }
         val createdAt = if (!obj.has("createdAt") || obj.isNull("createdAt")) null
         else requiredSafeLong(obj, "createdAt")
+        val tags = if (!obj.has("tags")) emptyList() else {
+            val array = obj.optJSONArray("tags") ?: throw IllegalArgumentException("Invalid medicine tags.")
+            require(array.length() <= 12) { "Too many medicine tags." }
+            (0 until array.length()).map { index ->
+                (array.opt(index) as? String)?.trim()?.takeIf { it.isNotEmpty() && it.length <= 40 }
+                    ?: throw IllegalArgumentException("Invalid medicine tag.")
+            }.distinctBy(::normalizeSearch)
+        }
+        val reminderAt = if (!obj.has("reminderAt") || obj.isNull("reminderAt")) null
+        else requiredSafeLong(obj, "reminderAt")
+        val reminderRepeat = if (reminderAt == null) ReminderRepeat.NONE else runCatching {
+            ReminderRepeat.valueOf(obj.getString("reminderRepeat"))
+        }.getOrDefault(ReminderRepeat.NONE)
+        val reminderDay = if (reminderAt != null && obj.has("reminderDay") && !obj.isNull("reminderDay")) {
+            requiredSafeLong(obj, "reminderDay").also { require(it in 1..31) { "Invalid reminder day." } }.toInt()
+        } else null
+        val checklist = if (!obj.has("checklist")) emptyList() else {
+            val array = obj.optJSONArray("checklist") ?: throw IllegalArgumentException("Invalid checklist.")
+            require(array.length() <= 30) { "Too many checklist items." }
+            (0 until array.length()).map { index ->
+                val entry = array.optJSONObject(index) ?: throw IllegalArgumentException("Invalid checklist item.")
+                val text = entry.optString("text", "").trim()
+                require(text.isNotEmpty() && text.length <= 200) { "Invalid checklist item." }
+                ChecklistItem(text, entry.optBoolean("done", false))
+            }
+        }
         require(official >= 0 && (discounted == null || discounted >= 0) && revisionLong >= 0) {
             "One or more medicines in this file are invalid."
         }
@@ -187,6 +227,11 @@ object BackupCodec {
             revision = revisionLong.toInt(),
             favorite = favoriteIds.contains(id) || obj.optBoolean("favorite", false),
             createdAt = createdAt,
+            tags = tags,
+            reminderAt = reminderAt,
+            reminderRepeat = reminderRepeat,
+            reminderDay = reminderDay,
+            checklist = checklist,
         )
     }
 

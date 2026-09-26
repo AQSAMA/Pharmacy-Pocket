@@ -103,6 +103,9 @@ class TrashStorageTest {
         val item = storage.loadMedicines().single()
 
         assertEquals("legacy", item.id)
+        assertEquals(emptyList<String>(), item.tags)
+        assertEquals(emptyList<ChecklistItem>(), item.checklist)
+        assertNull(item.reminderAt)
         assertEquals("Legacy", item.name)
         assertEquals("keep-desc", item.description)
         assertEquals(3_000L, item.official)
@@ -117,13 +120,18 @@ class TrashStorageTest {
                 cursor.moveToFirst()
                 cursor.getInt(0)
             }
-            assertEquals(2, version)
+            assertEquals(4, version)
             val columns = mutableSetOf<String>()
             db.rawQuery("PRAGMA table_info(medicines)", null).use { cursor ->
                 val nameIndex = cursor.getColumnIndexOrThrow("name")
                 while (cursor.moveToNext()) columns += cursor.getString(nameIndex)
             }
             assertTrue("deleted_at" in columns)
+            assertTrue("tags" in columns)
+            assertTrue("checklist" in columns)
+            assertTrue("reminder_at" in columns)
+            assertTrue("reminder_day" in columns)
+            assertTrue("reminder_delivered" in columns)
             val deletedAt = db.rawQuery(
                 "SELECT deleted_at FROM medicines WHERE id = 'legacy'",
                 null,
@@ -324,6 +332,51 @@ class TrashStorageTest {
         assertEquals(setOf("active"), exportedIds())
         storage.restoreMedicine("trash")
         assertEquals(setOf("active", "trash"), exportedIds())
+    }
+
+    @Test
+    fun richMedicineSurvivesStorageAndSingleFileBackup() {
+        val item = medicine("rich").copy(
+            tags = listOf("Stock", "إبر"),
+            checklist = listOf(ChecklistItem("Check shelf", true), ChecklistItem("Call supplier")),
+            reminderAt = 1_900_000_000_000L,
+            reminderRepeat = ReminderRepeat.WEEKLY,
+        )
+        storage.saveMedicine(item)
+        assertEquals(item, storage.loadMedicines().single())
+
+        val json = BackupCodec.encode(storage.loadMedicines(), "IQD", PharmacyDefaults.categories)
+        val restored = BackupCodec.parse(json).medicines.single()
+        assertEquals(item, restored)
+        storage.moveMedicineToTrash(item.id)
+        assertEquals(item, storage.loadTrash().single().medicine)
+    }
+
+    @Test
+    fun legacyMergeKeepsLocalRichFieldsWhileExplicitEmptyBackupClearsThem() {
+        val local = medicine("m").copy(
+            tags = listOf("Stock"), checklist = listOf(ChecklistItem("Call supplier", true)),
+            reminderAt = 1_900_000_000_000L, reminderRepeat = ReminderRepeat.WEEKLY,
+        )
+        val encoded = BackupCodec.encode(listOf(local), "IQD", PharmacyDefaults.categories)
+        val old = JSONObject(encoded).apply {
+            getJSONArray("medicines").getJSONObject(0).apply {
+                remove("tags"); remove("checklist"); remove("reminderAt"); remove("reminderRepeat")
+            }
+        }
+        val parsed = BackupCodec.parse(old.toString())
+        val merged = mergeImportedRichFields(parsed.medicines.single(), local, parsed.richFields[local.id])
+        assertEquals(local.tags, merged.tags)
+        assertEquals(local.checklist, merged.checklist)
+        assertEquals(local.reminderAt, merged.reminderAt)
+
+        val cleared = BackupCodec.parse(BackupCodec.encode(listOf(local.copy(
+            tags = emptyList(), checklist = emptyList(), reminderAt = null, reminderRepeat = ReminderRepeat.NONE,
+        )), "IQD", PharmacyDefaults.categories))
+        val result = mergeImportedRichFields(cleared.medicines.single(), local, cleared.richFields[local.id])
+        assertEquals(emptyList<String>(), result.tags)
+        assertEquals(emptyList<ChecklistItem>(), result.checklist)
+        assertNull(result.reminderAt)
     }
 
     @Test
