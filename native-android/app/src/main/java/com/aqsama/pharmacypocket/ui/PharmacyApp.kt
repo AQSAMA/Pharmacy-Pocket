@@ -106,7 +106,7 @@ internal fun bumpPhotoVersion(versions: MutableMap<String, Int>, medicineId: Str
 }
 
 private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
-    save = ::encodeMedicinePhotoDraftPaths,
+    save = { drafts -> encodeMedicinePhotoDraftPaths(drafts) },
     restore = { parts ->
         mutableStateMapOf<String, String>().apply {
             putAll(restoreMedicinePhotoDraftPaths(parts))
