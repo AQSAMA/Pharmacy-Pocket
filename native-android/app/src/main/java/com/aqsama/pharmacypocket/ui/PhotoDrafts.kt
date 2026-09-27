@@ -51,6 +51,32 @@ internal fun deleteMedicinePhotoDraft(path: String?) {
     runCatching { File(path).delete() }
 }
 
+internal fun encodeMedicinePhotoDraftPaths(drafts: Map<String, String>): List<String> =
+    drafts.entries.flatMap { entry -> listOf(entry.key, entry.value) }
+
+internal fun restoreMedicinePhotoDraftPaths(parts: List<String>): Map<String, String> =
+    buildMap {
+        parts.chunked(2).forEach { pair ->
+            if (pair.size == 2) put(pair[0], pair[1])
+        }
+    }
+
+internal fun updateMedicinePhotoDraftPath(
+    drafts: MutableMap<String, String>,
+    entryId: String,
+    nextPath: String?,
+    busy: Boolean,
+) {
+    if (busy) {
+        deleteMedicinePhotoDraft(nextPath)
+        return
+    }
+
+    val previous = drafts.remove(entryId)
+    if (previous != null && previous != nextPath) deleteMedicinePhotoDraft(previous)
+    if (nextPath != null) drafts[entryId] = nextPath
+}
+
 internal fun cleanupMedicinePhotoDrafts(
     context: Context,
     retainedPaths: Set<String>,
