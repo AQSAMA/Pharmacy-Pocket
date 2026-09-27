@@ -660,13 +660,14 @@ private fun LiveMedicineCamera(
     DisposableEffect(lifecycle, previewView) {
         val future = ProcessCameraProvider.getInstance(context)
         val executor = Executors.newSingleThreadExecutor()
-        val scanner = runCatching {
+        val scannerResult = runCatching {
             BarcodeScanning.getClient(
                 BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build(),
             )
-        }.getOrElse {
+        }
+        val scanner = scannerResult.getOrNull()
+        if (scanner == null) {
             currentError("Code scanner unavailable. Photo capture still works.")
-            null
         }
         val main = ContextCompat.getMainExecutor(context)
         var useCases: List<androidx.camera.core.UseCase> = emptyList()
