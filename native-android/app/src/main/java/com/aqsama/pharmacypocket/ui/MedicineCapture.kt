@@ -106,6 +106,11 @@ fun MedicineCameraScreen(
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
     LaunchedEffect(Unit) { if (!allowed) request.launch(Manifest.permission.CAMERA) }
 
+    var scannerAvailable by remember { mutableStateOf(true) }
+    fun idleCameraMessage(): String =
+        if (scannerAvailable) "Scan a code or take a package photo"
+        else "Code scanner unavailable. Photo capture still works."
+
     var message by remember { mutableStateOf("Scan a code or take a package photo") }
     var capturedFile by remember { mutableStateOf<File?>(null) }
     var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
@@ -213,7 +218,7 @@ fun MedicineCameraScreen(
                         if (capturedFile != null) {
                             capturedFile?.delete()
                             capturedFile = null
-                            message = "Scan a code or take a package photo"
+                            message = idleCameraMessage()
                         } else {
                             onDismiss()
                         }
@@ -244,6 +249,10 @@ fun MedicineCameraScreen(
                             enabled = capturedFile == null && pendingCode == null && !capturing && !saving,
                             onCaptureReady = { imageCapture = it },
                             onDetected = ::receive,
+                            onScannerAvailabilityChanged = { available ->
+                                scannerAvailable = available
+                                if (!available) message = idleCameraMessage()
+                            },
                             onError = { message = it },
                         )
 
@@ -271,17 +280,19 @@ fun MedicineCameraScreen(
                         }
 
                         if (capturedFile == null) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxWidth(0.78f)
-                                    .aspectRatio(1.22f)
-                                    .border(
-                                        2.dp,
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                                        RoundedCornerShape(24.dp),
-                                    ),
-                            )
+                            if (scannerAvailable) {
+                                Box(
+                                    Modifier
+                                        .align(Alignment.Center)
+                                        .fillMaxWidth(0.78f)
+                                        .aspectRatio(1.22f)
+                                        .border(
+                                            2.dp,
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                                            RoundedCornerShape(24.dp),
+                                        ),
+                                )
+                            }
 
                             lastCode?.let { code ->
                                 CodePreviewPill(
@@ -647,6 +658,7 @@ private fun LiveMedicineCamera(
     enabled: Boolean,
     onCaptureReady: (ImageCapture?) -> Unit,
     onDetected: (MedicineCode) -> Unit,
+    onScannerAvailabilityChanged: (Boolean) -> Unit,
     onError: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -654,6 +666,7 @@ private fun LiveMedicineCamera(
     val previewView = remember { PreviewView(context) }
     val currentEnabled by rememberUpdatedState(enabled)
     val currentDetected by rememberUpdatedState(onDetected)
+    val currentScannerAvailabilityChanged by rememberUpdatedState(onScannerAvailabilityChanged)
     val currentError by rememberUpdatedState(onError)
     val currentReady by rememberUpdatedState(onCaptureReady)
 
@@ -666,9 +679,7 @@ private fun LiveMedicineCamera(
             )
         }
         val scanner = scannerResult.getOrNull()
-        if (scanner == null) {
-            currentError("Code scanner unavailable. Photo capture still works.")
-        }
+        currentScannerAvailabilityChanged(scanner != null)
         val main = ContextCompat.getMainExecutor(context)
         var useCases: List<androidx.camera.core.UseCase> = emptyList()
         var disposed = false
