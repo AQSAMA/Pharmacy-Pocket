@@ -69,8 +69,13 @@ jobs:
             exit 1
           fi
 
+          if ! PUBLISHED_TAGS="$(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName')"; then
+            echo "::error::Unable to retrieve published GitHub Releases; refusing to skip monotonic version validation."
+            exit 1
+          fi
+
           while IFS= read -r PREVIOUS_TAG; do
-            [[ "$PREVIOUS_TAG" == "$TAG" ]] && continue
+            [[ -z "$PREVIOUS_TAG" || "$PREVIOUS_TAG" == "$TAG" ]] && continue
             if [[ "$PREVIOUS_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
               PREV_MAJOR=$((10#${BASH_REMATCH[1]}))
               PREV_MINOR=$((10#${BASH_REMATCH[2]}))
@@ -81,7 +86,7 @@ jobs:
                 exit 1
               fi
             fi
-          done < <(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName')
+          done <<< "$PUBLISHED_TAGS"
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
