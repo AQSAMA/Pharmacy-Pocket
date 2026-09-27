@@ -4,11 +4,12 @@ This is the canonical Pharmacy Pocket application: Kotlin + Jetpack Compose, off
 
 ## Identity
 
-- Production application ID: `com.aqsama.pharmacypocket`
-- Debug application ID: `com.aqsama.pharmacypocket.debug`
-- Version source: `VERSION`
+- Production: `Pharmacy Pocket` — `com.aqsama.pharmacypocket`
+- Preview: `Pharmacy Pocket Preview` — `com.aqsama.pharmacypocket.native`
+- Debug/CI: `Pharmacy Pocket Dev` — `com.aqsama.pharmacypocket.debug`
+- Production version source: `VERSION`
 
-The old Expo preview/production flavor split has been removed. Debug builds are the only side-by-side development identity; release builds always represent the real production package.
+The preview is an optimized release-style build signed with the repository's intentionally public preview-only key. It is a separate installable identity from production and can update earlier native previews in place. Debug builds remain the short-lived CI/development identity.
 
 ## Build
 
@@ -16,9 +17,16 @@ Requirements: JDK 17, Android SDK 37, Build Tools 36.0.0, and Gradle 9.6.
 
 ```sh
 gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+gradle --no-daemon lintPreview assemblePreview
 ```
 
 A production release build intentionally requires the release-signing environment variables documented in `../RELEASING.md`. Without them, release packaging fails clearly instead of producing an unsigned or debug-signed artifact.
+
+## Preview channel
+
+After native changes reach `main`, the **Android Preview Release** workflow builds the optimized preview APK and publishes it as a GitHub **Pre-release**. This is the normal installable testing channel before production releases.
+
+Production remains separate and is published only from an explicit semantic version tag.
 
 ## Data migration and backup compatibility
 
@@ -38,4 +46,4 @@ The source code for the obsolete Expo application is no longer required for this
 - JSON backup/import compatibility
 - Light/dark/system themes and large-text mode
 
-See `../RELEASING.md` for production signing, versioning, and release instructions.
+See `../RELEASING.md` for preview and production release instructions.
