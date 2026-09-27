@@ -15,7 +15,7 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [26])
+@Config(sdk = [29])
 class MedicinePhotoCropTest {
     @Test fun rectangleAndSquareProduceTheSelectedFraming() {
         val source = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
@@ -42,9 +42,9 @@ class MedicinePhotoCropTest {
         assertEquals(600, cropped.width)
         assertEquals(800, cropped.height)
     }
-    @Test fun photoPreparationWorksOnMinSdk26() {
+    @Test fun photoPreparationWorksOnMinSdk29() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val file = File(context.cacheDir, "api26-photo.jpg")
+        val file = File(context.cacheDir, "api29-photo.jpg")
         val source = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888)
         file.outputStream().use { output ->
             assertTrue(source.compress(Bitmap.CompressFormat.JPEG, 90, output))
