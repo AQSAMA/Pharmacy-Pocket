@@ -72,11 +72,19 @@ class MedicineEditorPhotoSaveTest {
         assertTrue(afterExistingAdd.items.single { it.id == "existing" }.hasPhoto)
         assertArrayEquals(addedLaterBytes, repository.loadPhoto("existing"))
 
+        val quickCaptureBytes = jpeg(Color.MAGENTA)
+        val quickCaptureMedicine = medicine("quick")
+        val afterQuickCapture = repository.saveMedicine(quickCaptureMedicine, quickCaptureBytes)
+        assertTrue(afterQuickCapture.items.single { it.id == "quick" }.hasPhoto)
+        assertArrayEquals(quickCaptureBytes, repository.loadPhoto("quick"))
+
         val reopened = repository.loadSnapshot()
         assertTrue(reopened.items.single { it.id == "new" }.hasPhoto)
         assertTrue(reopened.items.single { it.id == "existing" }.hasPhoto)
+        assertTrue(reopened.items.single { it.id == "quick" }.hasPhoto)
         assertArrayEquals(galleryBytes, repository.loadPhoto("new"))
         assertArrayEquals(addedLaterBytes, repository.loadPhoto("existing"))
+        assertArrayEquals(quickCaptureBytes, repository.loadPhoto("quick"))
     }
 
     private fun medicine(id: String) = Medicine(
