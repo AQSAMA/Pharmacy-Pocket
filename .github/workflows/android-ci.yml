@@ -7,12 +7,14 @@ on:
       - "native-android/**"
       - ".github/workflows/android-ci.yml"
       - ".github/workflows/android-release.yml"
+      - ".github/workflows/android-preview.yml"
   push:
     branches: [main]
     paths:
       - "native-android/**"
       - ".github/workflows/android-ci.yml"
       - ".github/workflows/android-release.yml"
+      - ".github/workflows/android-preview.yml"
   workflow_dispatch:
 
 permissions:
@@ -58,6 +60,9 @@ jobs:
 
       - name: Unit tests, lint, and debug build
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
+
+      - name: Preview release-style build
+        run: gradle --no-daemon lintPreview assemblePreview -PversionCode=30000001 --stacktrace
 
       - name: Confirm release packaging requires signing
         run: |

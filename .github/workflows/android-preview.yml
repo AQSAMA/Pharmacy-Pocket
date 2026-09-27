@@ -1,0 +1,148 @@
+name: Android Preview Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/android-preview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-preview-release
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    defaults:
+      run:
+        working-directory: native-android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.6
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+        with:
+          gradle-version: "9.6.0"
+
+      - name: Prepare monotonic preview version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          RUN_NUMBER="${GITHUB_RUN_NUMBER}"
+
+          RELEASE_TAGS="$(gh release list --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true) | .tagName')"
+
+          EXISTING_TAG="$(printf '%s\n' "$RELEASE_TAGS" | grep -E "^native-preview-[0-9]+-run${RUN_NUMBER}$" | head -n 1 || true)"
+          if [[ -n "$EXISTING_TAG" ]]; then
+            if [[ ! "$EXISTING_TAG" =~ ^native-preview-([0-9]+)-run[0-9]+$ ]]; then
+              echo "::error::Could not recover the versionCode from existing preview $EXISTING_TAG."
+              exit 1
+            fi
+            VERSION_CODE=$((10#${BASH_REMATCH[1]}))
+            TAG="$EXISTING_TAG"
+          else
+            MAX_PUBLISHED=0
+            while IFS= read -r PREVIOUS_TAG; do
+              [[ -z "$PREVIOUS_TAG" ]] && continue
+              if [[ "$PREVIOUS_TAG" =~ ^native-preview-([0-9]+)- ]]; then
+                CODE=$((10#${BASH_REMATCH[1]}))
+                (( CODE > MAX_PUBLISHED )) && MAX_PUBLISHED=$CODE
+              fi
+            done <<< "$RELEASE_TAGS"
+
+            CANDIDATE=$((30000000 + RUN_NUMBER))
+            if (( CANDIDATE <= MAX_PUBLISHED )); then
+              VERSION_CODE=$((MAX_PUBLISHED + 1))
+            else
+              VERSION_CODE=$CANDIDATE
+            fi
+            TAG="native-preview-${VERSION_CODE}-run${RUN_NUMBER}"
+          fi
+
+          if (( VERSION_CODE < 1 || VERSION_CODE > 2100000000 )); then
+            echo "::error::Preview versionCode is outside Android's supported range."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build optimized preview APK
+        run: gradle --no-daemon testDebugUnitTest lintPreview assemblePreview -PversionCode=${{ steps.version.outputs.version_code }} --stacktrace
+
+      - name: Verify and name preview APK
+        id: apk
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK="app/build/outputs/apk/preview/app-preview.apk"
+          VERSION="${{ steps.version.outputs.version }}"
+          VERSION_CODE="${{ steps.version.outputs.version_code }}"
+          OUT="dist/Pharmacy-Pocket-Preview-v${VERSION}-${VERSION_CODE}.apk"
+
+          test -f "$APK"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "package: name='com.aqsama.pharmacypocket.native'"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionCode='$VERSION_CODE'"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionName='${VERSION}-preview'"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" >/dev/null
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK" >/dev/null
+
+          mkdir -p dist
+          cp "$APK" "$OUT"
+          echo "relative_path=$OUT" >> "$GITHUB_OUTPUT"
+          echo "artifact_path=native-android/$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload preview artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pharmacy-pocket-preview-${{ steps.version.outputs.version_code }}
+          path: ${{ steps.apk.outputs.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          APK="${{ steps.apk.outputs.relative_path }}"
+          TITLE="Pharmacy Pocket Preview ${{ steps.version.outputs.version_code }}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+            gh release edit "$TAG" --prerelease --title "$TITLE"
+          else
+            gh release create "$TAG" "$APK" --target "$GITHUB_SHA" --prerelease --generate-notes --title "$TITLE"
+          fi

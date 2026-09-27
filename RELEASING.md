@@ -63,17 +63,32 @@ The release workflow restores the keystore only inside the temporary GitHub runn
 
 ## 4. Versioning
 
-`native-android/VERSION` is the release version source and must contain exactly `MAJOR.MINOR.PATCH`.
+`native-android/VERSION` is the production release version source and must contain exactly `MAJOR.MINOR.PATCH`.
 
-The Android version code is deterministic:
+The production Android version code is deterministic:
 
 ```text
 versionCode = MAJOR * 10,000,000 + MINOR * 10,000 + PATCH
 ```
 
-For example, `3.0.0` is `30,000,000`. This keeps the native cutover above the repository's historical approximately 29-million version-code range while making future semantic releases monotonic. Minor versions must be 0–999 and patches 0–9999.
+For example, `3.0.0` is `30,000,000`. Minor versions must be 0–999 and patches 0–9999.
 
-## 5. Publish a release
+Preview builds use the separate package `com.aqsama.pharmacypocket.native` and the repository's preview-only signing key. Their version codes are generated monotonically from preview publication order so a newly published preview can update the previous preview in place.
+
+## 5. Preview releases
+
+A push to `main` that changes the native Android app automatically runs **Android Preview Release** and publishes an optimized GitHub **Pre-release** APK.
+
+The preview APK:
+
+- is built with minification and resource shrinking;
+- uses `com.aqsama.pharmacypocket.native`, so it can coexist with production;
+- uses the stable preview-only signing key, so future previews can update it;
+- is for testing and daily use before a production release, not a production signing identity.
+
+Pull requests still run Android CI and may upload a `Pharmacy Pocket Dev` debug artifact. That debug artifact is separate from the preview channel.
+
+## 6. Publish a production release
 
 1. Change `native-android/VERSION` in a pull request.
 2. Let Android CI pass and merge that pull request to `main`.
@@ -88,6 +103,6 @@ git push origin v3.0.0
 
 Use the version you actually placed in `VERSION`.
 
-The release workflow rejects malformed tags, a tag/version mismatch, tags that are not on `main`, and a version code that is not greater than already published strict `vMAJOR.MINOR.PATCH` releases. Failed or mistyped tags that never produced a GitHub Release do not poison later version checks. It then runs tests/lint, builds signed release APK and AAB files, verifies signing and alignment, writes SHA-256 checksums, and creates a normal GitHub Release.
+The production release workflow rejects malformed tags, a tag/version mismatch, tags that are not on `main`, and a version code that is not greater than already published strict `vMAJOR.MINOR.PATCH` releases. It then runs tests/lint, builds signed release APK and AAB files, verifies signing and alignment, writes SHA-256 checksums, and creates a normal GitHub Release.
 
-Pull requests and ordinary commits only run CI and may upload a clearly labeled debug APK. They never publish a release.
+Ordinary commits to `main` may publish **preview pre-releases**, but they never publish a **production release**. Production publishing still requires an explicit `vMAJOR.MINOR.PATCH` tag.

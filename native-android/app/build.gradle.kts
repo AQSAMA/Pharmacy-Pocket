@@ -18,6 +18,10 @@ if (computedVersionCodeLong !in 1L..2_100_000_000L) {
     throw GradleException("VERSION produces an Android versionCode outside the supported range.")
 }
 val computedVersionCode = computedVersionCodeLong.toInt()
+val buildVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: computedVersionCode
+if (buildVersionCode !in 1..2_100_000_000) {
+    throw GradleException("versionCode must be between 1 and 2100000000.")
+}
 
 val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull?.takeIf { it.isNotBlank() }
 val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull?.takeIf { it.isNotBlank() }
@@ -39,11 +43,18 @@ android {
         applicationId = "com.aqsama.pharmacypocket"
         minSdk = 29
         targetSdk = 36
-        versionCode = computedVersionCode
+        versionCode = buildVersionCode
         versionName = pharmacyVersion
     }
 
     signingConfigs {
+        create("preview") {
+            // Intentionally public preview-only key. Never use for production.
+            storeFile = rootProject.file("signing/preview.jks")
+            storePassword = "pharmacy-pocket-preview"
+            keyAlias = "preview"
+            keyPassword = "pharmacy-pocket-preview"
+        }
         create("release") {
             storeFile = file(releaseKeystorePath ?: "missing-release-keystore")
             storePassword = releaseKeystorePassword ?: ""
@@ -73,6 +84,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        create("preview") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".native"
+            versionNameSuffix = "-preview"
+            resValue("string", "app_name", "Pharmacy Pocket Preview")
+            signingConfig = signingConfigs.getByName("preview")
         }
     }
 
