@@ -106,12 +106,10 @@ internal fun bumpPhotoVersion(versions: MutableMap<String, Int>, medicineId: Str
 }
 
 private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
-    save = { drafts -> drafts.entries.flatMap { entry -> listOf(entry.key, entry.value) } },
+    save = ::encodeMedicinePhotoDraftPaths,
     restore = { parts ->
         mutableStateMapOf<String, String>().apply {
-            parts.chunked(2).forEach { pair ->
-                if (pair.size == 2) put(pair[0], pair[1])
-            }
+            putAll(restoreMedicinePhotoDraftPaths(parts))
         }
     },
 )
@@ -388,13 +386,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         loadPhoto = repository::loadPhoto,
                         draftPhotoPath = photoDrafts[entry.id],
                         onDraftPhotoPathChange = { path ->
-                            if (busy) {
-                                deleteMedicinePhotoDraft(path)
-                            } else {
-                                val previous = photoDrafts.remove(entry.id)
-                                if (previous != null && previous != path) deleteMedicinePhotoDraft(previous)
-                                if (path != null) photoDrafts[entry.id] = path
-                            }
+                            updateMedicinePhotoDraftPath(photoDrafts, entry.id, path, busy)
                         },
                         onSave = { medicine, photoPath, removePhoto ->
                             runOperation(
