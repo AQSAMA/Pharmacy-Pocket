@@ -6,11 +6,13 @@ on:
     paths:
       - "native-android/**"
       - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-release.yml"
   push:
     branches: [main]
     paths:
       - "native-android/**"
       - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -56,6 +58,22 @@ jobs:
 
       - name: Unit tests, lint, and debug build
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
+
+      - name: Confirm release packaging requires signing
+        run: |
+          set -euo pipefail
+          set +e
+          OUTPUT="$(gradle --no-daemon preReleaseBuild 2>&1)"
+          STATUS=$?
+          set -e
+          if [[ $STATUS -eq 0 ]]; then
+            echo "::error::Release packaging succeeded without signing credentials."
+            exit 1
+          fi
+          if ! printf '%s\n' "$OUTPUT" | grep -F "Release signing is required." >/dev/null; then
+            echo "::error::Release packaging did not fail with the expected signing guard."
+            exit 1
+          fi
 
       - name: Create CI-only release signing key
         run: |

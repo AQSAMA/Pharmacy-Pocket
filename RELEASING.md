@@ -88,6 +88,6 @@ git push origin v3.0.0
 
 Use the version you actually placed in `VERSION`.
 
-The release workflow rejects malformed tags, a tag/version mismatch, tags that are not on `main`, and a version code that is not greater than existing strict `vMAJOR.MINOR.PATCH` tags. It then runs tests/lint, builds signed release APK and AAB files, verifies signing and alignment, writes SHA-256 checksums, and creates a normal GitHub Release.
+The release workflow rejects malformed tags, a tag/version mismatch, tags that are not on `main`, and a version code that is not greater than already published strict `vMAJOR.MINOR.PATCH` releases. Failed or mistyped tags that never produced a GitHub Release do not poison later version checks. It then runs tests/lint, builds signed release APK and AAB files, verifies signing and alignment, writes SHA-256 checksums, and creates a normal GitHub Release.
 
 Pull requests and ordinary commits only run CI and may upload a clearly labeled debug APK. They never publish a release.

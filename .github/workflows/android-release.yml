@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: android-production-release
   cancel-in-progress: false
 
 jobs:
@@ -31,6 +31,8 @@ jobs:
 
       - name: Validate version tag and monotonic version code
         id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git fetch origin main --tags --force
@@ -75,11 +77,11 @@ jobs:
               PREV_PATCH=$((10#${BASH_REMATCH[3]}))
               PREVIOUS_CODE=$((PREV_MAJOR * 10000000 + PREV_MINOR * 10000 + PREV_PATCH))
               if (( PREVIOUS_CODE >= VERSION_CODE )); then
-                echo "::error::Version $VERSION is not greater than existing release tag $PREVIOUS_TAG."
+                echo "::error::Version $VERSION is not greater than published release $PREVIOUS_TAG."
                 exit 1
               fi
             fi
-          done < <(git tag --list 'v*')
+          done < <(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName')
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
