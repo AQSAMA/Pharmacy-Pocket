@@ -75,6 +75,17 @@ import kotlinx.coroutines.withContext
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
+internal data class EditorPhotoChange(
+    val draftPhoto: ByteArray?,
+    val removeStoredPhoto: Boolean,
+)
+
+internal fun acceptEditorPhoto(bytes: ByteArray): EditorPhotoChange =
+    EditorPhotoChange(draftPhoto = bytes, removeStoredPhoto = false)
+
+internal fun removeEditorPhoto(): EditorPhotoChange =
+    EditorPhotoChange(draftPhoto = null, removeStoredPhoto = true)
+
 @Composable
 fun MedicineEditorScreen(
     snapshot: AppSnapshot,
@@ -143,9 +154,10 @@ fun MedicineEditorScreen(
                     prepareMedicinePhoto(context, uri)
                 }
                 if (!busy) {
-                    removePhoto = false
+                    val change = acceptEditorPhoto(bytes)
+                    removePhoto = change.removeStoredPhoto
                     revealPhotoAfterLoad = true
-                    onDraftPhotoChange(bytes)
+                    onDraftPhotoChange(change.draftPhoto)
                     mediaExpanded = true
                 }
             } catch (error: Exception) {
@@ -478,8 +490,9 @@ fun MedicineEditorScreen(
                                     TextButton(
                                         enabled = !busy,
                                         onClick = {
-                                            onDraftPhotoChange(null)
-                                            removePhoto = true
+                                            val change = removeEditorPhoto()
+                                            onDraftPhotoChange(change.draftPhoto)
+                                            removePhoto = change.removeStoredPhoto
                                         },
                                     ) { Text("Remove photo") }
                                 }
@@ -547,9 +560,10 @@ fun MedicineEditorScreen(
         existingCodes = codes.mapTo(mutableSetOf()) { it.value },
         onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind, code.label)) },
         onPhoto = { bytes, acknowledge ->
-            removePhoto = false
+            val change = acceptEditorPhoto(bytes)
+            removePhoto = change.removeStoredPhoto
             revealPhotoAfterLoad = true
-            onDraftPhotoChange(bytes)
+            onDraftPhotoChange(change.draftPhoto)
             mediaExpanded = true
             acknowledge("Added photo")
         },
