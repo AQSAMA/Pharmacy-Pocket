@@ -82,13 +82,14 @@ jobs:
 
           mkdir -p dist
           cp "$APK" "$OUT"
-          echo "path=native-android/$OUT" >> "$GITHUB_OUTPUT"
+          echo "relative_path=$OUT" >> "$GITHUB_OUTPUT"
+          echo "artifact_path=native-android/$OUT" >> "$GITHUB_OUTPUT"
 
       - name: Upload preview artifact
         uses: actions/upload-artifact@v4
         with:
           name: pharmacy-pocket-preview-${{ steps.version.outputs.version_code }}
-          path: ${{ steps.apk.outputs.path }}
+          path: ${{ steps.apk.outputs.artifact_path }}
           if-no-files-found: error
           retention-days: 14
 
