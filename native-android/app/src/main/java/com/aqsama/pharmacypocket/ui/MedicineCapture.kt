@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.ImageDecoder
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -801,11 +803,58 @@ fun prepareMedicinePhoto(context: Context, uri: Uri): ByteArray =
     encodeMedicineBitmap(decodeMedicineBitmap(context, uri))
 
 private fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap {
-    val source = ImageDecoder.createSource(context.contentResolver, uri)
-    return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-        val sample = max(1, ((max(info.size.width, info.size.height).toLong() + 1199L) / 1200L).toInt())
-        decoder.setTargetSampleSize(sample)
-        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    resolver.openInputStream(uri)?.use { stream ->
+        BitmapFactory.decodeStream(stream, null, bounds)
+    } ?: throw IllegalArgumentException("Could not open the selected photo.")
+    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Could not decode the selected photo." }
+
+    var sample = 1
+    while (max(bounds.outWidth, bounds.outHeight) / sample > 1200) sample *= 2
+    val decoded = resolver.openInputStream(uri)?.use { stream ->
+        BitmapFactory.decodeStream(
+            stream,
+            null,
+            BitmapFactory.Options().apply { inSampleSize = sample },
+        )
+    } ?: throw IllegalArgumentException("Could not decode the selected photo.")
+
+    val orientation = runCatching {
+        resolver.openInputStream(uri)?.use { stream ->
+            ExifInterface(stream).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+
+    return applyExifOrientation(decoded, orientation)
+}
+
+private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+            matrix.setRotate(180f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            matrix.setRotate(90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            matrix.setRotate(-90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+        else -> return bitmap
+    }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also { transformed ->
+        if (transformed !== bitmap) bitmap.recycle()
     }
 }
 
