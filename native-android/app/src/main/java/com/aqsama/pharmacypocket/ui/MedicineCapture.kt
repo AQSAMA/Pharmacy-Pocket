@@ -643,6 +643,7 @@ private fun codeKindLabel(kind: CodeKind): String = when (kind) {
     CodeKind.BARCODE -> "Barcode"
 }
 
+@OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 private fun LiveMedicineCamera(
     enabled: Boolean,
