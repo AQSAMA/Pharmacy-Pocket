@@ -49,6 +49,33 @@ class MedicineEditorPhotoSaveTest {
     }
 
     @Test
+    fun draftPathSurvivesRestorationAndReplacementUsesOneSourceOfTruth() {
+        val firstBytes = jpeg(Color.RED)
+        val replacementBytes = jpeg(Color.BLUE)
+        val firstPath = writeMedicinePhotoDraft(context, firstBytes)
+        val replacementPath = writeMedicinePhotoDraft(context, replacementBytes)
+        val drafts = mutableMapOf("editor-entry" to firstPath)
+
+        val restored = restoreMedicinePhotoDraftPaths(encodeMedicinePhotoDraftPaths(drafts)).toMutableMap()
+        assertEquals(firstPath, restored["editor-entry"])
+        assertArrayEquals(firstBytes, readMedicinePhotoDraft(restored["editor-entry"]))
+
+        updateMedicinePhotoDraftPath(restored, "editor-entry", replacementPath, busy = false)
+        assertNull(readMedicinePhotoDraft(firstPath))
+        assertEquals(replacementPath, restored["editor-entry"])
+        assertArrayEquals(replacementBytes, readMedicinePhotoDraft(restored["editor-entry"]))
+
+        val rejectedPath = writeMedicinePhotoDraft(context, jpeg(Color.GREEN))
+        updateMedicinePhotoDraftPath(restored, "editor-entry", rejectedPath, busy = true)
+        assertNull(readMedicinePhotoDraft(rejectedPath))
+        assertEquals(replacementPath, restored["editor-entry"])
+
+        updateMedicinePhotoDraftPath(restored, "editor-entry", null, busy = false)
+        assertFalse(restored.containsKey("editor-entry"))
+        assertNull(readMedicinePhotoDraft(replacementPath))
+    }
+
+    @Test
     fun editorSaveRejectsADraftThatDisappearedInsteadOfSilentlySavingWithoutPhoto() = runBlocking {
         val path = writeMedicinePhotoDraft(context, jpeg(Color.RED))
         deleteMedicinePhotoDraft(path)
