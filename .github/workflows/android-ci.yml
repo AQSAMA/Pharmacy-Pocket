@@ -1,0 +1,107 @@
+name: Android CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/android-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "native-android/**"
+      - ".github/workflows/android-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    defaults:
+      run:
+        working-directory: native-android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
+
+      - name: Unit tests, lint, and debug build
+        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
+
+      - name: Create CI-only release signing key
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt             -keystore "$RUNNER_TEMP/pharmacy-pocket-ci-release.jks"             -storepass "ci-only-password"             -keypass "ci-only-password"             -alias "ci-release"             -keyalg RSA             -keysize 2048             -validity 2             -dname "CN=CI Only,O=Pharmacy Pocket,C=US"
+
+      - name: Exercise hardened release build
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/pharmacy-pocket-ci-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ci-only-password
+          ANDROID_KEY_ALIAS: ci-release
+          ANDROID_KEY_PASSWORD: ci-only-password
+        run: gradle --no-daemon lintRelease assembleRelease bundleRelease --stacktrace
+
+      - name: Verify APKs and AAB
+        id: verify
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+          RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+          RELEASE_AAB="app/build/outputs/bundle/release/app-release.aab"
+
+          test -f "$DEBUG_APK"
+          test -f "$RELEASE_APK"
+          test -f "$RELEASE_AAB"
+
+          "$BUILD_TOOLS/aapt" dump badging "$DEBUG_APK" | grep -F "package: name='com.aqsama.pharmacypocket.debug'"
+          "$BUILD_TOOLS/aapt" dump badging "$RELEASE_APK" | grep -F "package: name='com.aqsama.pharmacypocket'"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK" >/dev/null
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$RELEASE_APK" >/dev/null
+          jarsigner -verify "$RELEASE_AAB" >/dev/null
+
+          mkdir -p dist
+          OUT="dist/Pharmacy-Pocket-debug-${{ github.event.pull_request.number || github.run_number }}.apk"
+          cp "$DEBUG_APK" "$OUT"
+          echo "debug_apk=native-android/$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Remove CI-only signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pharmacy-pocket-ci-release.jks"
+
+      - name: Upload debug test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmacy-pocket-debug-${{ github.event.pull_request.number || github.run_number }}
+          path: ${{ steps.verify.outputs.debug_apk }}
+          if-no-files-found: error
+          retention-days: 14

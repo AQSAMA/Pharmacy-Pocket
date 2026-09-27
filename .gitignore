@@ -1,39 +1,30 @@
-# Shared
+# OS / editor
 .DS_Store
 *.orig.*
-.env*.local
-dist/
-
-# Expo / React Native
-node_modules/
-.expo/
-web-build/
-expo-env.d.ts
-.metro-health-check*
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-*.tsbuildinfo
-legacy-expo/android/
-legacy-expo/ios/
-legacy-expo/app-example/
+.idea/
+*.iml
 
 # Android / Gradle
 .gradle/
 **/build/
 local.properties
-*.iml
-.idea/
 .kotlin/
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Local outputs
+dist/
+
+# Environment and secret material
+.env
+.env.*
 *.jks
-!native-android/signing/preview.jks
 *.keystore
-*.pem
-keystore.properties
-*.p8
 *.p12
+*.pfx
+*.pem
 *.key
-*.mobileprovision
+*.b64
+keystore.properties
+signing/

@@ -1,0 +1,204 @@
+name: Android Production Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    defaults:
+      run:
+        working-directory: native-android
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate version tag and monotonic version code
+        id: version
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags --force
+
+          TAG="$GITHUB_REF_NAME"
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Release tags must use vMAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          MAJOR=$((10#${BASH_REMATCH[1]}))
+          MINOR=$((10#${BASH_REMATCH[2]}))
+          PATCH=$((10#${BASH_REMATCH[3]}))
+          VERSION="${TAG#v}"
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+
+          if [[ "$VERSION" != "$FILE_VERSION" ]]; then
+            echo "::error::Tag $TAG does not match native-android/VERSION ($FILE_VERSION)."
+            exit 1
+          fi
+          if (( MINOR > 999 || PATCH > 9999 )); then
+            echo "::error::Minor must be <= 999 and patch must be <= 9999."
+            exit 1
+          fi
+
+          VERSION_CODE=$((MAJOR * 10000000 + MINOR * 10000 + PATCH))
+          if (( VERSION_CODE < 1 || VERSION_CODE > 2100000000 )); then
+            echo "::error::Computed Android versionCode is outside the supported range."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Production release tags must point to a commit on main."
+            exit 1
+          fi
+
+          while IFS= read -r PREVIOUS_TAG; do
+            [[ "$PREVIOUS_TAG" == "$TAG" ]] && continue
+            if [[ "$PREVIOUS_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              PREV_MAJOR=$((10#${BASH_REMATCH[1]}))
+              PREV_MINOR=$((10#${BASH_REMATCH[2]}))
+              PREV_PATCH=$((10#${BASH_REMATCH[3]}))
+              PREVIOUS_CODE=$((PREV_MAJOR * 10000000 + PREV_MINOR * 10000 + PREV_PATCH))
+              if (( PREVIOUS_CODE >= VERSION_CODE )); then
+                echo "::error::Version $VERSION is not greater than existing release tag $PREVIOUS_TAG."
+                exit 1
+              fi
+            fi
+          done < <(git tag --list 'v*')
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: yes | sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.6.0"
+
+      - name: Validate required signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          for NAME in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_SIGNING_CERT_SHA256; do
+            if [[ -z "${!NAME:-}" ]]; then
+              echo "::error::Missing required GitHub Actions secret: $NAME"
+              exit 1
+            fi
+          done
+
+      - name: Restore temporary production keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/pharmacy-pocket-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Test, lint, and build signed release
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon testDebugUnitTest lintRelease assembleRelease bundleRelease --stacktrace
+
+      - name: Verify production artifacts and signing certificate
+        env:
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          VERSION="${{ steps.version.outputs.version }}"
+          VERSION_CODE="${{ steps.version.outputs.version_code }}"
+
+          test -f "$APK"
+          test -f "$AAB"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "package: name='com.aqsama.pharmacypocket'"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionCode='$VERSION_CODE'"
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | grep -F "versionName='$VERSION'"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" >/dev/null
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$APK" >/dev/null
+          jarsigner -verify "$AAB" >/dev/null
+
+          EXPECTED="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" | tr -d ' :\r\n' | tr '[:upper:]' '[:lower:]')"
+          ACTUAL="$("$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | awk -F': ' '/certificate SHA-256 digest:/ {print $2; exit}' | tr -d ' :\r\n' | tr '[:upper:]' '[:lower:]')"
+          if [[ ! "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::ANDROID_SIGNING_CERT_SHA256 must contain a SHA-256 certificate fingerprint."
+            exit 1
+          fi
+          if [[ -z "$ACTUAL" || "$ACTUAL" != "$EXPECTED" ]]; then
+            echo "::error::The APK signing certificate does not match ANDROID_SIGNING_CERT_SHA256."
+            exit 1
+          fi
+
+          mkdir -p dist
+          cp "$APK" "dist/Pharmacy-Pocket-v$VERSION.apk"
+          cp "$AAB" "dist/Pharmacy-Pocket-v$VERSION.aab"
+          (
+            cd dist
+            sha256sum "Pharmacy-Pocket-v$VERSION.apk" "Pharmacy-Pocket-v$VERSION.aab" > SHA256SUMS.txt
+          )
+
+      - name: Remove temporary production keystore
+        if: always()
+        run: |
+          if [[ -n "${ANDROID_KEYSTORE_PATH:-}" ]]; then
+            rm -f "$ANDROID_KEYSTORE_PATH"
+          fi
+
+      - name: Upload verified release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmacy-pocket-v${{ steps.version.outputs.version }}
+          path: |
+            native-android/dist/Pharmacy-Pocket-v${{ steps.version.outputs.version }}.apk
+            native-android/dist/Pharmacy-Pocket-v${{ steps.version.outputs.version }}.aab
+            native-android/dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME"             "dist/Pharmacy-Pocket-v${{ steps.version.outputs.version }}.apk"             "dist/Pharmacy-Pocket-v${{ steps.version.outputs.version }}.aab"             "dist/SHA256SUMS.txt"             --verify-tag             --generate-notes             --title "Pharmacy Pocket $GITHUB_REF_NAME"

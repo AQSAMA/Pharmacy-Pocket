@@ -103,4 +103,17 @@ class MedicineCaptureStorageTest {
         assertEquals(listOf("other"), storage.loadMedicines().map { it.id })
         assertEquals(listOf("medicine-1"), storage.loadTrash().map { it.medicine.id })
     }
+    @Test fun restoreAllRejectsCodeConflictsWithoutPartialRestore() = runBlocking {
+        storage.saveMedicine(item())
+        storage.moveMedicineToTrash("medicine-1")
+        storage.saveMedicine(item().copy(id = "other", name = "Other"))
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val result = runCatching { PharmacyRepository(context).restoreAllTrash() }
+
+        assertTrue(result.isFailure)
+        assertEquals(listOf("other"), storage.loadMedicines().map { it.id })
+        assertEquals(listOf("medicine-1"), storage.loadTrash().map { it.medicine.id })
+    }
+
 }
