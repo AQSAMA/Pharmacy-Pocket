@@ -33,59 +33,57 @@ class MedicineEditorPhotoSaveTest {
         dbFile.delete()
         File(dbFile.absolutePath + "-wal").delete()
         File(dbFile.absolutePath + "-shm").delete()
+        File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
         repository = PharmacyRepository(context)
     }
 
     @Test
-    fun acceptedDraftSurvivesRestorationAndReplacementCancelsRemoval() {
+    fun diskBackedDraftStoresTheExactAcceptedJpeg() {
         val bytes = jpeg(Color.RED)
-        val drafts = mutableMapOf<String, ByteArray>()
 
-        val removal = removeEditorPhoto()
-        assertTrue(removal.removeStoredPhoto)
-        assertNull(removal.draftPhoto)
+        val path = writeMedicinePhotoDraft(context, bytes)
 
-        val accepted = acceptEditorPhoto(bytes)
-        assertFalse(accepted.removeStoredPhoto)
-        updatePhotoDraft(drafts, "editor-entry", accepted.draftPhoto, busy = false)
-
-        val restored = restorePhotoDrafts(encodePhotoDrafts(drafts))
-        assertArrayEquals(bytes, restored["editor-entry"])
-
-        val replacement = acceptEditorPhoto(jpeg(Color.BLUE))
-        assertFalse(replacement.removeStoredPhoto)
-        assertTrue(replacement.draftPhoto != null)
+        assertArrayEquals(bytes, readMedicinePhotoDraft(path))
+        deleteMedicinePhotoDraft(path)
+        assertNull(readMedicinePhotoDraft(path))
     }
 
     @Test
-    fun busyEditorDoesNotReplaceItsCurrentAcceptedDraft() {
-        val original = jpeg(Color.RED)
-        val replacement = jpeg(Color.BLUE)
-        val drafts = mutableMapOf("editor-entry" to original)
+    fun editorSaveRejectsADraftThatDisappearedInsteadOfSilentlySavingWithoutPhoto() = runBlocking {
+        val path = writeMedicinePhotoDraft(context, jpeg(Color.RED))
+        deleteMedicinePhotoDraft(path)
 
-        updatePhotoDraft(drafts, "editor-entry", replacement, busy = true)
+        var failed = false
+        try {
+            saveMedicineFromEditor(
+                repository = repository,
+                medicine = medicine("missing"),
+                draftPhotoPath = path,
+                removePhoto = false,
+            )
+        } catch (error: IllegalStateException) {
+            failed = true
+            assertTrue(error.message.orEmpty().contains("no longer available"))
+        }
 
-        assertArrayEquals(original, drafts["editor-entry"])
+        assertTrue(failed)
+        assertTrue(repository.loadSnapshot().items.none { it.id == "missing" })
     }
 
     @Test
-    fun editorSaveCarriesAcceptedJpegIntoSqliteReloadsItAndInvalidatesRendering() = runBlocking {
+    fun editorAndQuickCapturePersistPhotosAndReloadThem() = runBlocking {
         val cameraBytes = jpeg(Color.RED)
         val galleryBytes = jpeg(Color.BLUE)
         val addedLaterBytes = jpeg(Color.GREEN)
-        val drafts = mutableMapOf<String, ByteArray>()
         val photoVersions = mutableMapOf<String, Int>()
 
-        val cameraChange = acceptEditorPhoto(cameraBytes)
-        updatePhotoDraft(drafts, "new-editor", cameraChange.draftPhoto, busy = false)
-        val restoredDrafts = restorePhotoDrafts(encodePhotoDrafts(drafts))
-
+        val cameraPath = writeMedicinePhotoDraft(context, cameraBytes)
         val newMedicine = medicine("new")
         val afterCameraSave = saveMedicineFromEditor(
             repository = repository,
             medicine = newMedicine,
-            draftPhoto = restoredDrafts["new-editor"],
-            removePhoto = cameraChange.removeStoredPhoto,
+            draftPhotoPath = cameraPath,
+            removePhoto = false,
         ) {
             bumpPhotoVersion(photoVersions, "new")
         }
@@ -93,13 +91,12 @@ class MedicineEditorPhotoSaveTest {
         assertArrayEquals(cameraBytes, repository.loadPhoto("new"))
         assertEquals(1, photoVersions["new"])
 
-        val galleryChange = acceptEditorPhoto(galleryBytes)
-        updatePhotoDraft(drafts, "new-editor", galleryChange.draftPhoto, busy = false)
+        val galleryPath = writeMedicinePhotoDraft(context, galleryBytes)
         val afterGalleryReplacement = saveMedicineFromEditor(
             repository = repository,
             medicine = newMedicine.copy(name = "New edited"),
-            draftPhoto = drafts["new-editor"],
-            removePhoto = galleryChange.removeStoredPhoto,
+            draftPhotoPath = galleryPath,
+            removePhoto = false,
         ) {
             bumpPhotoVersion(photoVersions, "new")
         }
@@ -114,13 +111,12 @@ class MedicineEditorPhotoSaveTest {
         assertFalse(repository.loadSnapshot().items.single { it.id == "existing" }.hasPhoto)
         assertNull(photoVersions["existing"])
 
-        val existingChange = acceptEditorPhoto(addedLaterBytes)
-        updatePhotoDraft(drafts, "existing-editor", existingChange.draftPhoto, busy = false)
+        val existingPath = writeMedicinePhotoDraft(context, addedLaterBytes)
         val afterExistingAdd = saveMedicineFromEditor(
             repository = repository,
             medicine = existingWithoutPhoto,
-            draftPhoto = drafts["existing-editor"],
-            removePhoto = existingChange.removeStoredPhoto,
+            draftPhotoPath = existingPath,
+            removePhoto = false,
         ) {
             bumpPhotoVersion(photoVersions, "existing")
         }
