@@ -531,7 +531,7 @@ private fun BreadcrumbChip(
     }
 }
 
-/** Keeps category controls scrollable across the full screen width. */
+/** Keeps category controls scrollable while staying clear of gesture navigation. */
 @Composable
 private fun HomeBottomBar(
     snapshot: AppSnapshot,
@@ -543,61 +543,74 @@ private fun HomeBottomBar(
     onSelectSubcategory: (String?) -> Unit,
 ) {
     var subcategoriesOpen by rememberSaveable { mutableStateOf(false) }
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 7.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
     ) {
-        Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 10.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(
-                    Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    snapshot.categories.forEach { item ->
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        snapshot.categories.forEach { item ->
+                            SoftChip(
+                                label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
+                                selected = category == item.id,
+                                accent = if (item.id == "all") null else colorFromHex(item.color),
+                                onClick = { onSelectCategory(item.id) },
+                            )
+                        }
+                    }
+                    if (subcategories.isNotEmpty()) {
                         SoftChip(
-                            label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                            selected = category == item.id,
-                            accent = if (item.id == "all") null else colorFromHex(item.color),
-                            onClick = { onSelectCategory(item.id) },
+                            label = when {
+                                selectedSubcategory != null -> "Sub ✓"
+                                subcategoriesOpen -> "Sub ⌃"
+                                else -> "Sub ⌄"
+                            },
+                            selected = subcategoriesOpen || selectedSubcategory != null,
+                            onClick = { subcategoriesOpen = !subcategoriesOpen },
                         )
                     }
                 }
-                if (subcategories.isNotEmpty()) {
-                    SoftChip(
-                        label = if (selectedSubcategory != null) "Subcategory ✓" else "Subcategories ${if (subcategoriesOpen) "⌃" else "⌄"}",
-                        selected = subcategoriesOpen || selectedSubcategory != null,
-                        onClick = { subcategoriesOpen = !subcategoriesOpen },
-                    )
-                }
-            }
-            if (subcategories.isNotEmpty() && subcategoriesOpen) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    SoftChip(
-                        label = "All subcategories",
-                        selected = selectedSubcategory == null,
-                        onClick = { onSelectSubcategory(null) },
-                    )
-                    subcategories.forEach { (key, label) ->
+                if (subcategories.isNotEmpty() && subcategoriesOpen) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         SoftChip(
-                            label = label,
-                            selected = selectedSubcategory == key,
-                            onClick = { onSelectSubcategory(key) },
+                            label = "All",
+                            selected = selectedSubcategory == null,
+                            onClick = { onSelectSubcategory(null) },
                         )
+                        subcategories.forEach { (key, label) ->
+                            SoftChip(
+                                label = label,
+                                selected = selectedSubcategory == key,
+                                onClick = { onSelectSubcategory(key) },
+                            )
+                        }
                     }
                 }
             }
