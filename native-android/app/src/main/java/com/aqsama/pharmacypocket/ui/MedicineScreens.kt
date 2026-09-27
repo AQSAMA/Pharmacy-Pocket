@@ -315,6 +315,11 @@ fun MedicineEditorScreen(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         )
                     }
+                    Text(
+                        "Prices use ${snapshot.currency}. A blank discounted price means no second price was supplied.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                    )
 
                     TextButton(onClick = { mediaExpanded = !mediaExpanded }, modifier = Modifier.fillMaxWidth()) {
                         Text("▣  Photo & codes  ·  ${codes.size} saved${if (draftPhoto != null || (!removePhoto && existing?.hasPhoto == true)) "  ·  Photo" else ""}  ${if (mediaExpanded) "⌃" else "⌄"}")
@@ -373,11 +378,6 @@ fun MedicineEditorScreen(
                             { description = it },
                             minLines = 5,
                             placeholder = "Details shown on the medicine page",
-                        )
-                        Text(
-                            "Prices use ${snapshot.currency}. A blank discounted price means no second price was supplied.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 13.sp,
                         )
                         if (existing != null) {
                             TextButton(
