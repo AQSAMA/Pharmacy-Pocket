@@ -17,6 +17,8 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -301,19 +304,29 @@ fun MedicineCameraScreen(
                                         pendingCode = null
                                         lastCode = accepted
                                         lastCodeState = "Saving…"
-                                        currentOnCode(accepted) { result ->
-                                            val success = result.startsWith("Saved") || result.startsWith("Added")
-                                            if (success) {
-                                                seen.add(detected.value)
-                                                if (detected.value !in ignoredCodes) ignoredCodes.add(detected.value)
-                                                lastCodeState = "Saved"
-                                                Haptics.confirm(view)
-                                            } else {
-                                                lastCodeState = "Not saved"
-                                                Haptics.reject(view)
+                                        saving = true
+                                        try {
+                                            currentOnCode(accepted) { result ->
+                                                saving = false
+                                                val success = result.startsWith("Saved") || result.startsWith("Added")
+                                                if (success) {
+                                                    seen.add(detected.value)
+                                                    if (detected.value !in ignoredCodes) ignoredCodes.add(detected.value)
+                                                    lastCodeState = "Saved"
+                                                    Haptics.confirm(view)
+                                                } else {
+                                                    lastCodeState = "Not saved"
+                                                    Haptics.reject(view)
+                                                }
+                                                message = result
+                                                handling.set(false)
                                             }
-                                            message = result
+                                        } catch (error: Exception) {
+                                            saving = false
+                                            lastCodeState = "Not saved"
+                                            message = error.message ?: "Could not save code"
                                             handling.set(false)
+                                            Haptics.reject(view)
                                         }
                                     },
                                 )
@@ -404,30 +417,72 @@ private fun CodePreviewPill(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.93f),
         shadowElevation = 4.dp,
     ) {
-        Row(
+        Column(
             Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                Text(
-                    codeKindLabel(code.kind),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    Text(
+                        codeKindLabel(code.kind),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                state?.let {
+                    Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
+            RawCodeReadout(code.value)
+        }
+    }
+}
+
+@Composable
+private fun RawCodeReadout(
+    value: String,
+    expandedByDefault: Boolean = false,
+) {
+    var expanded by remember(value) { mutableStateOf(expandedByDefault) }
+    val canExpand = value.length > 96
+    val scrollState = rememberScrollState()
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        ) {
             Text(
-                code.value,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
+                value,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (expanded) {
+                            Modifier.heightIn(max = 150.dp).verticalScroll(scrollState)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(horizontal = 9.dp, vertical = 7.dp),
+                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
             )
-            state?.let {
-                Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        if (canExpand) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+            ) {
+                Text(if (expanded) "Collapse raw value" else "Show full raw value", fontSize = 11.sp)
             }
         }
     }
@@ -456,12 +511,9 @@ private fun DetectedCodeCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Detected ${codeKindLabel(code.kind)}", fontWeight = FontWeight.ExtraBold)
-                    Text(
-                        code.value.take(180) + if (code.value.length > 180) "…" else "",
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 13.sp,
+                    RawCodeReadout(
+                        value = code.value,
+                        expandedByDefault = true,
                     )
                 }
             }
