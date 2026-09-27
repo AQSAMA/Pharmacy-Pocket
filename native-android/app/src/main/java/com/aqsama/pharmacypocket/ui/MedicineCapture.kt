@@ -292,6 +292,22 @@ fun MedicineCameraScreen(
                                             RoundedCornerShape(24.dp),
                                         ),
                                 )
+                            } else {
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 14.dp, start = 14.dp, end = 14.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.94f),
+                                ) {
+                                    Text(
+                                        "Code scanning unavailable · Photo capture still works",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             }
 
                             lastCode?.let { code ->
