@@ -106,6 +106,11 @@ fun MedicineCameraScreen(
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
     LaunchedEffect(Unit) { if (!allowed) request.launch(Manifest.permission.CAMERA) }
 
+    var scannerAvailable by remember { mutableStateOf(true) }
+    fun idleCameraMessage(): String =
+        if (scannerAvailable) "Scan a code or take a package photo"
+        else "Code scanner unavailable. Photo capture still works."
+
     var message by remember { mutableStateOf("Scan a code or take a package photo") }
     var capturedFile by remember { mutableStateOf<File?>(null) }
     var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
@@ -213,7 +218,7 @@ fun MedicineCameraScreen(
                         if (capturedFile != null) {
                             capturedFile?.delete()
                             capturedFile = null
-                            message = "Scan a code or take a package photo"
+                            message = idleCameraMessage()
                         } else {
                             onDismiss()
                         }
@@ -244,6 +249,10 @@ fun MedicineCameraScreen(
                             enabled = capturedFile == null && pendingCode == null && !capturing && !saving,
                             onCaptureReady = { imageCapture = it },
                             onDetected = ::receive,
+                            onScannerAvailabilityChanged = { available ->
+                                scannerAvailable = available
+                                if (!available) message = idleCameraMessage()
+                            },
                             onError = { message = it },
                         )
 
@@ -271,17 +280,35 @@ fun MedicineCameraScreen(
                         }
 
                         if (capturedFile == null) {
-                            Box(
-                                Modifier
-                                    .align(Alignment.Center)
-                                    .fillMaxWidth(0.78f)
-                                    .aspectRatio(1.22f)
-                                    .border(
-                                        2.dp,
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
-                                        RoundedCornerShape(24.dp),
-                                    ),
-                            )
+                            if (scannerAvailable) {
+                                Box(
+                                    Modifier
+                                        .align(Alignment.Center)
+                                        .fillMaxWidth(0.78f)
+                                        .aspectRatio(1.22f)
+                                        .border(
+                                            2.dp,
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                                            RoundedCornerShape(24.dp),
+                                        ),
+                                )
+                            } else {
+                                Surface(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 14.dp, start = 14.dp, end = 14.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.94f),
+                                ) {
+                                    Text(
+                                        "Code scanning unavailable · Photo capture still works",
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
 
                             lastCode?.let { code ->
                                 CodePreviewPill(
@@ -647,6 +674,7 @@ private fun LiveMedicineCamera(
     enabled: Boolean,
     onCaptureReady: (ImageCapture?) -> Unit,
     onDetected: (MedicineCode) -> Unit,
+    onScannerAvailabilityChanged: (Boolean) -> Unit,
     onError: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -654,15 +682,20 @@ private fun LiveMedicineCamera(
     val previewView = remember { PreviewView(context) }
     val currentEnabled by rememberUpdatedState(enabled)
     val currentDetected by rememberUpdatedState(onDetected)
+    val currentScannerAvailabilityChanged by rememberUpdatedState(onScannerAvailabilityChanged)
     val currentError by rememberUpdatedState(onError)
     val currentReady by rememberUpdatedState(onCaptureReady)
 
     DisposableEffect(lifecycle, previewView) {
         val future = ProcessCameraProvider.getInstance(context)
         val executor = Executors.newSingleThreadExecutor()
-        val scanner = BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build(),
-        )
+        val scannerResult = runCatching {
+            BarcodeScanning.getClient(
+                BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build(),
+            )
+        }
+        val scanner = scannerResult.getOrNull()
+        currentScannerAvailabilityChanged(scanner != null)
         val main = ContextCompat.getMainExecutor(context)
         var useCases: List<androidx.camera.core.UseCase> = emptyList()
         var disposed = false
@@ -673,31 +706,35 @@ private fun LiveMedicineCamera(
                     val provider = future.get()
                     val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                     val photo = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
-                    val analysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                    analysis.setAnalyzer(executor) { frame ->
-                        val media = frame.image
-                        if (media == null || !currentEnabled) {
-                            frame.close()
-                        } else {
-                            scanner.process(InputImage.fromMediaImage(media, frame.imageInfo.rotationDegrees))
-                                .addOnSuccessListener(main) { results ->
-                                    if (!disposed && currentEnabled) {
-                                        results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
-                                            currentDetected(
-                                                MedicineCode(
-                                                    if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.QR else CodeKind.BARCODE,
-                                                    barcode.rawValue.orEmpty(),
-                                                ),
-                                            )
+                    val cameraUseCases = mutableListOf<androidx.camera.core.UseCase>(preview, photo)
+                    scanner?.let { activeScanner ->
+                        val analysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                        analysis.setAnalyzer(executor) { frame ->
+                            val media = frame.image
+                            if (media == null || !currentEnabled) {
+                                frame.close()
+                            } else {
+                                activeScanner.process(InputImage.fromMediaImage(media, frame.imageInfo.rotationDegrees))
+                                    .addOnSuccessListener(main) { results ->
+                                        if (!disposed && currentEnabled) {
+                                            results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
+                                                currentDetected(
+                                                    MedicineCode(
+                                                        if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.QR else CodeKind.BARCODE,
+                                                        barcode.rawValue.orEmpty(),
+                                                    ),
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                                .addOnCompleteListener(main) { frame.close() }
+                                    .addOnCompleteListener(main) { frame.close() }
+                            }
                         }
+                        cameraUseCases += analysis
                     }
-                    useCases = listOf(preview, photo, analysis)
+                    useCases = cameraUseCases
                     provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, *useCases.toTypedArray())
                     currentReady(photo)
                 } catch (error: Exception) {
@@ -711,7 +748,7 @@ private fun LiveMedicineCamera(
             currentReady(null)
             if (future.isDone) runCatching { future.get().unbind(*useCases.toTypedArray()) }
             executor.shutdown()
-            scanner.close()
+            scanner?.close()
         }
     }
 
