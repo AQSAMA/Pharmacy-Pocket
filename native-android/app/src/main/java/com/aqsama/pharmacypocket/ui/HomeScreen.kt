@@ -553,18 +553,24 @@ private fun HomeBottomBar(
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                snapshot.categories.forEach { item ->
-                    SoftChip(
-                        label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                        selected = category == item.id,
-                        accent = if (item.id == "all") null else colorFromHex(item.color),
-                        onClick = { onSelectCategory(item.id) },
-                    )
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    snapshot.categories.forEach { item ->
+                        SoftChip(
+                            label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
+                            selected = category == item.id,
+                            accent = if (item.id == "all") null else colorFromHex(item.color),
+                            onClick = { onSelectCategory(item.id) },
+                        )
+                    }
                 }
                 if (subcategories.isNotEmpty()) {
                     SoftChip(
