@@ -660,9 +660,14 @@ private fun LiveMedicineCamera(
     DisposableEffect(lifecycle, previewView) {
         val future = ProcessCameraProvider.getInstance(context)
         val executor = Executors.newSingleThreadExecutor()
-        val scanner = BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build(),
-        )
+        val scanner = runCatching {
+            BarcodeScanning.getClient(
+                BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS).build(),
+            )
+        }.getOrElse {
+            currentError("Code scanner unavailable. Photo capture still works.")
+            null
+        }
         val main = ContextCompat.getMainExecutor(context)
         var useCases: List<androidx.camera.core.UseCase> = emptyList()
         var disposed = false
@@ -673,31 +678,35 @@ private fun LiveMedicineCamera(
                     val provider = future.get()
                     val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                     val photo = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY).build()
-                    val analysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                    analysis.setAnalyzer(executor) { frame ->
-                        val media = frame.image
-                        if (media == null || !currentEnabled) {
-                            frame.close()
-                        } else {
-                            scanner.process(InputImage.fromMediaImage(media, frame.imageInfo.rotationDegrees))
-                                .addOnSuccessListener(main) { results ->
-                                    if (!disposed && currentEnabled) {
-                                        results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
-                                            currentDetected(
-                                                MedicineCode(
-                                                    if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.QR else CodeKind.BARCODE,
-                                                    barcode.rawValue.orEmpty(),
-                                                ),
-                                            )
+                    val cameraUseCases = mutableListOf<androidx.camera.core.UseCase>(preview, photo)
+                    scanner?.let { activeScanner ->
+                        val analysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+                        analysis.setAnalyzer(executor) { frame ->
+                            val media = frame.image
+                            if (media == null || !currentEnabled) {
+                                frame.close()
+                            } else {
+                                activeScanner.process(InputImage.fromMediaImage(media, frame.imageInfo.rotationDegrees))
+                                    .addOnSuccessListener(main) { results ->
+                                        if (!disposed && currentEnabled) {
+                                            results.firstOrNull { !it.rawValue.isNullOrEmpty() }?.let { barcode ->
+                                                currentDetected(
+                                                    MedicineCode(
+                                                        if (barcode.format == Barcode.FORMAT_QR_CODE) CodeKind.QR else CodeKind.BARCODE,
+                                                        barcode.rawValue.orEmpty(),
+                                                    ),
+                                                )
+                                            }
                                         }
                                     }
-                                }
-                                .addOnCompleteListener(main) { frame.close() }
+                                    .addOnCompleteListener(main) { frame.close() }
+                            }
                         }
+                        cameraUseCases += analysis
                     }
-                    useCases = listOf(preview, photo, analysis)
+                    useCases = cameraUseCases
                     provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, *useCases.toTypedArray())
                     currentReady(photo)
                 } catch (error: Exception) {
@@ -711,7 +720,7 @@ private fun LiveMedicineCamera(
             currentReady(null)
             if (future.isDone) runCatching { future.get().unbind(*useCases.toTypedArray()) }
             executor.shutdown()
-            scanner.close()
+            scanner?.close()
         }
     }
 
