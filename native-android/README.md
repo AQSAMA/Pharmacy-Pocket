@@ -20,6 +20,14 @@ gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
 gradle --no-daemon lintPreview assemblePreview
 ```
 
+The plain `assemblePreview` command is suitable for a fresh install. To install a locally built preview **over an already published preview**, give it a `versionCode` greater than the one currently installed:
+
+```sh
+gradle --no-daemon lintPreview assemblePreview -PversionCode=<higher-version-code>
+```
+
+For example, if the installed preview has version code `30000025`, build the local update with `-PversionCode=30000026` or higher. The GitHub preview workflow assigns these monotonically automatically; the override is only needed for local side-loading over an existing preview.
+
 A production release build intentionally requires the release-signing environment variables documented in `../RELEASING.md`. Without them, release packaging fails clearly instead of producing an unsigned or debug-signed artifact.
 
 ## Preview channel
