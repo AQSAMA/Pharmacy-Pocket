@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -198,7 +199,7 @@ fun MedicineCameraScreen(
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(
-                Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+                Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 CameraHeader(
@@ -449,6 +450,7 @@ private fun CodePreviewPill(
 private fun RawCodeReadout(
     value: String,
     expandedByDefault: Boolean = false,
+    scrollExpanded: Boolean = true,
 ) {
     var expanded by remember(value) { mutableStateOf(expandedByDefault) }
     val canExpand = value.length > 96
@@ -464,7 +466,7 @@ private fun RawCodeReadout(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        if (expanded) {
+                        if (expanded && scrollExpanded) {
                             Modifier.heightIn(max = 150.dp).verticalScroll(scrollState)
                         } else {
                             Modifier
@@ -505,7 +507,10 @@ private fun DetectedCodeCard(
         shadowElevation = 8.dp,
     ) {
         Column(
-            Modifier.padding(14.dp),
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -514,6 +519,7 @@ private fun DetectedCodeCard(
                     RawCodeReadout(
                         value = code.value,
                         expandedByDefault = true,
+                        scrollExpanded = false,
                     )
                 }
             }
