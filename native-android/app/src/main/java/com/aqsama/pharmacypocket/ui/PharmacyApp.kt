@@ -112,8 +112,8 @@ internal fun restorePhotoDrafts(parts: List<Any>): androidx.compose.runtime.snap
     }
 
 private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, ByteArray>, Any>(
-    save = ::encodePhotoDrafts,
-    restore = ::restorePhotoDrafts,
+    save = { drafts -> encodePhotoDrafts(drafts) },
+    restore = { parts -> restorePhotoDrafts(parts) },
 )
 
 internal fun updatePhotoDraft(
