@@ -639,7 +639,7 @@ private fun codeKindLabel(kind: CodeKind): String = when (kind) {
     CodeKind.BARCODE -> "Barcode"
 }
 
-@androidx.camera.core.ExperimentalGetImage
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 private fun LiveMedicineCamera(
     enabled: Boolean,
