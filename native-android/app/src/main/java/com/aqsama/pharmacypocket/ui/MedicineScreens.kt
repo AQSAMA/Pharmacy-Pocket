@@ -149,7 +149,12 @@ fun MedicineEditorScreen(
                     draft.writeBytes(bytes)
                     draft.absolutePath
                 }
-                if (busy) File(path).delete() else onPhotoPath(path)
+                if (busy) {
+                    File(path).delete()
+                } else {
+                    onPhotoPath(path)
+                    mediaExpanded = true
+                }
             } catch (error: Exception) {
                 validationError = error.message ?: "Could not open this photo."
             } finally {
@@ -562,6 +567,7 @@ fun MedicineEditorScreen(
                         }.absolutePath
                     }
                     onPhotoPath(path)
+                    mediaExpanded = true
                     acknowledge("Added photo")
                 } catch (error: Exception) {
                     acknowledge(error.message ?: "Could not save photo")
