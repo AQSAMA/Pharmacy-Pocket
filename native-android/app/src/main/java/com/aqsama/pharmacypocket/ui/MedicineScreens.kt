@@ -84,7 +84,7 @@ fun MedicineEditorScreen(
     busy: Boolean,
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
-    onSave: (Medicine, ByteArray?, Boolean) -> Unit,
+    onSave: (Medicine, String?, Boolean) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
