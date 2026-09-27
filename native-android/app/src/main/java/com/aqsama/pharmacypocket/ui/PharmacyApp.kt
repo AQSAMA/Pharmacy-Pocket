@@ -41,12 +41,9 @@ import com.aqsama.pharmacypocket.data.PharmacyRepository
 import com.aqsama.pharmacypocket.data.ThemePreference
 import com.aqsama.pharmacypocket.data.TrashedMedicine
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
-import java.io.File
 import org.json.JSONObject
 
 private sealed interface Destination {
@@ -102,13 +99,6 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
     },
 )
 
-private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
-    save = { drafts -> drafts.entries.flatMap { listOf(it.key, it.value) } },
-    restore = { parts -> androidx.compose.runtime.mutableStateMapOf<String, String>().apply {
-        parts.chunked(2).forEach { if (it.size == 2) put(it[0], it[1]) }
-    } },
-)
-
 @Composable
 fun PharmacyApp(repository: PharmacyRepository) {
     val context = LocalContext.current
@@ -116,10 +106,10 @@ fun PharmacyApp(repository: PharmacyRepository) {
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
     val backStack = rememberSaveable(saver = navSaver) { mutableStateListOf(NavEntry("home", Destination.Home)) }
-    val photoDrafts = rememberSaveable(saver = photoDraftSaver) { mutableStateMapOf<String, String>() }
+    val photoDrafts = remember { mutableStateMapOf<String, ByteArray>() }
 
     fun discardDraft(entryId: String) {
-        photoDrafts.remove(entryId)?.let { File(it).delete() }
+        photoDrafts.remove(entryId)
     }
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -130,18 +120,6 @@ fun PharmacyApp(repository: PharmacyRepository) {
     val photoVersions = remember { mutableStateMapOf<String, Int>() }
     val cameraSaveMutex = remember { Mutex() }
     val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(Unit) {
-        val retainedPaths = photoDrafts.values.toSet()
-        withContext(Dispatchers.IO) {
-            val staleBefore = System.currentTimeMillis() - 24L * 60 * 60 * 1000
-            File(context.noBackupFilesDir, "medicine_drafts").listFiles()?.forEach { file ->
-                if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
-                    file.delete()
-                }
-            }
-        }
-    }
 
     fun push(destination: Destination) {
         Haptics.action(view)
@@ -384,20 +362,24 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onBack = ::pop,
                         onManageCategories = { push(Destination.Categories) },
                         loadPhoto = repository::loadPhoto,
-                        photoPath = photoDrafts[entry.id],
-                        onPhotoPath = { path ->
-                            if (busy) {
-                                path?.let { File(it).delete() }
-                            } else {
-                                photoDrafts.remove(entry.id)?.takeIf { it != path }?.let { File(it).delete() }
-                                if (path != null) photoDrafts[entry.id] = path
+                        draftPhoto = photoDrafts[entry.id],
+                        onDraftPhotoChange = { bytes ->
+                            if (!busy) {
+                                if (bytes == null) photoDrafts.remove(entry.id)
+                                else photoDrafts[entry.id] = bytes
                             }
                         },
                         onSave = { medicine, photo, removePhoto ->
+                            val photoChanged = photo != null || removePhoto
                             runOperation(
                                 successMessage = "Medicine saved",
-                                onSuccess = ::pop,
-                            ) { repository.saveMedicine(medicine, photo, removePhoto) }
+                                onSuccess = {
+                                    if (photoChanged) {
+                                        photoVersions[medicine.id] = (photoVersions[medicine.id] ?: 0) + 1
+                                    }
+                                    pop()
+                                },
+                            ) { saveMedicineFromEditor(repository, medicine, photo, removePhoto) }
                         },
                         onMoveToTrash = ::moveToTrash,
                     )
@@ -427,6 +409,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         },
                         onMoveToTrash = ::moveToTrash,
                         loadPhoto = repository::loadPhoto,
+                        photoVersion = photoVersions[destination.medicineId] ?: 0,
                     )
                 }
             }
@@ -516,3 +499,11 @@ fun PharmacyApp(repository: PharmacyRepository) {
     }
     }
 }
+
+
+internal suspend fun saveMedicineFromEditor(
+    repository: PharmacyRepository,
+    medicine: Medicine,
+    draftPhoto: ByteArray?,
+    removePhoto: Boolean,
+): AppSnapshot = repository.saveMedicine(medicine, draftPhoto, removePhoto)
