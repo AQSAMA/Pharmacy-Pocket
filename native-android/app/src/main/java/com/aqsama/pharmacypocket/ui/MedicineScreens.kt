@@ -69,12 +69,22 @@ import com.aqsama.pharmacypocket.data.listSubcategories
 import com.aqsama.pharmacypocket.data.subcategoryKey
 import com.aqsama.pharmacypocket.data.subcategoryLabel
 import java.util.UUID
-import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
+
+internal data class EditorPhotoChange(
+    val draftPhoto: ByteArray?,
+    val removeStoredPhoto: Boolean,
+)
+
+internal fun acceptEditorPhoto(bytes: ByteArray): EditorPhotoChange =
+    EditorPhotoChange(draftPhoto = bytes, removeStoredPhoto = false)
+
+internal fun removeEditorPhoto(): EditorPhotoChange =
+    EditorPhotoChange(draftPhoto = null, removeStoredPhoto = true)
 
 @Composable
 fun MedicineEditorScreen(
@@ -88,8 +98,8 @@ fun MedicineEditorScreen(
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
-    photoPath: String?,
-    onPhotoPath: (String?) -> Unit,
+    draftPhoto: ByteArray?,
+    onDraftPhotoChange: (ByteArray?) -> Unit,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -115,8 +125,6 @@ fun MedicineEditorScreen(
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
     var showScanner by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
-    var draftPhoto by remember(photoPath) { mutableStateOf<ByteArray?>(null) }
-    var draftLoading by remember(photoPath) { mutableStateOf(photoPath != null) }
     var photoProcessing by remember { mutableStateOf(false) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
@@ -131,16 +139,6 @@ fun MedicineEditorScreen(
     LaunchedEffect(existing?.id, existing?.hasPhoto) {
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
     }
-    LaunchedEffect(photoPath) {
-        try {
-            draftPhoto = photoPath?.let { path -> withContext(Dispatchers.IO) {
-                File(path).takeIf { it.isFile }?.readBytes()
-            } }
-        } finally {
-            draftLoading = false
-            if (photoPath != null && draftPhoto == null) mediaExpanded = true
-        }
-    }
     LaunchedEffect(draftPhoto, mediaExpanded, revealPhotoAfterLoad) {
         if (draftPhoto != null && mediaExpanded && revealPhotoAfterLoad) {
             photoBringIntoViewRequester.bringIntoView()
@@ -152,18 +150,14 @@ fun MedicineEditorScreen(
         photoProcessing = true
         scope.launch {
             try {
-                val path = withContext(Dispatchers.IO) {
-                    val bytes = prepareMedicinePhoto(context, uri)
-                    val draft = File(context.noBackupFilesDir, "medicine_drafts/draft-${UUID.randomUUID()}.jpg")
-                    draft.parentFile?.mkdirs()
-                    draft.writeBytes(bytes)
-                    draft.absolutePath
+                val bytes = withContext(Dispatchers.IO) {
+                    prepareMedicinePhoto(context, uri)
                 }
-                if (busy) {
-                    File(path).delete()
-                } else {
+                if (!busy) {
+                    val change = acceptEditorPhoto(bytes)
+                    removePhoto = change.removeStoredPhoto
                     revealPhotoAfterLoad = true
-                    onPhotoPath(path)
+                    onDraftPhotoChange(change.draftPhoto)
                     mediaExpanded = true
                 }
             } catch (error: Exception) {
@@ -250,7 +244,7 @@ fun MedicineEditorScreen(
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
                 Button(
-                    enabled = !busy && !photoProcessing && !draftLoading && (photoPath == null || draftPhoto != null),
+                    enabled = !busy && !photoProcessing,
                     onClick = ::submit,
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 54.dp),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp),
@@ -495,20 +489,14 @@ fun MedicineEditorScreen(
                                     }
                                     TextButton(
                                         enabled = !busy,
-                                        onClick = { onPhotoPath(null); removePhoto = true },
+                                        onClick = {
+                                            val change = removeEditorPhoto()
+                                            onDraftPhotoChange(change.draftPhoto)
+                                            removePhoto = change.removeStoredPhoto
+                                        },
                                     ) { Text("Remove photo") }
                                 }
 
-                                if (photoPath != null && draftPhoto == null && !draftLoading) {
-                                    Text(
-                                        "Photo is unavailable. Choose it again before saving.",
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                    TextButton(
-                                        enabled = !busy,
-                                        onClick = { onPhotoPath(null) },
-                                    ) { Text("Discard missing photo") }
-                                }
                             }
                         }
                     }
@@ -572,22 +560,12 @@ fun MedicineEditorScreen(
         existingCodes = codes.mapTo(mutableSetOf()) { it.value },
         onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind, code.label)) },
         onPhoto = { bytes, acknowledge ->
-            scope.launch {
-                try {
-                    val path = withContext(Dispatchers.IO) {
-                        File(context.noBackupFilesDir, "medicine_drafts/draft-${UUID.randomUUID()}.jpg").also {
-                            it.parentFile?.mkdirs()
-                            it.writeBytes(bytes)
-                        }.absolutePath
-                    }
-                    revealPhotoAfterLoad = true
-                    onPhotoPath(path)
-                    mediaExpanded = true
-                    acknowledge("Added photo")
-                } catch (error: Exception) {
-                    acknowledge(error.message ?: "Could not save photo")
-                }
-            }
+            val change = acceptEditorPhoto(bytes)
+            removePhoto = change.removeStoredPhoto
+            revealPhotoAfterLoad = true
+            onDraftPhotoChange(change.draftPhoto)
+            mediaExpanded = true
+            acknowledge("Added photo")
         },
         onDismiss = { showScanner = false },
     )
@@ -703,12 +681,13 @@ fun MedicineDetailScreen(
     onToggleFavorite: (Medicine) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
+    photoVersion: Int,
 ) {
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
     var confirmTrash by remember { mutableStateOf(false) }
     var photo by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
-    LaunchedEffect(medicineId, snapshot.items) {
+    LaunchedEffect(medicineId, item?.hasPhoto, photoVersion) {
         photo = if (item?.hasPhoto == true) loadPhoto(medicineId) else null
     }
 
