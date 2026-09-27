@@ -101,6 +101,10 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
     },
 )
 
+internal fun bumpPhotoVersion(versions: MutableMap<String, Int>, medicineId: String) {
+    versions[medicineId] = (versions[medicineId] ?: 0) + 1
+}
+
 private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
     save = { drafts -> drafts.entries.flatMap { entry -> listOf(entry.key, entry.value) } },
     restore = { parts ->
