@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -123,6 +125,8 @@ fun MedicineEditorScreen(
     var mediaExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
     var detailsExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
     var manualCodeExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
+    var revealPhotoAfterLoad by remember { mutableStateOf(false) }
+    val photoBringIntoViewRequester = remember { BringIntoViewRequester() }
 
     LaunchedEffect(existing?.id, existing?.hasPhoto) {
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
@@ -135,6 +139,12 @@ fun MedicineEditorScreen(
         } finally {
             draftLoading = false
             if (photoPath != null && draftPhoto == null) mediaExpanded = true
+        }
+    }
+    LaunchedEffect(draftPhoto, mediaExpanded, revealPhotoAfterLoad) {
+        if (draftPhoto != null && mediaExpanded && revealPhotoAfterLoad) {
+            photoBringIntoViewRequester.bringIntoView()
+            revealPhotoAfterLoad = false
         }
     }
 
@@ -152,6 +162,7 @@ fun MedicineEditorScreen(
                 if (busy) {
                     File(path).delete()
                 } else {
+                    revealPhotoAfterLoad = true
                     onPhotoPath(path)
                     mediaExpanded = true
                 }
@@ -475,7 +486,10 @@ fun MedicineEditorScreen(
                                         Image(
                                             it,
                                             contentDescription = "Medicine photo",
-                                            modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 220.dp)
+                                                .bringIntoViewRequester(photoBringIntoViewRequester),
                                             contentScale = ContentScale.Fit,
                                         )
                                     }
@@ -566,6 +580,7 @@ fun MedicineEditorScreen(
                             it.writeBytes(bytes)
                         }.absolutePath
                     }
+                    revealPhotoAfterLoad = true
                     onPhotoPath(path)
                     mediaExpanded = true
                     acknowledge("Added photo")
