@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -113,6 +114,9 @@ fun MedicineEditorScreen(
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
+    var mediaExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
+    var detailsExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
+    var manualCodeExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
 
     LaunchedEffect(existing?.id, existing?.hasPhoto) {
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
@@ -124,6 +128,7 @@ fun MedicineEditorScreen(
             } }
         } finally {
             draftLoading = false
+            if (photoPath != null && draftPhoto == null) mediaExpanded = true
         }
     }
 
@@ -220,6 +225,16 @@ fun MedicineEditorScreen(
     Scaffold(
         topBar = { ScreenTopBar(if (existing == null) "Add medicine" else "Edit medicine", onBack) },
         containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
+                Button(
+                    enabled = !busy && !photoProcessing && !draftLoading && (photoPath == null || draftPhoto != null),
+                    onClick = ::submit,
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 54.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp),
+                ) { Text(if (busy) "Saving…" else "Save medicine", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold) }
+            }
+        },
     ) { padding ->
         androidx.compose.foundation.lazy.LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -232,48 +247,6 @@ fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
-
-                    Text("Product codes and price stickers", fontWeight = FontWeight.Bold)
-                    Text("Codes identify a package. Sticker QR data does not set the price; verify and enter the price below.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                    codes.forEach { code ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${when (code.kind) { CodeKind.PRICE_STICKER_QR -> "Sticker QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "Barcode" }}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
-                                modifier = Modifier.weight(1f), maxLines = 2)
-                            TextButton(onClick = { codes = codes.filterNot { it == code } }) { Text("Remove") }
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = ::openCamera) { Text("Camera · scan or photo") }
-                    }
-                    Field("Enter code manually", codeDraft, { codeDraft = it })
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { codeKind = CodeKind.BARCODE }) {
-                            Text(if (codeKind == CodeKind.BARCODE) "✓ Barcode" else "Barcode")
-                        }
-                        TextButton(onClick = { codeKind = CodeKind.PRICE_STICKER_QR }) {
-                            Text(if (codeKind == CodeKind.PRICE_STICKER_QR) "✓ Sticker QR" else "Sticker QR")
-                        }
-                        TextButton(onClick = { codeKind = CodeKind.QR }) {
-                            Text(if (codeKind == CodeKind.QR) "✓ QR" else "QR")
-                        }
-                        TextButton(onClick = { proposeCode(codeDraft, codeKind) }) { Text("Add") }
-                    }
-
-                    Text("Medicine photo", fontWeight = FontWeight.Bold)
-                    (draftPhoto ?: if (removePhoto) null else savedPhoto)?.let { bytes ->
-                        val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
-                        bitmap?.let { Image(it, contentDescription = "Medicine photo", modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
-                        TextButton(enabled = !busy, onClick = { onPhotoPath(null); removePhoto = true }) { Text("Remove photo") }
-                    }
-                    if (photoPath != null && draftPhoto == null && !draftLoading) {
-                        Text("Photo is unavailable. Choose it again before saving.", color = MaterialTheme.colorScheme.error)
-                        TextButton(enabled = !busy, onClick = { onPhotoPath(null) }) { Text("Discard missing photo") }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(enabled = !busy && !photoProcessing, onClick = ::openCamera) { Text("Take photo") }
-                        TextButton(enabled = !busy && !photoProcessing, onClick = { photoPicker.launch("image/*") }) { Text("Choose image") }
-                    }
 
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -342,48 +315,75 @@ fun MedicineEditorScreen(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         )
                     }
-
-                    Field("Supplied note", note, { note = it }, minLines = 3)
-                    Field(
-                        "Description",
-                        description,
-                        { description = it },
-                        minLines = 5,
-                        placeholder = "Details shown on the medicine page",
-                    )
-
                     Text(
                         "Prices use ${snapshot.currency}. A blank discounted price means no second price was supplied.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp,
-                        lineHeight = 19.sp,
                     )
-                    Button(
-                        enabled = !busy && !photoProcessing && !draftLoading && (photoPath == null || draftPhoto != null),
-                        onClick = ::submit,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 54.dp),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp),
-                    ) {
-                        Text(if (busy) "Saving…" else "Save medicine", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+
+                    TextButton(onClick = { mediaExpanded = !mediaExpanded }, modifier = Modifier.fillMaxWidth()) {
+                        Text("▣  Photo & codes  ·  ${codes.size} saved${if (draftPhoto != null || (!removePhoto && existing?.hasPhoto == true)) "  ·  Photo" else ""}  ${if (mediaExpanded) "⌃" else "⌄"}")
                     }
-                    if (existing != null) {
-                        Button(
-                            enabled = !busy,
-                            onClick = {
-                                Haptics.action(view)
-                                confirmTrash = true
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            ),
-                        ) {
-                            Text("Move to Trash", fontWeight = FontWeight.ExtraBold)
+                    if (mediaExpanded) {
+                        Text("Product codes and price stickers", fontWeight = FontWeight.Bold)
+                        Text("Sticker QR data is stored as a code. Enter the price yourself.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        codes.forEach { code ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("${when (code.kind) { CodeKind.PRICE_STICKER_QR -> "Sticker QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "Barcode" }}${code.label.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}: ${code.value.take(45)}",
+                                    modifier = Modifier.weight(1f), maxLines = 2)
+                                TextButton(onClick = { codes = codes.filterNot { it == code } }) { Text("Remove") }
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(enabled = !busy && !photoProcessing, onClick = ::openCamera) { Text("Open camera") }
+                            TextButton(enabled = !busy && !photoProcessing, onClick = { photoPicker.launch("image/*") }) { Text("Choose image") }
+                        }
+                        TextButton(onClick = { manualCodeExpanded = !manualCodeExpanded }) { Text("Enter code manually ${if (manualCodeExpanded) "⌃" else "⌄"}") }
+                        if (manualCodeExpanded) {
+                            Field("Code", codeDraft, { codeDraft = it })
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = { codeKind = CodeKind.BARCODE }) {
+                                    Text(if (codeKind == CodeKind.BARCODE) "✓ Barcode" else "Barcode")
+                                }
+                                TextButton(onClick = { codeKind = CodeKind.PRICE_STICKER_QR }) {
+                                    Text(if (codeKind == CodeKind.PRICE_STICKER_QR) "✓ Sticker QR" else "Sticker QR")
+                                }
+                                TextButton(onClick = { codeKind = CodeKind.QR }) {
+                                    Text(if (codeKind == CodeKind.QR) "✓ QR" else "QR")
+                                }
+                                TextButton(onClick = { proposeCode(codeDraft, codeKind) }) { Text("Add") }
+                            }
+                        }
+
+                        (draftPhoto ?: if (removePhoto) null else savedPhoto)?.let { bytes ->
+                            val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
+                            bitmap?.let { Image(it, contentDescription = "Medicine photo", modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp), contentScale = ContentScale.Fit) }
+                            TextButton(enabled = !busy, onClick = { onPhotoPath(null); removePhoto = true }) { Text("Remove photo") }
+                        }
+                        if (photoPath != null && draftPhoto == null && !draftLoading) {
+                            Text("Photo is unavailable. Choose it again before saving.", color = MaterialTheme.colorScheme.error)
+                            TextButton(enabled = !busy, onClick = { onPhotoPath(null) }) { Text("Discard missing photo") }
+                        }
+                    }
+
+                    TextButton(onClick = { detailsExpanded = !detailsExpanded }, modifier = Modifier.fillMaxWidth()) {
+                        Text("More details${if (note.isNotBlank() || description.isNotBlank()) "  ·  Notes saved" else ""}  ${if (detailsExpanded) "⌃" else "⌄"}")
+                    }
+                    if (detailsExpanded) {
+                        Field("Supplied note", note, { note = it }, minLines = 3)
+                        Field(
+                            "Description",
+                            description,
+                            { description = it },
+                            minLines = 5,
+                            placeholder = "Details shown on the medicine page",
+                        )
+                        if (existing != null) {
+                            TextButton(
+                                enabled = !busy,
+                                onClick = { Haptics.action(view); confirmTrash = true },
+                            ) { Text("Move to Trash", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }

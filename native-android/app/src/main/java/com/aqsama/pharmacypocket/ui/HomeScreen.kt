@@ -3,14 +3,10 @@ package com.aqsama.pharmacypocket.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,9 +24,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -140,7 +135,7 @@ fun HomeScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
-    var addMenu by remember { mutableStateOf(false) }
+    val addCategory = if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 
     val searchIndex = remember(snapshot.items) { buildSearchIndex(snapshot.items) }
@@ -328,11 +323,27 @@ fun HomeScreen(
                     Haptics.selection(view)
                     selectedSubcategory = it
                 },
-                onAdd = {
-                    Haptics.action(view)
-                    addMenu = true
-                },
             )
+        },
+        floatingActionButton = {
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        Haptics.action(view)
+                        onAddMedicine(addCategory, "photo")
+                    },
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.semantics { contentDescription = "Scan code or photograph new medicine" },
+                ) { Text("📷", fontSize = 20.sp) }
+                FloatingActionButton(
+                    onClick = {
+                        Haptics.action(view)
+                        onAddMedicine(addCategory, null)
+                    },
+                    modifier = Modifier.semantics { contentDescription = "Add medicine" },
+                ) { Text("+", fontSize = 30.sp) }
+            }
         },
     ) { padding ->
         LazyColumn(
@@ -420,27 +431,6 @@ fun HomeScreen(
         }
     }
 
-    if (addMenu) AlertDialog(
-        onDismissRequest = { addMenu = false },
-        title = { Text("Add medicine") },
-        text = {
-            Column {
-                listOf(
-                    "Enter details" to null,
-                    "Scan product barcode" to "barcode",
-                    "Scan price sticker QR" to "sticker",
-                    "Take medicine photo" to "photo",
-                    "Choose medicine image" to "gallery",
-                ).forEach { (label, start) ->
-                    TextButton(onClick = {
-                        addMenu = false
-                        onAddMedicine(if (category == "all") snapshot.categories.getOrNull(1)?.id ?: "syrups" else category, start)
-                    }) { Text(label) }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { addMenu = false }) { Text("Cancel") } },
-    )
 }
 
 /** Renders a header action with its accessibility label and optional count badge. */
@@ -541,7 +531,7 @@ private fun BreadcrumbChip(
     }
 }
 
-/** Keeps the Add action fixed beside the independently scrollable category rows. */
+/** Keeps category controls scrollable across the full screen width. */
 @Composable
 private fun HomeBottomBar(
     snapshot: AppSnapshot,
@@ -551,93 +541,64 @@ private fun HomeBottomBar(
     selectedSubcategory: String?,
     onSelectCategory: (String) -> Unit,
     onSelectSubcategory: (String?) -> Unit,
-    onAdd: () -> Unit,
 ) {
+    var subcategoriesOpen by rememberSaveable { mutableStateOf(false) }
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 7.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        BoxWithConstraints(
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            val compact = maxWidth < 360.dp
-            val addWidth = if (compact) 58.dp else 104.dp
-
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                Row(
+                    Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        snapshot.categories.forEach { item ->
-                            SoftChip(
-                                label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                                selected = category == item.id,
-                                accent = if (item.id == "all") null else colorFromHex(item.color),
-                                onClick = { onSelectCategory(item.id) },
-                            )
-                        }
-                    }
-                    if (subcategories.isNotEmpty()) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            SoftChip(
-                                label = "All subcategories",
-                                selected = selectedSubcategory == null,
-                                onClick = { onSelectSubcategory(null) },
-                            )
-                            subcategories.forEach { (key, label) ->
-                                SoftChip(
-                                    label = label,
-                                    selected = selectedSubcategory == key,
-                                    onClick = { onSelectSubcategory(key) },
-                                )
-                            }
-                        }
+                    snapshot.categories.forEach { item ->
+                        SoftChip(
+                            label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
+                            selected = category == item.id,
+                            accent = if (item.id == "all") null else colorFromHex(item.color),
+                            onClick = { onSelectCategory(item.id) },
+                        )
                     }
                 }
-
-                Button(
-                    onClick = onAdd,
-                    modifier = Modifier
-                        .widthIn(min = addWidth, max = addWidth)
-                        .fillMaxHeight()
-                        .heightIn(min = 48.dp)
-                        .semantics { contentDescription = "Add medicine" },
-                    contentPadding = PaddingValues(
-                        horizontal = if (compact) 4.dp else 12.dp,
-                        vertical = 8.dp,
-                    ),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    ),
-                    shape = RoundedCornerShape(15.dp),
-                ) {
-                    Text(
-                        if (compact) "＋" else "＋ Add",
-                        fontSize = if (compact) 21.sp else 14.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
+                if (subcategories.isNotEmpty()) {
+                    SoftChip(
+                        label = if (selectedSubcategory != null) "Subcategory ✓" else "Subcategories ${if (subcategoriesOpen) "⌃" else "⌄"}",
+                        selected = subcategoriesOpen || selectedSubcategory != null,
+                        onClick = { subcategoriesOpen = !subcategoriesOpen },
                     )
+                }
+            }
+            if (subcategories.isNotEmpty() && subcategoriesOpen) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SoftChip(
+                        label = "All subcategories",
+                        selected = selectedSubcategory == null,
+                        onClick = { onSelectSubcategory(null) },
+                    )
+                    subcategories.forEach { (key, label) ->
+                        SoftChip(
+                            label = label,
+                            selected = selectedSubcategory == key,
+                            onClick = { onSelectSubcategory(key) },
+                        )
+                    }
                 }
             }
         }
