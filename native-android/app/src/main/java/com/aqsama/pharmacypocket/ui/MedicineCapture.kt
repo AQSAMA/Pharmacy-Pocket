@@ -4,12 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
-import android.graphics.Matrix
-import android.media.ExifInterface
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -643,7 +639,7 @@ private fun codeKindLabel(kind: CodeKind): String = when (kind) {
     CodeKind.BARCODE -> "Barcode"
 }
 
-@OptIn(androidx.camera.core.ExperimentalGetImage::class)
+@androidx.camera.core.ExperimentalGetImage
 @Composable
 private fun LiveMedicineCamera(
     enabled: Boolean,
@@ -805,77 +801,12 @@ fun prepareMedicinePhoto(context: Context, uri: Uri): ByteArray =
     encodeMedicineBitmap(decodeMedicineBitmap(context, uri))
 
 private fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        val source = ImageDecoder.createSource(context.contentResolver, uri)
-        return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-            val sample = max(1, ((max(info.size.width, info.size.height).toLong() + 1199L) / 1200L).toInt())
-            decoder.setTargetSampleSize(sample)
-            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-        }
+    val source = ImageDecoder.createSource(context.contentResolver, uri)
+    return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        val sample = max(1, ((max(info.size.width, info.size.height).toLong() + 1199L) / 1200L).toInt())
+        decoder.setTargetSampleSize(sample)
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
     }
-
-    val resolver = context.contentResolver
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    resolver.openInputStream(uri)?.use { stream ->
-        BitmapFactory.decodeStream(stream, null, bounds)
-    } ?: throw IllegalArgumentException("Could not open the selected photo.")
-    require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Could not decode the selected photo." }
-
-    var sample = 1
-    while (max(bounds.outWidth, bounds.outHeight) / sample > 1200) sample *= 2
-    val decoded = resolver.openInputStream(uri)?.use { stream ->
-        BitmapFactory.decodeStream(
-            stream,
-            null,
-            BitmapFactory.Options().apply { inSampleSize = sample },
-        )
-    } ?: throw IllegalArgumentException("Could not decode the selected photo.")
-
-    val orientation = runCatching {
-        resolver.openInputStream(uri)?.use { stream ->
-            ExifInterface(stream).getAttributeInt(
-                ExifInterface.TAG_ORIENTATION,
-                ExifInterface.ORIENTATION_NORMAL,
-            )
-        } ?: ExifInterface.ORIENTATION_NORMAL
-    }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
-
-    return applyExifOrientation(decoded, orientation)
-}
-
-private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
-    val matrix = Matrix()
-    when (orientation) {
-        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
-        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
-        ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
-            matrix.setRotate(180f)
-            matrix.postScale(-1f, 1f)
-        }
-        ExifInterface.ORIENTATION_TRANSPOSE -> {
-            matrix.setRotate(90f)
-            matrix.postScale(-1f, 1f)
-        }
-        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
-        ExifInterface.ORIENTATION_TRANSVERSE -> {
-            matrix.setRotate(-90f)
-            matrix.postScale(-1f, 1f)
-        }
-        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
-        else -> return bitmap
-    }
-    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also { transformed ->
-        if (transformed !== bitmap) bitmap.recycle()
-    }
-}
-
-internal fun cropMedicineBitmap(bitmap: Bitmap, square: Boolean, horizontal: Float, vertical: Float): Bitmap {
-    val ratio = if (square) 1f else if (bitmap.height > bitmap.width) 3f / 4f else 4f / 3f
-    val width = minOf(bitmap.width, (bitmap.height * ratio).toInt()).coerceAtLeast(1)
-    val height = minOf(bitmap.height, (bitmap.width / ratio).toInt()).coerceAtLeast(1)
-    val x = ((bitmap.width - width) * horizontal.coerceIn(0f, 1f)).toInt()
-    val y = ((bitmap.height - height) * vertical.coerceIn(0f, 1f)).toInt()
-    return Bitmap.createBitmap(bitmap, x, y, width, height)
 }
 
 private fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
