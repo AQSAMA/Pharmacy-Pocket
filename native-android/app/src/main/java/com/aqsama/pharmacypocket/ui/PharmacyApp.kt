@@ -473,6 +473,10 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         }
                     },
                     onDismiss = { quickCaptureId = null },
+                    onOpenMedicine = {
+                        quickCaptureId = null
+                        push(Destination.Detail(id))
+                    },
                 )
             }
         }
