@@ -37,7 +37,7 @@ android {
 
     defaultConfig {
         applicationId = "com.aqsama.pharmacypocket"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 36
         versionCode = computedVersionCode
         versionName = pharmacyVersion
