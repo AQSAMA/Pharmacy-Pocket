@@ -3,6 +3,33 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val pharmacyVersion = rootProject.file("VERSION").readText().trim()
+val versionMatch = Regex("""^(\d+)\.(\d+)\.(\d+)$""").matchEntire(pharmacyVersion)
+    ?: throw GradleException("VERSION must contain MAJOR.MINOR.PATCH, for example 3.0.0.")
+val (majorText, minorText, patchText) = versionMatch.destructured
+val versionMajor = majorText.toLong()
+val versionMinor = minorText.toLong()
+val versionPatch = patchText.toLong()
+if (versionMinor > 999L || versionPatch > 9_999L) {
+    throw GradleException("VERSION minor must be <= 999 and patch must be <= 9999.")
+}
+val computedVersionCodeLong = versionMajor * 10_000_000L + versionMinor * 10_000L + versionPatch
+if (computedVersionCodeLong !in 1L..2_100_000_000L) {
+    throw GradleException("VERSION produces an Android versionCode outside the supported range.")
+}
+val computedVersionCode = computedVersionCodeLong.toInt()
+
+val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull?.takeIf { it.isNotBlank() }
+val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull?.takeIf { it.isNotBlank() }
+val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull?.takeIf { it.isNotBlank() }
+val releaseSigningMissing = buildList {
+    if (releaseKeystorePath == null) add("ANDROID_KEYSTORE_PATH")
+    if (releaseKeystorePassword == null) add("ANDROID_KEYSTORE_PASSWORD")
+    if (releaseKeyAlias == null) add("ANDROID_KEY_ALIAS")
+    if (releaseKeyPassword == null) add("ANDROID_KEY_PASSWORD")
+}
+
 android {
     namespace = "com.aqsama.pharmacypocket"
     compileSdk = 37
@@ -10,34 +37,18 @@ android {
 
     defaultConfig {
         applicationId = "com.aqsama.pharmacypocket"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 36
-        versionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 30_000_000
-        versionName = "3.0.0-native"
+        versionCode = computedVersionCode
+        versionName = pharmacyVersion
     }
 
     signingConfigs {
-        create("preview") {
-            // Intentionally public test key. Never use this identity for production.
-            storeFile = rootProject.file("signing/preview.jks")
-            storePassword = "pharmacy-pocket-preview"
-            keyAlias = "preview"
-            keyPassword = "pharmacy-pocket-preview"
-        }
-    }
-
-    flavorDimensions += "distribution"
-    productFlavors {
-        create("preview") {
-            dimension = "distribution"
-            applicationIdSuffix = ".native"
-            versionNameSuffix = "-preview"
-            resValue("string", "app_name", "Pharmacy Pocket Native")
-            signingConfig = signingConfigs.getByName("preview")
-        }
-        create("production") {
-            dimension = "distribution"
-            resValue("string", "app_name", "Pharmacy Pocket")
+        create("release") {
+            storeFile = file(releaseKeystorePath ?: "missing-release-keystore")
+            storePassword = releaseKeystorePassword ?: ""
+            keyAlias = releaseKeyAlias ?: ""
+            keyPassword = releaseKeyPassword ?: ""
         }
     }
 
@@ -47,8 +58,21 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            resValue("string", "app_name", "Pharmacy Pocket Dev")
+        }
         release {
-            isMinifyEnabled = false
+            isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            resValue("string", "app_name", "Pharmacy Pocket")
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -61,8 +85,22 @@ android {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/LICENSE*",
-            "/META-INF/NOTICE*"
+            "/META-INF/NOTICE*",
         )
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        if (releaseSigningMissing.isNotEmpty()) {
+            throw GradleException(
+                "Release signing is required. Missing environment variables: ${releaseSigningMissing.joinToString(", ")}",
+            )
+        }
+        val keystore = file(requireNotNull(releaseKeystorePath))
+        if (!keystore.isFile) {
+            throw GradleException("Release signing is required: ANDROID_KEYSTORE_PATH does not point to a readable file.")
+        }
     }
 }
 

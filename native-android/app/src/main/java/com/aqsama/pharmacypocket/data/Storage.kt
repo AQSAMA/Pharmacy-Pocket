@@ -614,6 +614,17 @@ class PharmacyRepository(context: Context) {
 
     suspend fun restoreAllTrash(): AppSnapshot = withContext(Dispatchers.IO) {
         mutex.withLock {
+            val activeCodes = database.loadMedicines()
+                .flatMap { item -> item.codes }
+                .mapTo(mutableSetOf()) { code -> code.value }
+            val restoringCodes = mutableSetOf<String>()
+            database.loadTrash().forEach { trashed ->
+                trashed.medicine.codes.forEach { code ->
+                    require(code.value !in activeCodes && restoringCodes.add(code.value)) {
+                        "One or more codes are already assigned to another medicine. Resolve code conflicts before restoring all."
+                    }
+                }
+            }
             database.restoreAll()
             snapshotUnsafe()
         }

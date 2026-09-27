@@ -1,30 +1,44 @@
 # Pharmacy Pocket
 
-This repository temporarily contains both Android implementations of Pharmacy Pocket while the native rewrite matures.
-
-## Applications
-
-| Folder | Stack | Android application ID | Role |
-| --- | --- | --- | --- |
-| `legacy-expo/` | Expo + React Native | `com.aqsama.pharmacypocket` | Current/reference application |
-| `native-android/` preview flavor | Kotlin + Jetpack Compose | `com.aqsama.pharmacypocket.native` | Side-by-side native testing |
-| `native-android/` production flavor | Kotlin + Jetpack Compose | `com.aqsama.pharmacypocket` | Reserved for eventual cutover |
-
-The Expo app and native preview can be installed on the same Android device at the same time.
-
-## Migration strategy
-
-During the maturation period, the two apps are independent installations. Exchange data through the shared Pharmacy Pocket JSON backup format.
-
-When the native application is approved, the production flavor can take over the original application ID. Before using it as an in-place update, Android signing compatibility with the installed legacy app must be configured and verified.
+Pharmacy Pocket is a native Android application written in Kotlin with Jetpack Compose. The native app in `native-android/` is the canonical and only application in this repository.
 
 ## Repository layout
 
-    Pharmacy-Pocket/
-    ├── legacy-expo/
-    ├── native-android/
-    ├── .github/workflows/
-    ├── .gitignore
-    └── README.md
+- `native-android/` — Android application, unit tests, Gradle configuration, and version source.
+- `.github/workflows/android-ci.yml` — pull-request and normal-commit validation.
+- `.github/workflows/android-release.yml` — signed production releases from semantic-version tags.
+- `RELEASING.md` — production signing and release procedure.
 
-CI is path-scoped: changes to one application build and test that application without unnecessarily building the other.
+The Android project intentionally remains under `native-android/`. Removing the obsolete Expo application makes the repository unambiguous without a path-only move that would add migration risk and noisy history.
+
+## Build locally
+
+Requirements:
+
+- JDK 17
+- Android SDK platform 37
+- Android Build Tools 36.0.0
+- Gradle 9.6
+
+From the repository root:
+
+```sh
+cd native-android
+gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+```
+
+The debug build uses `com.aqsama.pharmacypocket.debug` so it can be installed beside the production app.
+
+## Data compatibility
+
+The production application ID remains `com.aqsama.pharmacypocket`.
+
+The native storage layer deliberately retains the final migration path from the old Expo application: it opens the existing `SQLite/pharmacy-pocket.db` database in place, upgrades its schema, and imports the old Expo preference store when present. JSON backups from earlier Pharmacy Pocket versions remain supported.
+
+Android will preserve the old app's private data during an in-place update only when the new APK has a higher version code **and is signed with the same certificate as the installed legacy package**. See `RELEASING.md` before the first production release.
+
+## Releases
+
+Application versioning lives in `native-android/VERSION`. Production releases are intentionally created from tags such as `v3.0.0`; pull requests never create GitHub Releases.
+
+Release builds require production signing credentials and fail rather than falling back to an unsigned or debug-signed package. See `RELEASING.md` for the exact secrets and one-time key setup.

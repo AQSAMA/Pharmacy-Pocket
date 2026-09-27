@@ -1,58 +1,41 @@
-# Pharmacy Pocket Native
+# Pharmacy Pocket Android
 
-This folder contains the Kotlin + Jetpack Compose reimplementation of Pharmacy Pocket.
+This is the canonical Pharmacy Pocket application: Kotlin + Jetpack Compose, offline-first SQLite storage, and native Android camera/barcode support.
 
-## Install identities
+## Identity
 
-The project intentionally has two flavors:
+- Production application ID: `com.aqsama.pharmacypocket`
+- Debug application ID: `com.aqsama.pharmacypocket.debug`
+- Version source: `VERSION`
 
-- `preview`: `com.aqsama.pharmacypocket.native`, shown as **Pharmacy Pocket Native**. This can be installed beside the Expo app and is the flavor used for development and GitHub prereleases.
-- `production`: `com.aqsama.pharmacypocket`, shown as **Pharmacy Pocket**. This is reserved for the eventual replacement of the legacy app.
-
-The Kotlin namespace remains `com.aqsama.pharmacypocket`; only the install-time application ID differs.
-
-## Data during side-by-side testing
-
-Android isolates private app storage by application ID. The preview app therefore cannot read the legacy Expo app's private SQLite files directly. Use Pharmacy Pocket JSON export/import to copy real data between the two apps while testing.
-
-The production flavor keeps the legacy application ID and retains the direct Expo SQLite/preferences migration code for the final cutover. An in-place Android update will also require compatible signing with the installed legacy app.
-
-## Included features
-
-- Native Kotlin + Jetpack Compose UI
-- SQLite offline storage
-- Arabic/English normalized search
-- Categories, subcategories and customizable colors
-- Favorites and all sorting modes
-- Official and optional customer-requested prices
-- Large-text mode
-- Add/edit/detail flows, descriptions and date added
-- Configurable currency
-- Native Android haptic feedback
-- JSON backup schema v1/v2 compatibility
-- Merge and replace imports
-- Android document picker/creator APIs
+The old Expo preview/production flavor split has been removed. Debug builds are the only side-by-side development identity; release builds always represent the real production package.
 
 ## Build
 
-Requirements: JDK 17, Android SDK 37.0, Build Tools 36.0.0 and Gradle 9.6.
+Requirements: JDK 17, Android SDK 37, Build Tools 36.0.0, and Gradle 9.6.
 
-From this folder:
+```sh
+gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+```
 
-    gradle testPreviewDebugUnitTest assemblePreviewRelease
+A production release build intentionally requires the release-signing environment variables documented in `../RELEASING.md`. Without them, release packaging fails clearly instead of producing an unsigned or debug-signed artifact.
 
-Preview APK:
+## Data migration and backup compatibility
 
-    app/build/outputs/apk/preview/release/app-preview-release.apk
+The production package preserves the original application ID and database path. On an accepted in-place Android upgrade, the native app upgrades the existing `SQLite/pharmacy-pocket.db` and migrates supported Expo preferences. Pharmacy Pocket JSON backup schemas from the previous applications remain importable.
 
-Preview builds use the repository's intentionally public **preview-only** signing key so successive side-loaded native previews can update one another without losing the preview app's private data. This key provides no production authenticity and must never be used for the final Pharmacy Pocket package.
+The source code for the obsolete Expo application is no longer required for this compatibility and has been removed.
 
-A preview release:
+## Main capabilities
 
-    gradle assemblePreviewRelease
+- Native Kotlin + Jetpack Compose UI
+- Offline SQLite storage
+- Arabic/English normalized search
+- Categories, subcategories, favorites, sorting, and custom category colors
+- Medicine notes, descriptions, prices, dates, barcode/QR data, and package photos
+- CameraX + ML Kit scanning
+- Trash/restore flow
+- JSON backup/import compatibility
+- Light/dark/system themes and large-text mode
 
-Production successor build:
-
-    gradle assembleProductionRelease
-
-Do not distribute the production flavor as an update to an installed legacy app until signing compatibility has been deliberately configured.
+See `../RELEASING.md` for production signing, versioning, and release instructions.
