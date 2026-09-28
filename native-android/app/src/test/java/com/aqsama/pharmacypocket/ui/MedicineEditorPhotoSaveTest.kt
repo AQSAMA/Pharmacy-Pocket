@@ -2,7 +2,9 @@ package com.aqsama.pharmacypocket.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.aqsama.pharmacypocket.data.Medicine
 import com.aqsama.pharmacypocket.data.PharmacyRepository
@@ -73,6 +75,68 @@ class MedicineEditorPhotoSaveTest {
         updateMedicinePhotoDraftPath(restored, "editor-entry", null, busy = false)
         assertFalse(restored.containsKey("editor-entry"))
         assertNull(readMedicinePhotoDraft(replacementPath))
+    }
+
+    @Test
+    fun galleryPickerReturnFlowsThroughEditorPreviewRestorationAndSave() = runBlocking {
+        val sourceFile = File(context.cacheDir, "gallery-picker-source.jpg")
+        val source = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.CYAN)
+        }
+        sourceFile.outputStream().use { output ->
+            assertTrue(source.compress(Bitmap.CompressFormat.JPEG, 92, output))
+        }
+
+        val drafts = mutableMapOf<String, String>()
+        val entryId = "picker-editor"
+        try {
+            val accepted = acceptEditorPickedPhoto(
+                context = context,
+                uri = Uri.fromFile(sourceFile),
+                isBusy = { false },
+                onDraftPhotoPathChange = { path ->
+                    updateMedicinePhotoDraftPath(drafts, entryId, path, busy = false)
+                },
+            )
+
+            assertTrue(accepted)
+            val draftPath = requireNotNull(drafts[entryId])
+            val previewBytes = requireNotNull(readMedicinePhotoDraft(draftPath))
+            val preview = requireNotNull(BitmapFactory.decodeByteArray(previewBytes, 0, previewBytes.size))
+            assertTrue(preview.width <= 1200)
+            assertTrue(preview.height <= 1200)
+            assertEquals(preview.width, preview.height * 2)
+
+            val restoredDrafts = restoreMedicinePhotoDraftPaths(
+                encodeMedicinePhotoDraftPaths(drafts),
+            )
+            val restoredPath = requireNotNull(restoredDrafts[entryId])
+            val restoredPreviewBytes = requireNotNull(readMedicinePhotoDraft(restoredPath))
+            val restoredPreview = requireNotNull(
+                BitmapFactory.decodeByteArray(restoredPreviewBytes, 0, restoredPreviewBytes.size),
+            )
+            assertEquals(preview.width, restoredPreview.width)
+            assertEquals(preview.height, restoredPreview.height)
+
+            val medicine = medicine("picker")
+            val saved = saveMedicineFromEditor(
+                repository = repository,
+                medicine = medicine,
+                draftPhotoPath = restoredPath,
+                removePhoto = false,
+            )
+
+            assertTrue(saved.items.single { it.id == "picker" }.hasPhoto)
+            val persisted = requireNotNull(repository.loadPhoto("picker"))
+            val persistedPreview = requireNotNull(
+                BitmapFactory.decodeByteArray(persisted, 0, persisted.size),
+            )
+            assertEquals(restoredPreview.width, persistedPreview.width)
+            assertEquals(restoredPreview.height, persistedPreview.height)
+        } finally {
+            sourceFile.delete()
+            drafts.values.forEach(::deleteMedicinePhotoDraft)
+        }
     }
 
     @Test
