@@ -71,6 +71,8 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -101,6 +103,7 @@ internal fun MedicineCameraScreen(
     onPhoto: (ByteArray, (MediaSaveResult) -> Unit) -> Unit,
     onDismiss: () -> Unit,
     onOpenMedicine: (() -> Unit)? = null,
+    state: MediaCaptureState? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -108,7 +111,6 @@ internal fun MedicineCameraScreen(
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
-    LaunchedEffect(Unit) { if (!allowed) request.launch(Manifest.permission.CAMERA) }
 
     var scannerAvailable by remember { mutableStateOf(true) }
     fun idleCameraMessage(): String =
@@ -116,11 +118,14 @@ internal fun MedicineCameraScreen(
         else "Code scanner unavailable. Photo capture still works."
 
     var message by remember { mutableStateOf("Scan a code or take a package photo") }
-    val captureState = remember { MediaCaptureState() }
+    val captureState = state ?: remember { MediaCaptureState() }
     val capturedFile = captureState.cropFile
     val capturing = captureState.capturing
     val saving = captureState.saving
     val pendingCode = captureState.code
+    LaunchedEffect(captureState) {
+        if (!allowed && captureState.scanning) request.launch(Manifest.permission.CAMERA)
+    }
     val disposed = remember { AtomicBoolean(false) }
     var lastCode by remember { mutableStateOf<MedicineCode?>(null) }
     var lastCodeState by remember { mutableStateOf<String?>(null) }
@@ -219,7 +224,7 @@ internal fun MedicineCameraScreen(
                     },
                 )
 
-                if (!allowed) {
+                if (!allowed && capturedFile == null) {
                     Column(
                         Modifier.weight(1f).padding(24.dp),
                         verticalArrangement = Arrangement.Center,
@@ -632,7 +637,7 @@ private fun CameraControlDeck(
                 Button(
                     onClick = onCapture,
                     enabled = canCapture,
-                    modifier = Modifier.size(76.dp),
+                    modifier = Modifier.size(76.dp).semantics { contentDescription = "Take package photo" },
                     shape = CircleShape,
                     contentPadding = PaddingValues(0.dp),
                     colors = ButtonDefaults.buttonColors(

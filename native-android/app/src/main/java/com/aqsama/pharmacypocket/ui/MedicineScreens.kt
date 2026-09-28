@@ -68,11 +68,10 @@ import com.aqsama.pharmacypocket.data.formatPrice
 import com.aqsama.pharmacypocket.data.listSubcategories
 import com.aqsama.pharmacypocket.data.subcategoryKey
 import com.aqsama.pharmacypocket.data.subcategoryLabel
+import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-
-private fun javaFile(path: String) = java.io.File(path)
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
@@ -109,14 +108,13 @@ internal fun MedicineEditorScreen(
     val codes = media.codes
     var codeDraft by rememberSaveable(medicineId) { mutableStateOf("") }
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
-    var showScanner by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     val draftPhoto = media.preview
     val draftPhotoPath = media.photoPath
     val draftLoading = draftPhotoPath != null && draftPhoto == null && media.error == null
     val photoProcessing = media.locked
     val removePhoto = media.removePhoto
-    val gallerySource = media.cropSource?.let(::javaFile)
+    val gallerySource = media.cropSource?.let(::File)
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
@@ -156,7 +154,7 @@ internal fun MedicineEditorScreen(
     fun launchGallery() {
         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
-    fun openCamera() { showScanner = true }
+    fun openCamera() { media.openCamera() }
     LaunchedEffect(initialCapture) {
         if (!initialCaptureStarted) {
             initialCaptureStarted = true
@@ -550,7 +548,8 @@ internal fun MedicineEditorScreen(
         )
     }
 
-    if (showScanner) MedicineCameraScreen(
+    media.captureState?.let { captureState -> MedicineCameraScreen(
+        state = captureState,
         title = existing?.name ?: "New medicine",
         existingCodes = codes.mapTo(mutableSetOf()) { it.value },
         onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind, code.label)) },
@@ -561,15 +560,15 @@ internal fun MedicineEditorScreen(
                     revealPhotoAfterLoad = true
                     mediaExpanded = true
                     acknowledge(MediaSaveResult(true, "Added photo to medicine draft"))
-                    showScanner = false
+                    media.closeCamera()
                 } catch (error: Exception) {
                     if (error is CancellationException) throw error
                     acknowledge(MediaSaveResult(false, error.message ?: "Could not save photo"))
                 }
             }
         },
-        onDismiss = { showScanner = false },
-    )
+        onDismiss = media::closeCamera,
+    ) }
 
     gallerySource?.let { source ->
         androidx.compose.ui.window.Dialog(

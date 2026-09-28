@@ -29,6 +29,8 @@ internal class MedicineMedia(
     enum class Phase { READY, PREPARING, CROPPING, SAVING, CLOSED }
     var phase by mutableStateOf(if (initialCropSource == null) Phase.READY else Phase.CROPPING)
         private set
+    var captureState by mutableStateOf<MediaCaptureState?>(null)
+        private set
     var cropSource by mutableStateOf(initialCropSource)
         private set
     var codes by mutableStateOf(initialCodes)
@@ -45,12 +47,24 @@ internal class MedicineMedia(
     val locked: Boolean get() = phase != Phase.READY
     private var generation = 0L
 
+    fun openCamera() {
+        check(!locked)
+        captureState?.close()
+        captureState = MediaCaptureState()
+    }
+
+    fun closeCamera() {
+        captureState?.close()
+        captureState = null
+    }
+
     fun updateCodes(next: List<MedicineCode>) {
         check(!locked) { "Finish the current media operation first." }
         codes = com.aqsama.pharmacypocket.data.validateCodes(next)
     }
 
     suspend fun restorePreview() {
+        if (preview != null) return
         val path = photoPath ?: return
         val token = generation
         val bytes = withContext(Dispatchers.IO) { readMedicinePhotoDraft(path) }
@@ -149,6 +163,7 @@ internal class MedicineMedia(
         deleteMedicinePhotoDraft(cropSource)
         cropSource = null
         phase = Phase.CLOSED
+        closeCamera()
         deleteMedicinePhotoDraft(photoPath)
         photoPath = null
         preview = null

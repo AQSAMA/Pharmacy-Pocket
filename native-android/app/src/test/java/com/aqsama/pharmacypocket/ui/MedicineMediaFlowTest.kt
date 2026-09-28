@@ -1,5 +1,13 @@
 package com.aqsama.pharmacypocket.ui
 
+import android.app.Activity
+import android.content.Intent
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.core.app.ActivityOptionsCompat
+import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -8,7 +16,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -55,25 +62,28 @@ class MedicineMediaFlowTest {
         val source = File(context.cacheDir, "flow-source.jpg")
         val bitmap = Bitmap.createBitmap(800, 400, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
         source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
-        val capture = MediaCaptureState()
-        if (gallery) runBlocking { media.pickPhoto(context, Uri.fromFile(source)) }
-        else { assertTrue(capture.capture(source)); capture.captured(source) }
-        var screen by mutableStateOf(if (gallery) "editor" else "crop")
+        if (!gallery) {
+            media.openCamera()
+            val capture = requireNotNull(media.captureState)
+            assertTrue(capture.capture(source))
+            capture.captured(source) // CameraX's completed output-file callback.
+        }
+        val registryOwner = object : ActivityResultRegistryOwner {
+            override val activityResultRegistry = object : ActivityResultRegistry() {
+                override fun <I, O> onLaunch(
+                    requestCode: Int, contract: ActivityResultContract<I, O>, input: I,
+                    options: ActivityOptionsCompat?,
+                ) {
+                    dispatchResult(requestCode, Activity.RESULT_OK, Intent().setData(Uri.fromFile(source)))
+                }
+            }
+        }
+        var screen by mutableStateOf("editor")
         var saved = false
         compose.setContent {
             val scope = rememberCoroutineScope()
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
             when (screen) {
-                "crop" -> MedicinePhotoCrop(
-                    file = requireNotNull(capture.cropFile), saving = capture.saving,
-                    onAccept = { bytes ->
-                        check(capture.savePhoto())
-                        scope.launch {
-                            media.acceptPhoto(context, bytes)
-                            capture.photoSaved(source, true)
-                            screen = "editor"
-                        }
-                    },
-                )
                 "editor" -> MedicineEditorScreen(
                     snapshot = snapshot, medicineId = medicine.id, initialCategory = null,
                     busy = false, onBack = {}, onManageCategories = {}, onMoveToTrash = {},
@@ -98,7 +108,14 @@ class MedicineMediaFlowTest {
                     loadPhoto = repository::loadPhoto, photoVersion = 1,
                 )
             }
+            }
         }
+        if (gallery) {
+            compose.onNodeWithText("Photo & codes").performScrollTo().performClick()
+            compose.onNodeWithText("Gallery").performScrollTo().performClick()
+            compose.waitUntil(10_000) { media.cropSource != null }
+        }
+        compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
         compose.onNodeWithText("Save photo").performClick()
         compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
