@@ -145,3 +145,11 @@ dependencies {
     testImplementation("androidx.test:core:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16.1")
 }
+
+// Keep regression failures actionable in CI, including the state/semantics dump.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
+}

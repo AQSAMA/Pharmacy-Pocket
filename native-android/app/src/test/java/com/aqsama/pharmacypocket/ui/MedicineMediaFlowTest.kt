@@ -20,6 +20,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.onAllNodes
+import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
@@ -110,13 +114,14 @@ class MedicineMediaFlowTest {
             }
             }
         }
+        try {
         if (gallery) {
             compose.onNodeWithText("Photo & codes").performScrollTo().performClick()
             compose.onNodeWithText("Gallery").performScrollTo().performClick()
             compose.waitUntil(10_000) { media.cropSource != null }
         }
         compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
-        compose.onNodeWithText("Save photo").performClick()
+        compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
         compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
         val accepted = requireNotNull(media.preview)
@@ -134,5 +139,12 @@ class MedicineMediaFlowTest {
         val reopened = PharmacyRepository(context)
         assertTrue(runBlocking { reopened.loadSnapshot() }.items.single { it.id == medicine.id }.hasPhoto)
         assertArrayEquals(accepted, runBlocking { reopened.loadPhoto(medicine.id) })
+        } catch (failure: Throwable) {
+            println("Media phase=${media.phase}, capture=${media.captureState?.phase}, preview=${media.preview?.size}, crop=${media.cropSource}, error=${media.error}")
+            val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true)
+            repeat(roots.fetchSemanticsNodes().size) { println(roots[it].printToString()) }
+            throw failure
+        }
+
     }
 }
