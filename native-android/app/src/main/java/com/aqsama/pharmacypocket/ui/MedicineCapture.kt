@@ -88,14 +88,17 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
+import kotlinx.coroutines.ensureActive
+
+internal data class MediaSaveResult(val success: Boolean, val message: String)
 
 /** Keeps one expressive camera open for code verification and package photography. */
 @Composable
-fun MedicineCameraScreen(
+internal fun MedicineCameraScreen(
     title: String,
     existingCodes: Set<String>,
-    onCode: (MedicineCode, (String) -> Unit) -> Unit,
-    onPhoto: (ByteArray, (String) -> Unit) -> Unit,
+    onCode: (MedicineCode, (MediaSaveResult) -> Unit) -> Unit,
+    onPhoto: (ByteArray, (MediaSaveResult) -> Unit) -> Unit,
     onDismiss: () -> Unit,
     onOpenMedicine: (() -> Unit)? = null,
 ) {
@@ -113,14 +116,12 @@ fun MedicineCameraScreen(
         else "Code scanner unavailable. Photo capture still works."
 
     var message by remember { mutableStateOf("Scan a code or take a package photo") }
-    var capturedFile by remember { mutableStateOf<File?>(null) }
-    var pendingCaptureFile by remember { mutableStateOf<File?>(null) }
-    var capturing by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
-    val latestCapturedFile by rememberUpdatedState(capturedFile)
-    val latestPendingCaptureFile by rememberUpdatedState(pendingCaptureFile)
+    val captureState = remember { MediaCaptureState() }
+    val capturedFile = captureState.cropFile
+    val capturing = captureState.capturing
+    val saving = captureState.saving
+    val pendingCode = captureState.code
     val disposed = remember { AtomicBoolean(false) }
-    var pendingCode by remember { mutableStateOf<MedicineCode?>(null) }
     var lastCode by remember { mutableStateOf<MedicineCode?>(null) }
     var lastCodeState by remember { mutableStateOf<String?>(null) }
     val ignoredCodes = remember { mutableStateListOf<String>() }
@@ -151,7 +152,7 @@ fun MedicineCameraScreen(
             return
         }
 
-        pendingCode = code
+        captureState.detect(code)
         lastCodeState = "Detected"
         message = "Check the detected value before saving"
         Haptics.selection(view)
@@ -159,11 +160,10 @@ fun MedicineCameraScreen(
 
     fun takePhoto() {
         val capture = imageCapture ?: return
-        if (capturing || handling.get()) return
+        if (capturedFile != null || saving || capturing || pendingCode != null || handling.get() || disposed.get()) return
         val file = File(context.cacheDir, "medicine_capture/${UUID.randomUUID()}.jpg")
         file.parentFile?.mkdirs()
-        pendingCaptureFile = file
-        capturing = true
+        if (!captureState.capture(file)) return
         message = "Taking photo…"
         try {
             capture.takePicture(
@@ -171,20 +171,16 @@ fun MedicineCameraScreen(
                 ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(result: ImageCapture.OutputFileResults) {
-                        pendingCaptureFile = null
-                        capturing = false
                         if (disposed.get()) {
                             file.delete()
                         } else {
-                            capturedFile = file
+                            captureState.captured(file)
                             message = "Frame the package, then save"
                         }
                     }
 
                     override fun onError(exception: ImageCaptureException) {
-                        file.delete()
-                        pendingCaptureFile = null
-                        capturing = false
+                        captureState.captureFailed(file)
                         if (!disposed.get()) {
                             message = "Could not take photo. Try again."
                             Haptics.reject(view)
@@ -193,9 +189,7 @@ fun MedicineCameraScreen(
                 },
             )
         } catch (error: Exception) {
-            file.delete()
-            pendingCaptureFile = null
-            capturing = false
+            captureState.captureFailed(file)
             message = "Could not open shutter. Try again."
             Haptics.reject(view)
         }
@@ -217,8 +211,7 @@ fun MedicineCameraScreen(
                     enabled = !saving && !capturing,
                     onClose = {
                         if (capturedFile != null) {
-                            capturedFile?.delete()
-                            capturedFile = null
+                            captureState.retake()
                             message = idleCameraMessage()
                         } else {
                             onDismiss()
@@ -246,7 +239,7 @@ fun MedicineCameraScreen(
                             .padding(horizontal = 10.dp)
                             .clip(RoundedCornerShape(28.dp)),
                     ) {
-                        LiveMedicineCamera(
+                        if (capturedFile == null) LiveMedicineCamera(
                             enabled = capturedFile == null && pendingCode == null && !capturing && !saving,
                             onCaptureReady = { imageCapture = it },
                             onDetected = ::receive,
@@ -261,19 +254,23 @@ fun MedicineCameraScreen(
                             MedicinePhotoCrop(
                                 file = file,
                                 saving = saving,
+                                statusMessage = message,
                                 onAccept = { bytes ->
-                                    saving = true
-                                    currentOnPhoto(bytes) { result ->
-                                        saving = false
-                                        message = result
-                                        val success = result.startsWith("Saved") || result.startsWith("Added")
+                                    if (!captureState.savePhoto()) return@MedicinePhotoCrop
+                                    try { currentOnPhoto(bytes) { result ->
+                                        if (disposed.get()) return@currentOnPhoto
+                                        message = result.message
+                                        val success = result.success
                                         if (success) {
                                             Haptics.confirm(view)
-                                            file.delete()
-                                            capturedFile = null
+
                                         } else {
                                             Haptics.reject(view)
                                         }
+                                        captureState.photoSaved(file, success)
+                                    } } catch (error: Exception) {
+                                        captureState.photoSaved(file, false)
+                                        message = error.message ?: "Could not save photo"
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),
@@ -325,21 +322,21 @@ fun MedicineCameraScreen(
                                     modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
                                     onSkip = {
                                         if (detected.value !in ignoredCodes) ignoredCodes.add(detected.value)
-                                        pendingCode = null
+                                        captureState.retake()
                                         lastCodeState = "Skipped"
                                         message = "Skipped · keep scanning or take a photo"
                                         handling.set(false)
                                     },
                                     onSave = { kind, label ->
                                         val accepted = detected.copy(kind = kind, label = label)
-                                        pendingCode = null
+                                        if (!captureState.saveCode()) return@DetectedCodeCard
                                         lastCode = accepted
                                         lastCodeState = "Saving…"
-                                        saving = true
                                         try {
                                             currentOnCode(accepted) { result ->
-                                                saving = false
-                                                val success = result.startsWith("Saved") || result.startsWith("Added")
+                                                if (disposed.get()) return@currentOnCode
+                                                captureState.codeSaved(detected)
+                                                val success = result.success
                                                 if (success) {
                                                     seen.add(detected.value)
                                                     if (detected.value !in ignoredCodes) ignoredCodes.add(detected.value)
@@ -349,11 +346,11 @@ fun MedicineCameraScreen(
                                                     lastCodeState = "Not saved"
                                                     Haptics.reject(view)
                                                 }
-                                                message = result
+                                                message = result.message
                                                 handling.set(false)
                                             }
                                         } catch (error: Exception) {
-                                            saving = false
+                                            captureState.codeSaved(detected)
                                             lastCodeState = "Not saved"
                                             message = error.message ?: "Could not save code"
                                             handling.set(false)
@@ -365,9 +362,9 @@ fun MedicineCameraScreen(
                         }
                     }
 
-                    CameraControlDeck(
+                    if (capturedFile == null) CameraControlDeck(
                         message = message,
-                        canCapture = imageCapture != null && !saving && !capturing && pendingCode == null && !handling.get(),
+                        canCapture = capturedFile == null && imageCapture != null && !saving && !capturing && pendingCode == null && !handling.get(),
                         busy = saving || capturing,
                         showRescan = ignoredCodes.isNotEmpty() && capturedFile == null,
                         onCapture = ::takePhoto,
@@ -387,8 +384,7 @@ fun MedicineCameraScreen(
     DisposableEffect(Unit) {
         onDispose {
             disposed.set(true)
-            latestCapturedFile?.delete()
-            latestPendingCaptureFile?.delete()
+            captureState.close()
         }
     }
 }
@@ -760,11 +756,12 @@ private fun LiveMedicineCamera(
 }
 
 @Composable
-private fun MedicinePhotoCrop(
+internal fun MedicinePhotoCrop(
     file: File,
     saving: Boolean,
     onAccept: (ByteArray) -> Unit,
     modifier: Modifier = Modifier,
+    statusMessage: String? = null,
 ) {
     val context = LocalContext.current
     var square by remember(file) { mutableStateOf(false) }
@@ -796,9 +793,10 @@ private fun MedicinePhotoCrop(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .pointerInput(bitmap, square) {
+                        .pointerInput(bitmap, square, saving) {
                             detectDragGestures { change, drag ->
                                 change.consume()
+                                if (saving) return@detectDragGestures
                                 horizontal = (horizontal - drag.x / size.width).coerceIn(0f, 1f)
                                 vertical = (vertical - drag.y / size.height).coerceIn(0f, 1f)
                             }
@@ -808,14 +806,15 @@ private fun MedicinePhotoCrop(
             } ?: Text("Could not open photo. Retake it.")
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { square = false }) { Text(if (!square) "✓ Rectangle" else "Rectangle") }
-                TextButton(onClick = { square = true }) { Text(if (square) "✓ Square" else "Square") }
+                TextButton(enabled = !saving, onClick = { square = false }) { Text(if (!square) "✓ Rectangle" else "Rectangle") }
+                TextButton(enabled = !saving, onClick = { square = true }) { Text(if (square) "✓ Square" else "Square") }
             }
 
             Text("Horizontal position", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(value = horizontal, onValueChange = { horizontal = it })
+            Slider(enabled = !saving, value = horizontal, onValueChange = { horizontal = it })
             Text("Vertical position", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(value = vertical, onValueChange = { vertical = it })
+            Slider(enabled = !saving, value = vertical, onValueChange = { vertical = it })
+            statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
             Button(
@@ -840,7 +839,7 @@ private fun MedicinePhotoCrop(
 fun prepareMedicinePhoto(context: Context, uri: Uri): ByteArray =
     encodeMedicineBitmap(decodeMedicineBitmap(context, uri))
 
-private fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap =
+internal fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap =
     runCatching {
         val source = ImageDecoder.createSource(context.contentResolver, uri)
         ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
@@ -923,7 +922,7 @@ internal fun cropMedicineBitmap(bitmap: Bitmap, square: Boolean, horizontal: Flo
     return Bitmap.createBitmap(bitmap, x, y, width, height)
 }
 
-private fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
+internal fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
     var candidate = bitmap
     var ownsCandidate = false
     try {
@@ -954,4 +953,20 @@ private fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
         if (ownsCandidate && candidate !== bitmap && !candidate.isRecycled) candidate.recycle()
     }
     throw IllegalArgumentException("This photo could not be prepared for local storage.")
+}
+
+/** Copies a temporary picker grant into an owned crop input; never retains an external URI. */
+internal suspend fun copyMedicinePhotoSource(context: Context, uri: Uri): File {
+    var file: File? = null
+    try {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val bytes = prepareMedicinePhoto(context, uri)
+            file = File(writeMedicinePhotoDraft(context, bytes))
+        }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        return requireNotNull(file)
+    } catch (error: Throwable) {
+        file?.delete()
+        throw error
+    }
 }

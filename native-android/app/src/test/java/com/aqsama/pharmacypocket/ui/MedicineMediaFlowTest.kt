@@ -1,0 +1,121 @@
+package com.aqsama.pharmacypocket.ui
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.test.core.app.ApplicationProvider
+import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.PharmacyRepository
+import java.io.File
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+@LooperMode(LooperMode.Mode.PAUSED)
+class MedicineMediaFlowTest {
+    @get:Rule val compose = createComposeRule()
+    private lateinit var context: Context
+    private lateinit var repository: PharmacyRepository
+    private val medicine = Medicine(id = "flow", category = "tablets", subcategory = "General", name = "Photo flow", note = "", official = 1000, discounted = null)
+
+    @Before fun setup() {
+        context = ApplicationProvider.getApplicationContext()
+        File(context.filesDir, "SQLite").deleteRecursively()
+        File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
+        repository = PharmacyRepository(context)
+    }
+
+    @Test fun cameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false)
+    @Test fun galleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true)
+
+    private fun exerciseFlow(gallery: Boolean) {
+        var snapshot by mutableStateOf(runBlocking { repository.saveMedicine(medicine) })
+        val media = MedicineMedia()
+        val source = File(context.cacheDir, "flow-source.jpg")
+        val bitmap = Bitmap.createBitmap(800, 400, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
+        val capture = MediaCaptureState()
+        if (gallery) runBlocking { media.pickPhoto(context, Uri.fromFile(source)) }
+        else { assertTrue(capture.capture(source)); capture.captured(source) }
+        var screen by mutableStateOf(if (gallery) "editor" else "crop")
+        var saved = false
+        compose.setContent {
+            val scope = rememberCoroutineScope()
+            when (screen) {
+                "crop" -> MedicinePhotoCrop(
+                    file = requireNotNull(capture.cropFile), saving = capture.saving,
+                    onAccept = { bytes ->
+                        check(capture.savePhoto())
+                        scope.launch {
+                            media.acceptPhoto(context, bytes)
+                            capture.photoSaved(source, true)
+                            screen = "editor"
+                        }
+                    },
+                )
+                "editor" -> MedicineEditorScreen(
+                    snapshot = snapshot, medicineId = medicine.id, initialCategory = null,
+                    busy = false, onBack = {}, onManageCategories = {}, onMoveToTrash = {},
+                    loadPhoto = repository::loadPhoto, media = media,
+                    onSave = { item -> scope.launch {
+                        snapshot = media.save(repository, item)
+                        media.discard()
+                        saved = true
+                        screen = "home"
+                    } },
+                )
+                "home" -> MedicineCard(
+                    item = snapshot.items.single { it.id == medicine.id },
+                    category = snapshot.categories.first { it.id == medicine.category },
+                    large = false, currency = snapshot.currency, first = true, last = true,
+                    onOpen = { screen = "detail" }, onEdit = {}, onFavorite = {}, onCamera = {},
+                    loadPhoto = repository::loadPhoto, photoVersion = 1,
+                )
+                "detail" -> MedicineDetailScreen(
+                    snapshot = snapshot, medicineId = medicine.id, busy = false,
+                    onBack = {}, onEdit = {}, onToggleFavorite = {}, onMoveToTrash = {},
+                    loadPhoto = repository::loadPhoto, photoVersion = 1,
+                )
+            }
+        }
+        compose.onNodeWithText("Save photo").performClick()
+        compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
+        compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
+        val accepted = requireNotNull(media.preview)
+        val draft = requireNotNull(media.photoPath)
+        compose.onNodeWithText("Save medicine").performClick()
+        compose.waitUntil(10_000) { saved }
+        assertFalse(File(draft).exists())
+        assertTrue(snapshot.items.single { it.id == medicine.id }.hasPhoto)
+        assertArrayEquals(accepted, runBlocking { repository.loadPhoto(medicine.id) })
+        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Package photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Package photo of ${medicine.name}").assertExists()
+        compose.runOnIdle { screen = "detail" }
+        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists()
+        val reopened = PharmacyRepository(context)
+        assertTrue(runBlocking { reopened.loadSnapshot() }.items.single { it.id == medicine.id }.hasPhoto)
+        assertArrayEquals(accepted, runBlocking { reopened.loadPhoto(medicine.id) })
+    }
+}

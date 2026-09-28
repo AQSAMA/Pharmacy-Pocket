@@ -1,6 +1,5 @@
 package com.aqsama.pharmacypocket.ui
 
-import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -71,44 +70,26 @@ import com.aqsama.pharmacypocket.data.listSubcategories
 import com.aqsama.pharmacypocket.data.subcategoryKey
 import com.aqsama.pharmacypocket.data.subcategoryLabel
 import java.util.UUID
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+
+private fun javaFile(path: String) = java.io.File(path)
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
-internal suspend fun acceptEditorPickedPhoto(
-    context: Context,
-    uri: Uri,
-    isBusy: () -> Boolean,
-    onDraftPhotoPathChange: (String?) -> Unit,
-): Boolean {
-    val path = withContext(Dispatchers.IO) {
-        val bytes = prepareMedicinePhoto(context, uri)
-        writeMedicinePhotoDraft(context, bytes)
-    }
-    if (isBusy()) {
-        deleteMedicinePhotoDraft(path)
-        return false
-    }
-    onDraftPhotoPathChange(path)
-    return true
-}
-
 @Composable
-fun MedicineEditorScreen(
+internal fun MedicineEditorScreen(
     snapshot: AppSnapshot,
     medicineId: String?,
     initialCategory: String?,
     busy: Boolean,
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
-    onSave: (Medicine, String?, Boolean) -> Unit,
+    onSave: (Medicine) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
-    draftPhotoPath: String?,
-    onDraftPhotoPathChange: (String?) -> Unit,
+    media: MedicineMedia,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -126,22 +107,21 @@ fun MedicineEditorScreen(
     var discounted by rememberSaveable(medicineId) { mutableStateOf(existing?.discounted?.toString() ?: "") }
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
-    var codes by rememberSaveable(medicineId, stateSaver = listSaver<List<MedicineCode>, String>(
-        save = { items -> items.flatMap { listOf(it.kind.name, it.value, it.label) } },
-        restore = { parts -> parts.chunked(3).map { MedicineCode(CodeKind.valueOf(it[0]), it[1], it[2]) } },
-    )) { mutableStateOf(existing?.codes ?: emptyList()) }
+    val codes = media.codes
     var codeDraft by rememberSaveable(medicineId) { mutableStateOf("") }
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
     var showScanner by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
-    var draftPhoto by remember(draftPhotoPath) { mutableStateOf<ByteArray?>(null) }
-    var draftLoading by remember(draftPhotoPath) { mutableStateOf(draftPhotoPath != null) }
-    var photoProcessing by remember { mutableStateOf(false) }
-    var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
+    val draftPhoto = media.preview
+    val draftPhotoPath = media.photoPath
+    val draftLoading = draftPhotoPath != null && draftPhoto == null && media.error == null
+    val photoProcessing = media.locked
+    val removePhoto = media.removePhoto
+    val gallerySource = media.cropSource?.let(::javaFile)
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
-    var mediaExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
+    var mediaExpanded by rememberSaveable(medicineId) { mutableStateOf(media.photoPath != null || existing?.hasPhoto == true) }
     var detailsExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
     var manualCodeExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
     var revealPhotoAfterLoad by remember { mutableStateOf(false) }
@@ -150,18 +130,7 @@ fun MedicineEditorScreen(
     LaunchedEffect(existing?.id, existing?.hasPhoto) {
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
     }
-    LaunchedEffect(draftPhotoPath) {
-        draftLoading = draftPhotoPath != null
-        try {
-            draftPhoto = withContext(Dispatchers.IO) { readMedicinePhotoDraft(draftPhotoPath) }
-            if (draftPhotoPath != null && draftPhoto == null) {
-                validationError = "The selected photo is no longer available. Choose it again."
-                mediaExpanded = true
-            }
-        } finally {
-            draftLoading = false
-        }
-    }
+    LaunchedEffect(media, draftPhotoPath) { media.restorePreview() }
     LaunchedEffect(draftPhoto, mediaExpanded, revealPhotoAfterLoad) {
         if (draftPhoto != null && mediaExpanded && revealPhotoAfterLoad) {
             photoBringIntoViewRequester.bringIntoView()
@@ -170,24 +139,14 @@ fun MedicineEditorScreen(
     }
 
     fun acceptPhoto(uri: Uri) {
-        photoProcessing = true
         scope.launch {
             try {
-                val accepted = acceptEditorPickedPhoto(
-                    context = context,
-                    uri = uri,
-                    isBusy = { busy },
-                    onDraftPhotoPathChange = onDraftPhotoPathChange,
-                )
-                if (accepted) {
-                    removePhoto = false
-                    revealPhotoAfterLoad = true
-                    mediaExpanded = true
-                }
+                // Copy the picker result while its URI grant is available. The shared
+                // crop component then submits the same final JPEG as the camera.
+                media.pickPhoto(context, uri)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 validationError = error.message ?: "Could not open this photo."
-            } finally {
-                photoProcessing = false
             }
         }
     }
@@ -209,18 +168,19 @@ fun MedicineEditorScreen(
         }
     }
 
-    fun proposeCode(value: String, kind: CodeKind, label: String = ""): String {
+    fun proposeCode(value: String, kind: CodeKind, label: String = ""): MediaSaveResult {
+        if (busy || media.locked) return MediaSaveResult(false, "Finish the current media operation first")
         val proposed = runCatching { validateCodes(listOf(MedicineCode(kind, value, label))).single() }
-            .getOrElse { validationError = it.message; return it.message ?: "Invalid code" }
+            .getOrElse { validationError = it.message; return MediaSaveResult(false, it.message ?: "Invalid code") }
         val owner = snapshot.items.firstOrNull { it.id != existing?.id && it.codes.any { code -> code.value == proposed.value } }
         return when {
-            codes.any { it.value == proposed.value } -> "Code already added"
-            codes.size >= 20 -> "A medicine can have up to 20 codes"
-            owner != null -> "This code belongs to ${owner.name}"
+            codes.any { it.value == proposed.value } -> MediaSaveResult(true, "Code already added")
+            codes.size >= 20 -> MediaSaveResult(false, "A medicine can have up to 20 codes")
+            owner != null -> MediaSaveResult(false, "This code belongs to ${owner.name}")
             else -> {
-                codes = codes + proposed
+                media.updateCodes(media.codes + proposed)
                 codeDraft = ""
-                "Added ${if (kind == CodeKind.BARCODE) "barcode" else "QR"}"
+                MediaSaveResult(true, "Added ${if (kind == CodeKind.BARCODE) "barcode" else "QR"} to medicine draft")
             }
         }
     }
@@ -260,8 +220,6 @@ fun MedicineEditorScreen(
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                 codes = codes,
             ),
-            draftPhotoPath,
-            removePhoto,
         )
     }
 
@@ -454,7 +412,7 @@ fun MedicineEditorScreen(
                                                         )
                                                     }
                                                 }
-                                                TextButton(onClick = { codes = codes.filterNot { it == code } }) {
+                                                TextButton(enabled = !busy && !media.locked, onClick = { media.updateCodes(media.codes.filterNot { it == code }) }) {
                                                     Text("Remove")
                                                 }
                                             }
@@ -517,8 +475,7 @@ fun MedicineEditorScreen(
                                     TextButton(
                                         enabled = !busy,
                                         onClick = {
-                                            onDraftPhotoPathChange(null)
-                                            removePhoto = true
+                                            media.remove()
                                         },
                                     ) { Text("Remove photo") }
                                 }
@@ -531,8 +488,7 @@ fun MedicineEditorScreen(
                                     TextButton(
                                         enabled = !busy,
                                         onClick = {
-                                            onDraftPhotoPathChange(null)
-                                            removePhoto = false
+                                            media.remove()
                                         },
                                     ) { Text("Discard unavailable draft") }
                                 }
@@ -602,26 +558,53 @@ fun MedicineEditorScreen(
         onPhoto = { bytes, acknowledge ->
             scope.launch {
                 try {
-                    val path = withContext(Dispatchers.IO) {
-                        writeMedicinePhotoDraft(context, bytes)
-                    }
-                    if (busy) {
-                        deleteMedicinePhotoDraft(path)
-                        acknowledge("Photo was not added while the medicine is saving")
-                    } else {
-                        removePhoto = false
-                        revealPhotoAfterLoad = true
-                        onDraftPhotoPathChange(path)
-                        mediaExpanded = true
-                        acknowledge("Added photo")
-                    }
+                    media.acceptPhoto(context, bytes)
+                    revealPhotoAfterLoad = true
+                    mediaExpanded = true
+                    acknowledge(MediaSaveResult(true, "Added photo to medicine draft"))
+                    showScanner = false
                 } catch (error: Exception) {
-                    acknowledge(error.message ?: "Could not save photo")
+                if (error is CancellationException) throw error
+                    acknowledge(MediaSaveResult(false, error.message ?: "Could not save photo"))
                 }
             }
         },
         onDismiss = { showScanner = false },
     )
+
+    gallerySource?.let { source ->
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { if (!media.processing) media.cancelCrop() },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+                    TextButton(
+                        enabled = !media.processing,
+                        onClick = { media.cancelCrop() },
+                    ) { Text("Cancel") }
+                    validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    MedicinePhotoCrop(
+                        file = source,
+                        saving = media.processing,
+                        onAccept = { bytes ->
+                            scope.launch {
+                                try {
+                                    media.acceptPhoto(context, bytes)
+                                    mediaExpanded = true
+                                    revealPhotoAfterLoad = true
+                                } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                                    validationError = error.message ?: "Could not save photo"
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+    }
 
     if (confirmTrash && existing != null) {
         AlertDialog(
