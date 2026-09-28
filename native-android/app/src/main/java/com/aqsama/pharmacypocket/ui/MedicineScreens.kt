@@ -76,6 +76,24 @@ import kotlinx.coroutines.withContext
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
+internal suspend fun acceptEditorPickedPhoto(
+    context: Context,
+    uri: Uri,
+    isBusy: () -> Boolean,
+    onDraftPhotoPathChange: (String?) -> Unit,
+): Boolean {
+    val path = withContext(Dispatchers.IO) {
+        val bytes = prepareMedicinePhoto(context, uri)
+        writeMedicinePhotoDraft(context, bytes)
+    }
+    if (isBusy()) {
+        deleteMedicinePhotoDraft(path)
+        return false
+    }
+    onDraftPhotoPathChange(path)
+    return true
+}
+
 @Composable
 fun MedicineEditorScreen(
     snapshot: AppSnapshot,
@@ -154,16 +172,15 @@ fun MedicineEditorScreen(
         photoProcessing = true
         scope.launch {
             try {
-                val path = withContext(Dispatchers.IO) {
-                    val bytes = prepareMedicinePhoto(context, uri)
-                    writeMedicinePhotoDraft(context, bytes)
-                }
-                if (busy) {
-                    deleteMedicinePhotoDraft(path)
-                } else {
+                val accepted = acceptEditorPickedPhoto(
+                    context = context,
+                    uri = uri,
+                    isBusy = { busy },
+                    onDraftPhotoPathChange = onDraftPhotoPathChange,
+                )
+                if (accepted) {
                     removePhoto = false
                     revealPhotoAfterLoad = true
-                    onDraftPhotoPathChange(path)
                     mediaExpanded = true
                 }
             } catch (error: Exception) {
