@@ -40,7 +40,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -564,7 +563,7 @@ internal fun MedicineEditorScreen(
                     acknowledge(MediaSaveResult(true, "Added photo to medicine draft"))
                     showScanner = false
                 } catch (error: Exception) {
-                if (error is CancellationException) throw error
+                    if (error is CancellationException) throw error
                     acknowledge(MediaSaveResult(false, error.message ?: "Could not save photo"))
                 }
             }
@@ -594,7 +593,7 @@ internal fun MedicineEditorScreen(
                                     mediaExpanded = true
                                     revealPhotoAfterLoad = true
                                 } catch (error: Exception) {
-                if (error is CancellationException) throw error
+                                    if (error is CancellationException) throw error
                                     validationError = error.message ?: "Could not save photo"
                                 }
                             }

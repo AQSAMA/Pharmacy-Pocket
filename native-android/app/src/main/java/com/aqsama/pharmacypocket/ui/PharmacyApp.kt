@@ -307,7 +307,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                     Destination.Settings -> SettingsScreen(
                         snapshot = current,
                         onBack = { if (!busy) pop() },
-                        onManageCategories = { if (!busy && !media.locked) push(Destination.Categories) },
+                        onManageCategories = { if (!busy) push(Destination.Categories) },
                         onTrash = {
                             trashItems = null
                             push(Destination.Trash)
@@ -378,25 +378,25 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             MedicineMedia(current.items.firstOrNull { it.id == destination.medicineId }?.codes.orEmpty())
                         }
                         MedicineEditorScreen(
-                        snapshot = current,
-                        medicineId = destination.medicineId,
-                        initialCategory = destination.category,
-                        initialCapture = destination.initialCapture,
-                        busy = busy,
-                        onBack = { if (!busy) pop() },
-                        onManageCategories = { if (!busy && !media.locked) push(Destination.Categories) },
-                        loadPhoto = repository::loadPhoto,
-                        media = media,
-                        onSave = { medicine ->
-                            runOperation(
-                                successMessage = "Medicine saved",
-                                onSuccess = ::pop,
-                            ) {
-                                media.save(repository, medicine).also { bumpPhotoVersion(photoVersions, medicine.id) }
-                            }
-                        },
-                        onMoveToTrash = ::moveToTrash,
-                    )
+                            snapshot = current,
+                            medicineId = destination.medicineId,
+                            initialCategory = destination.category,
+                            initialCapture = destination.initialCapture,
+                            busy = busy,
+                            onBack = { if (!busy) pop() },
+                            onManageCategories = { if (!busy && !media.locked) push(Destination.Categories) },
+                            loadPhoto = repository::loadPhoto,
+                            media = media,
+                            onSave = { medicine ->
+                                runOperation(
+                                    successMessage = "Medicine saved",
+                                    onSuccess = ::pop,
+                                ) {
+                                    media.save(repository, medicine).also { bumpPhotoVersion(photoVersions, medicine.id) }
+                                }
+                            },
+                            onMoveToTrash = ::moveToTrash,
+                        )
                     }
 
                     is Destination.Detail -> MedicineDetailScreen(
