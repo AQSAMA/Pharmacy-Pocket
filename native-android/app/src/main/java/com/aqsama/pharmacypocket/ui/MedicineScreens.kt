@@ -1,8 +1,10 @@
 package com.aqsama.pharmacypocket.ui
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
@@ -75,16 +77,23 @@ import kotlinx.coroutines.withContext
 
 private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
 
-internal data class EditorPhotoChange(
-    val draftPhoto: ByteArray?,
-    val removeStoredPhoto: Boolean,
-)
-
-internal fun acceptEditorPhoto(bytes: ByteArray): EditorPhotoChange =
-    EditorPhotoChange(draftPhoto = bytes, removeStoredPhoto = false)
-
-internal fun removeEditorPhoto(): EditorPhotoChange =
-    EditorPhotoChange(draftPhoto = null, removeStoredPhoto = true)
+internal suspend fun acceptEditorPickedPhoto(
+    context: Context,
+    uri: Uri,
+    isBusy: () -> Boolean,
+    onDraftPhotoPathChange: (String?) -> Unit,
+): Boolean {
+    val path = withContext(Dispatchers.IO) {
+        val bytes = prepareMedicinePhoto(context, uri)
+        writeMedicinePhotoDraft(context, bytes)
+    }
+    if (isBusy()) {
+        deleteMedicinePhotoDraft(path)
+        return false
+    }
+    onDraftPhotoPathChange(path)
+    return true
+}
 
 @Composable
 fun MedicineEditorScreen(
@@ -94,12 +103,12 @@ fun MedicineEditorScreen(
     busy: Boolean,
     onBack: () -> Unit,
     onManageCategories: () -> Unit,
-    onSave: (Medicine, ByteArray?, Boolean) -> Unit,
+    onSave: (Medicine, String?, Boolean) -> Unit,
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
-    draftPhoto: ByteArray?,
-    onDraftPhotoChange: (ByteArray?) -> Unit,
+    draftPhotoPath: String?,
+    onDraftPhotoPathChange: (String?) -> Unit,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
@@ -125,6 +134,8 @@ fun MedicineEditorScreen(
     var codeKind by rememberSaveable(medicineId) { mutableStateOf(CodeKind.BARCODE) }
     var showScanner by remember { mutableStateOf(false) }
     var savedPhoto by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
+    var draftPhoto by remember(draftPhotoPath) { mutableStateOf<ByteArray?>(null) }
+    var draftLoading by remember(draftPhotoPath) { mutableStateOf(draftPhotoPath != null) }
     var photoProcessing by remember { mutableStateOf(false) }
     var removePhoto by rememberSaveable(medicineId) { mutableStateOf(false) }
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
@@ -139,6 +150,18 @@ fun MedicineEditorScreen(
     LaunchedEffect(existing?.id, existing?.hasPhoto) {
         savedPhoto = if (existing?.hasPhoto == true) loadPhoto(existing.id) else null
     }
+    LaunchedEffect(draftPhotoPath) {
+        draftLoading = draftPhotoPath != null
+        try {
+            draftPhoto = withContext(Dispatchers.IO) { readMedicinePhotoDraft(draftPhotoPath) }
+            if (draftPhotoPath != null && draftPhoto == null) {
+                validationError = "The selected photo is no longer available. Choose it again."
+                mediaExpanded = true
+            }
+        } finally {
+            draftLoading = false
+        }
+    }
     LaunchedEffect(draftPhoto, mediaExpanded, revealPhotoAfterLoad) {
         if (draftPhoto != null && mediaExpanded && revealPhotoAfterLoad) {
             photoBringIntoViewRequester.bringIntoView()
@@ -150,14 +173,15 @@ fun MedicineEditorScreen(
         photoProcessing = true
         scope.launch {
             try {
-                val bytes = withContext(Dispatchers.IO) {
-                    prepareMedicinePhoto(context, uri)
-                }
-                if (!busy) {
-                    val change = acceptEditorPhoto(bytes)
-                    removePhoto = change.removeStoredPhoto
+                val accepted = acceptEditorPickedPhoto(
+                    context = context,
+                    uri = uri,
+                    isBusy = { busy },
+                    onDraftPhotoPathChange = onDraftPhotoPathChange,
+                )
+                if (accepted) {
+                    removePhoto = false
                     revealPhotoAfterLoad = true
-                    onDraftPhotoChange(change.draftPhoto)
                     mediaExpanded = true
                 }
             } catch (error: Exception) {
@@ -168,8 +192,11 @@ fun MedicineEditorScreen(
         }
     }
 
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) acceptPhoto(uri)
+    }
+    fun launchGallery() {
+        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
     fun openCamera() { showScanner = true }
     LaunchedEffect(initialCapture) {
@@ -177,7 +204,7 @@ fun MedicineEditorScreen(
             initialCaptureStarted = true
             when (initialCapture) {
                 "barcode", "sticker", "photo" -> openCamera()
-                "gallery" -> photoPicker.launch("image/*")
+                "gallery" -> launchGallery()
             }
         }
     }
@@ -233,7 +260,7 @@ fun MedicineEditorScreen(
                 createdAt = existing?.createdAt ?: System.currentTimeMillis(),
                 codes = codes,
             ),
-            draftPhoto,
+            draftPhotoPath,
             removePhoto,
         )
     }
@@ -244,7 +271,7 @@ fun MedicineEditorScreen(
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
                 Button(
-                    enabled = !busy && !photoProcessing,
+                    enabled = !busy && !photoProcessing && !draftLoading && (draftPhotoPath == null || draftPhoto != null),
                     onClick = ::submit,
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 54.dp),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(15.dp),
@@ -373,7 +400,7 @@ fun MedicineEditorScreen(
 
                                     OutlinedButton(
                                         enabled = !busy && !photoProcessing,
-                                        onClick = { photoPicker.launch("image/*") },
+                                        onClick = { launchGallery() },
                                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                                         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
                                     ) { Text("Gallery", fontWeight = FontWeight.Bold) }
@@ -490,11 +517,24 @@ fun MedicineEditorScreen(
                                     TextButton(
                                         enabled = !busy,
                                         onClick = {
-                                            val change = removeEditorPhoto()
-                                            onDraftPhotoChange(change.draftPhoto)
-                                            removePhoto = change.removeStoredPhoto
+                                            onDraftPhotoPathChange(null)
+                                            removePhoto = true
                                         },
                                     ) { Text("Remove photo") }
+                                }
+
+                                if (draftPhotoPath != null && draftPhoto == null && !draftLoading) {
+                                    Text(
+                                        "Photo preview could not be loaded. Choose the photo again.",
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                    TextButton(
+                                        enabled = !busy,
+                                        onClick = {
+                                            onDraftPhotoPathChange(null)
+                                            removePhoto = false
+                                        },
+                                    ) { Text("Discard unavailable draft") }
                                 }
 
                             }
@@ -560,12 +600,25 @@ fun MedicineEditorScreen(
         existingCodes = codes.mapTo(mutableSetOf()) { it.value },
         onCode = { code, acknowledge -> acknowledge(proposeCode(code.value, code.kind, code.label)) },
         onPhoto = { bytes, acknowledge ->
-            val change = acceptEditorPhoto(bytes)
-            removePhoto = change.removeStoredPhoto
-            revealPhotoAfterLoad = true
-            onDraftPhotoChange(change.draftPhoto)
-            mediaExpanded = true
-            acknowledge("Added photo")
+            scope.launch {
+                try {
+                    val path = withContext(Dispatchers.IO) {
+                        writeMedicinePhotoDraft(context, bytes)
+                    }
+                    if (busy) {
+                        deleteMedicinePhotoDraft(path)
+                        acknowledge("Photo was not added while the medicine is saving")
+                    } else {
+                        removePhoto = false
+                        revealPhotoAfterLoad = true
+                        onDraftPhotoPathChange(path)
+                        mediaExpanded = true
+                        acknowledge("Added photo")
+                    }
+                } catch (error: Exception) {
+                    acknowledge(error.message ?: "Could not save photo")
+                }
+            }
         },
         onDismiss = { showScanner = false },
     )

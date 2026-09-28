@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
@@ -839,7 +840,25 @@ private fun MedicinePhotoCrop(
 fun prepareMedicinePhoto(context: Context, uri: Uri): ByteArray =
     encodeMedicineBitmap(decodeMedicineBitmap(context, uri))
 
-private fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap {
+private fun decodeMedicineBitmap(context: Context, uri: Uri): Bitmap =
+    runCatching {
+        val source = ImageDecoder.createSource(context.contentResolver, uri)
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            val longest = max(info.size.width, info.size.height)
+            if (longest > 1200) {
+                val scale = 1200f / longest.toFloat()
+                decoder.setTargetSize(
+                    (info.size.width * scale).toInt().coerceAtLeast(1),
+                    (info.size.height * scale).toInt().coerceAtLeast(1),
+                )
+            }
+        }
+    }.getOrElse {
+        decodeMedicineBitmapLegacy(context, uri)
+    }
+
+private fun decodeMedicineBitmapLegacy(context: Context, uri: Uri): Bitmap {
     val resolver = context.contentResolver
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     resolver.openInputStream(uri)?.use { stream ->
@@ -905,10 +924,34 @@ internal fun cropMedicineBitmap(bitmap: Bitmap, square: Boolean, horizontal: Flo
 }
 
 private fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
-    for (quality in listOf(82, 68, 52, 36, 24)) {
-        val output = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, output)
-        if (output.size() <= 256_000) return output.toByteArray()
+    var candidate = bitmap
+    var ownsCandidate = false
+    try {
+        repeat(8) {
+            for (quality in listOf(82, 68, 52, 36, 24)) {
+                val bytes = ByteArrayOutputStream().use { output ->
+                    if (!candidate.compress(Bitmap.CompressFormat.JPEG, quality, output)) {
+                        byteArrayOf()
+                    } else {
+                        output.toByteArray()
+                    }
+                }
+                if (bytes.isNotEmpty() && bytes.size <= MAX_MEDICINE_PHOTO_BYTES) return bytes
+            }
+
+            if (max(candidate.width, candidate.height) <= 320) return@repeat
+            val next = Bitmap.createScaledBitmap(
+                candidate,
+                (candidate.width * 0.78f).toInt().coerceAtLeast(1),
+                (candidate.height * 0.78f).toInt().coerceAtLeast(1),
+                true,
+            )
+            if (ownsCandidate && candidate !== bitmap && !candidate.isRecycled) candidate.recycle()
+            candidate = next
+            ownsCandidate = candidate !== bitmap
+        }
+    } finally {
+        if (ownsCandidate && candidate !== bitmap && !candidate.isRecycled) candidate.recycle()
     }
-    throw IllegalArgumentException("This photo cannot be reduced below 256 KB. Retake it.")
+    throw IllegalArgumentException("This photo could not be prepared for local storage.")
 }

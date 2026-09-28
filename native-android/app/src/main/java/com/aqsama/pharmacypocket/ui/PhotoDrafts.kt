@@ -1,0 +1,90 @@
+package com.aqsama.pharmacypocket.ui
+
+import android.content.Context
+import android.graphics.BitmapFactory
+import java.io.File
+import java.util.UUID
+
+internal const val MAX_MEDICINE_PHOTO_BYTES = 256_000
+
+private fun medicineDraftDirectory(context: Context): File =
+    File(context.noBackupFilesDir, "medicine_drafts")
+
+internal fun writeMedicinePhotoDraft(context: Context, bytes: ByteArray): String {
+    require(bytes.size in 1..MAX_MEDICINE_PHOTO_BYTES) {
+        "The photo must be 256 KB or less."
+    }
+
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    require(bounds.outWidth > 0 && bounds.outHeight > 0) {
+        "The selected photo could not be decoded."
+    }
+
+    val directory = medicineDraftDirectory(context)
+    check(directory.isDirectory || directory.mkdirs()) {
+        "Could not prepare photo storage."
+    }
+
+    val draft = File(directory, "draft-${UUID.randomUUID()}.jpg")
+    try {
+        draft.writeBytes(bytes)
+        check(draft.isFile && draft.length() == bytes.size.toLong()) {
+            "Could not save the photo draft."
+        }
+        return draft.absolutePath
+    } catch (error: Throwable) {
+        draft.delete()
+        throw error
+    }
+}
+
+internal fun readMedicinePhotoDraft(path: String?): ByteArray? {
+    if (path == null) return null
+    val file = File(path)
+    if (!file.isFile || file.length() !in 1L..MAX_MEDICINE_PHOTO_BYTES.toLong()) return null
+    return runCatching { file.readBytes() }.getOrNull()
+}
+
+internal fun deleteMedicinePhotoDraft(path: String?) {
+    if (path == null) return
+    runCatching { File(path).delete() }
+}
+
+internal fun encodeMedicinePhotoDraftPaths(drafts: Map<String, String>): List<String> =
+    drafts.entries.flatMap { entry -> listOf(entry.key, entry.value) }
+
+internal fun restoreMedicinePhotoDraftPaths(parts: List<String>): Map<String, String> =
+    buildMap {
+        parts.chunked(2).forEach { pair ->
+            if (pair.size == 2) put(pair[0], pair[1])
+        }
+    }
+
+internal fun updateMedicinePhotoDraftPath(
+    drafts: MutableMap<String, String>,
+    entryId: String,
+    nextPath: String?,
+    busy: Boolean,
+) {
+    if (busy) {
+        deleteMedicinePhotoDraft(nextPath)
+        return
+    }
+
+    val previous = drafts.remove(entryId)
+    if (previous != null && previous != nextPath) deleteMedicinePhotoDraft(previous)
+    if (nextPath != null) drafts[entryId] = nextPath
+}
+
+internal fun cleanupMedicinePhotoDrafts(
+    context: Context,
+    retainedPaths: Set<String>,
+    staleBefore: Long = System.currentTimeMillis() - 24L * 60L * 60L * 1000L,
+) {
+    medicineDraftDirectory(context).listFiles()?.forEach { file ->
+        if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
+            file.delete()
+        }
+    }
+}

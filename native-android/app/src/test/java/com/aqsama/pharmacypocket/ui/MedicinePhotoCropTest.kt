@@ -48,9 +48,10 @@ class MedicinePhotoCropTest {
             val encoded = prepareMedicinePhoto(context, Uri.fromFile(file))
             val decoded = requireNotNull(BitmapFactory.decodeByteArray(encoded, 0, encoded.size))
 
-            assertEquals(800, decoded.width)
-            assertEquals(400, decoded.height)
-            assertTrue(encoded.size <= 256_000)
+            assertTrue(decoded.width <= 1200)
+            assertTrue(decoded.height <= 1200)
+            assertEquals(decoded.width, decoded.height * 2)
+            assertTrue(encoded.size <= MAX_MEDICINE_PHOTO_BYTES)
         } finally {
             file.delete()
         }
