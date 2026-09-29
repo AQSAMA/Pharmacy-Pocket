@@ -9,12 +9,14 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -44,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -578,30 +581,26 @@ internal fun MedicineEditorScreen(
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         ) {
             Surface(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-                    TextButton(
-                        enabled = !media.processing,
-                        onClick = { media.cancelCrop() },
-                    ) { Text("Cancel") }
-                    galleryCropError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    MedicinePhotoCrop(
-                        file = source,
-                        saving = media.processing,
-                        onAccept = { bytes ->
-                            scope.launch {
-                                try {
-                                    media.acceptPhoto(context, bytes)
-                                    mediaExpanded = true
-                                    revealPhotoAfterLoad = true
-                                } catch (error: Exception) {
-                                    if (error is CancellationException) throw error
-                                    galleryCropError = error.message ?: "Could not save photo"
-                                }
+                MedicinePhotoCrop(
+                    file = source,
+                    saving = media.processing,
+                    statusMessage = galleryCropError,
+                    onCancel = { if (!media.processing) media.cancelCrop() },
+                    onAccept = { bytes ->
+                        scope.launch {
+                            try {
+                                media.acceptPhoto(context, bytes)
+                                mediaExpanded = true
+                                revealPhotoAfterLoad = true
+                                galleryCropError = null
+                            } catch (error: Exception) {
+                                if (error is CancellationException) throw error
+                                galleryCropError = error.message ?: "Could not save photo"
                             }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
         }
     }
@@ -723,8 +722,15 @@ fun MedicineDetailScreen(
     val item = snapshot.items.firstOrNull { it.id == medicineId }
     var confirmTrash by remember { mutableStateOf(false) }
     var photo by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
+    var photoViewerOpen by rememberSaveable(medicineId) { mutableStateOf(false) }
     LaunchedEffect(medicineId, item?.hasPhoto, photoVersion) {
         photo = if (item?.hasPhoto == true) loadPhoto(medicineId) else null
+        if (photo == null) photoViewerOpen = false
+    }
+    val photoBitmap = remember(photo) {
+        photo?.let { bytes ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }
     }
 
     Scaffold(
@@ -753,6 +759,14 @@ fun MedicineDetailScreen(
                         Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
+                        photoBitmap?.let { bitmap ->
+                            MedicinePhotoHero(
+                                name = item.name,
+                                bitmap = bitmap,
+                                onOpen = { photoViewerOpen = true },
+                            )
+                        }
+
                         Surface(
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
                             color = MaterialTheme.colorScheme.tertiary,
@@ -870,15 +884,6 @@ fun MedicineDetailScreen(
                             )
                         }
 
-                        photo?.let { bytes ->
-                            val bitmap = remember(bytes) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }
-                            bitmap?.let {
-                                InfoCard("Photo") {
-                                    Image(it, contentDescription = "Photo of ${item.name}",
-                                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp), contentScale = ContentScale.Fit)
-                                }
-                            }
-                        }
                         if (item.codes.isNotEmpty()) InfoCard("Package codes") {
                             item.codes.forEach { code ->
                                 InfoValue(when (code.kind) { CodeKind.PRICE_STICKER_QR -> "PRICE STICKER QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "BARCODE" },
@@ -942,6 +947,14 @@ fun MedicineDetailScreen(
         }
     }
 
+    if (photoViewerOpen && item != null && photoBitmap != null) {
+        FullScreenMedicinePhoto(
+            name = item.name,
+            bitmap = photoBitmap,
+            onDismiss = { photoViewerOpen = false },
+        )
+    }
+
     if (confirmTrash && item != null) {
         AlertDialog(
             onDismissRequest = { if (!busy) confirmTrash = false },
@@ -969,6 +982,95 @@ fun MedicineDetailScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun MedicinePhotoHero(
+    name: String,
+    bitmap: ImageBitmap,
+    onOpen: () -> Unit,
+) {
+    Surface(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 2.dp,
+    ) {
+        Box {
+            Image(
+                bitmap = bitmap,
+                contentDescription = "Photo of $name",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f),
+                contentScale = ContentScale.Crop,
+            )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(12.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Text(
+                    "View full photo",
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FullScreenMedicinePhoto(
+    name: String,
+    bitmap: ImageBitmap,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.Black,
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding(),
+            ) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Full image of $name",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    contentScale = ContentScale.Fit,
+                )
+                Surface(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+                    color = Color.Black.copy(alpha = 0.72f),
+                    contentColor = Color.White,
+                ) {
+                    Text(
+                        "Close",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
     }
 }
 
