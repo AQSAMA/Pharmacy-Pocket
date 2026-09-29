@@ -47,6 +47,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -146,7 +147,7 @@ class MedicineMediaFlowTest {
 
         compose.onNodeWithText("Photo & codes").performScrollTo().performClick()
         compose.onNodeWithText("Gallery").performScrollTo().performClick()
-        compose.waitUntil(10_000) { media.cropSource != null }
+        waitUntilWithAndroidMain { media.cropSource != null }
 
         val draftDirectory = File(context.noBackupFilesDir, "medicine_drafts")
         draftDirectory.deleteRecursively()
@@ -156,7 +157,7 @@ class MedicineMediaFlowTest {
         try {
             waitForCropReady()
             compose.onNodeWithText("Save photo").performClick()
-            compose.waitUntil(10_000) {
+            waitUntilWithAndroidMain {
                 compose.onAllNodesWithText("Could not prepare photo storage.")
                     .fetchSemanticsNodes().isNotEmpty()
             }
@@ -171,11 +172,21 @@ class MedicineMediaFlowTest {
     }
 
     private fun waitForCropReady() {
-        compose.waitUntil(10_000) {
+        waitUntilWithAndroidMain {
             runCatching {
                 compose.onNodeWithText("Save photo").assertIsEnabled()
                 true
             }.getOrDefault(false)
+        }
+    }
+
+    private fun waitUntilWithAndroidMain(
+        timeoutMillis: Long = 10_000,
+        condition: () -> Boolean,
+    ) {
+        compose.waitUntil(timeoutMillis) {
+            ShadowLooper.idleMainLooper()
+            condition()
         }
     }
 
@@ -247,13 +258,13 @@ class MedicineMediaFlowTest {
         if (gallery) {
             compose.onNodeWithText("Photo & codes").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("Gallery").performScrollTo().performClick()
-            compose.waitUntil(10_000) { media.cropSource != null }
+            waitUntilWithAndroidMain { media.cropSource != null }
         }
         compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
         waitForCropReady()
         compose.onNodeWithText("Save photo").assertIsDisplayed().performClick()
-        compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
-        compose.waitUntil(10_000) { media.captureState == null }
+        waitUntilWithAndroidMain { media.preview != null && media.cropSource == null }
+        waitUntilWithAndroidMain { media.captureState == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
         if (newMedicine) {
             compose.onNode(
@@ -268,15 +279,15 @@ class MedicineMediaFlowTest {
         val accepted = requireNotNull(media.preview)
         val draft = requireNotNull(media.photoPath)
         compose.onNodeWithText("Save medicine").performClick()
-        compose.waitUntil(10_000) { saved }
+        waitUntilWithAndroidMain { saved }
         val id = requireNotNull(savedMedicineId)
         assertFalse(File(draft).exists())
         assertTrue(snapshot.items.single { it.id == id }.hasPhoto)
         assertArrayEquals(accepted, runBlocking { repository.loadPhoto(id) })
-        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Package photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
+        waitUntilWithAndroidMain { compose.onAllNodesWithContentDescription("Package photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Package photo of ${medicine.name}").assertExists()
         compose.runOnIdle { screen = "detail" }
-        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
+        waitUntilWithAndroidMain { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists().performClick()
         compose.onNodeWithContentDescription("Full image of ${medicine.name}").assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
