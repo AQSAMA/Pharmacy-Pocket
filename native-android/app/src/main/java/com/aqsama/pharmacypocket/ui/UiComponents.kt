@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +49,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -139,19 +142,26 @@ fun MedicineCard(
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
 ) {
-    var photo by remember(item.id) { mutableStateOf<ImageBitmap?>(null) }
-    var showFullPhoto by remember(item.id, photoVersion) { mutableStateOf(false) }
+    var photo by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf<ImageBitmap?>(null) }
+    var photoLoading by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf(item.hasPhoto) }
+    var showFullPhoto by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf(false) }
     LaunchedEffect(item.id, item.hasPhoto, photoVersion) {
-        photo = if (item.hasPhoto) {
-            loadPhoto(item.id)?.let { bytes ->
-                withContext(Dispatchers.Default) {
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        try {
+            photo = if (item.hasPhoto) {
+                loadPhoto(item.id)?.let { bytes ->
+                    withContext(Dispatchers.Default) {
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                    }
                 }
+            } else {
+                null
             }
-        } else {
-            null
+        } finally {
+            photoLoading = false
         }
     }
+    // Reserve space during loading, but fall back to a full-width card for absent/invalid bytes.
+    val showMediaRail = item.hasPhoto && (photoLoading || photo != null)
 
     val shape = RoundedCornerShape(
         topStart = if (first) 20.dp else 0.dp,
@@ -213,7 +223,7 @@ fun MedicineCard(
                 }
 
                 // Apply the physical-left inset before restoring RTL for the content.
-                Box(Modifier.padding(start = if (item.hasPhoto) railWidth else 0.dp)) {
+                Box(Modifier.padding(start = if (showMediaRail) railWidth else 0.dp)) {
                     CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
                         Column(
                             modifier = Modifier
@@ -293,30 +303,7 @@ fun MedicineCard(
                                 if (price > item.official) verifyPriceColor else normalDiscountColor
                             }
 
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.Bottom,
-                            ) {
-                                MedicineCardPrice(
-                                    label = "OFFICIAL",
-                                    price = item.official,
-                                    currency = currency,
-                                    large = large,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                item.discounted?.let { price ->
-                                    MedicineCardPrice(
-                                        label = if (price > item.official) "VERIFY" else "IF ASKED",
-                                        price = price,
-                                        currency = null,
-                                        large = large,
-                                        color = discountColor(price),
-                                        modifier = Modifier.weight(0.82f),
-                                    )
-                                }
-                            }
+                            MedicineCardPrices(item, currency, large, discountColor)
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -410,6 +397,48 @@ private fun MedicineCardPhotoDialog(name: String, bitmap: ImageBitmap, onDismiss
     }
 }
 
+/** Keep ordinary prices in one row; reflow amounts that cannot fit at a readable size. */
+@Composable
+private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean, discountColor: (Long) -> Color) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val minimumStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+    fun requiredWidth(price: Long): Int = measurer.measure(
+        text = AnnotatedString(formatPrice(price)),
+        style = minimumStyle,
+        maxLines = 1,
+        softWrap = false,
+    ).size.width
+
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val available = with(density) { maxWidth.toPx() }
+        val gap = with(density) { 12.dp.toPx() }
+        val officialWidth = if (item.discounted == null) available else (available - gap) / 1.82f
+        val discountedWidth = (available - gap) - officialWidth
+        val reflow = requiredWidth(item.official) > officialWidth ||
+            item.discounted?.let { requiredWidth(it) > discountedWidth } == true
+        if (reflow) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                MedicineCardPrice("OFFICIAL", item.official, currency, large, MaterialTheme.colorScheme.primary,
+                    allowWrap = true, modifier = Modifier.fillMaxWidth())
+                item.discounted?.let { price ->
+                    MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
+                        large, discountColor(price), allowWrap = true, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
+                MedicineCardPrice("OFFICIAL", item.official, currency, large, MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f))
+                item.discounted?.let { price ->
+                    MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
+                        large, discountColor(price), modifier = Modifier.weight(0.82f))
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MedicineCardPrice(
     label: String,
@@ -417,6 +446,7 @@ private fun MedicineCardPrice(
     currency: String?,
     large: Boolean,
     color: Color,
+    allowWrap: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -428,16 +458,17 @@ private fun MedicineCardPrice(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 10.sp,
             fontWeight = FontWeight.ExtraBold,
-            maxLines = 1,
         )
         Text(
             text = formatPrice(price),
             color = color,
             modifier = Modifier.fillMaxWidth(),
             fontWeight = FontWeight.ExtraBold,
-            maxLines = 1,
+            fontSize = if (large) 26.sp else 21.sp,
+            style = TextStyle(textDirection = TextDirection.Ltr),
+            maxLines = if (allowWrap) Int.MAX_VALUE else 1,
             overflow = TextOverflow.Clip,
-            autoSize = TextAutoSize.StepBased(
+            autoSize = if (allowWrap) null else TextAutoSize.StepBased(
                 minFontSize = 12.sp,
                 maxFontSize = if (large) 26.sp else 21.sp,
                 stepSize = 1.sp,
