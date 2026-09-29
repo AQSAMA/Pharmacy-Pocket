@@ -135,6 +135,12 @@ class MedicineCardLayoutTest {
             assertTrue(node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!.invoke(layouts))
             assertFalse("Price digits must be fully visible", layouts.single().hasVisualOverflow)
         }
+        compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
+        compose.onNodeWithContentDescription("Full image of ${item.name}").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("Photo tap must not open medicine", 0, opens) }
+        compose.onNodeWithContentDescription("Close full photo").performClick()
+        compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
         compose.onNodeWithContentDescription("Edit ${item.name}").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Add or replace photo or code for ${item.name}").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Add ${item.name} to favorites").assertIsDisplayed().performClick()
