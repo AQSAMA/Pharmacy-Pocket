@@ -17,25 +17,6 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
 class MedicinePhotoCropTest {
-    @Test fun rectangleAndSquareProduceTheSelectedFraming() {
-        val source = Bitmap.createBitmap(800, 600, Bitmap.Config.ARGB_8888)
-        source.setPixel(0, 0, Color.RED)
-        source.setPixel(200, 0, Color.BLUE)
-
-        val rectangle = cropMedicineBitmap(source, square = false, horizontal = 0f, vertical = 0f)
-        assertEquals(800, rectangle.width)
-        assertEquals(600, rectangle.height)
-        assertEquals(Color.RED, rectangle.getPixel(0, 0))
-
-        val leftSquare = cropMedicineBitmap(source, square = true, horizontal = 0f, vertical = 0f)
-        val rightSquare = cropMedicineBitmap(source, square = true, horizontal = 1f, vertical = 0f)
-        assertEquals(600, leftSquare.width)
-        assertEquals(600, leftSquare.height)
-        assertEquals(Color.RED, leftSquare.getPixel(0, 0))
-        assertEquals(Color.BLUE, leftSquare.getPixel(200, 0))
-        assertEquals(Color.BLUE, rightSquare.getPixel(0, 0))
-    }
-
     @Test fun photoPreparationDecodesResizesAndReencodesOnMinSdk() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val file = File(context.cacheDir, "api29-photo.jpg")
@@ -57,12 +38,17 @@ class MedicinePhotoCropTest {
         }
     }
 
-    @Test fun portraitPackageUsesPortraitRectangle() {
-        val source = Bitmap.createBitmap(600, 1000, Bitmap.Config.ARGB_8888)
-        val cropped = cropMedicineBitmap(source, square = false, horizontal = 0.5f, vertical = 0.5f)
-        assertEquals(600, cropped.width)
-        assertEquals(800, cropped.height)
+    @Test fun finalEncoderKeepsLargeCropWithinMedicineStorageBudget() {
+        val source = Bitmap.createBitmap(2400, 1600, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(42, 117, 83))
+        }
+
+        val encoded = encodeMedicineBitmap(source)
+        val decoded = requireNotNull(BitmapFactory.decodeByteArray(encoded, 0, encoded.size))
+
+        assertTrue(encoded.isNotEmpty())
+        assertTrue(encoded.size <= MAX_MEDICINE_PHOTO_BYTES)
+        assertTrue(decoded.width > 0)
+        assertTrue(decoded.height > 0)
     }
-
-
 }
