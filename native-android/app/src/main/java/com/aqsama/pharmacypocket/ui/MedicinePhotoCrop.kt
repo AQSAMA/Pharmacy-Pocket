@@ -149,9 +149,31 @@ internal fun MedicinePhotoCrop(
 
         onDispose {
             if (cropRunning) onProcessingChanged(false)
-            cropView.setOnSetImageUriCompleteListener(null)
             cropView.setOnCropImageCompleteListener(null)
-            cropView.clearImage()
+
+            if (imageReady) {
+                // The loaded preview is owned by CropImageView; clearImage recycles it.
+                cropView.setOnSetImageUriCompleteListener(null)
+                cropView.clearImage()
+            } else {
+                // CropImageView's loader is intentionally allowed to finish instead of being
+                // abandoned between decode and assignment. If it completes after this screen
+                // closes, immediately clear the assigned bitmap; if the view is collected first,
+                // the library recycles the unused result itself.
+                cropView.setOnSetImageUriCompleteListener(
+                    object : CropImageView.OnSetImageUriCompleteListener {
+                        override fun onSetImageUriComplete(
+                            view: CropImageView,
+                            uri: Uri,
+                            loadError: Exception?,
+                        ) {
+                            view.clearImage()
+                            view.setOnSetImageUriCompleteListener(null)
+                        }
+                    },
+                )
+                cropView.clearImage()
+            }
         }
     }
 
