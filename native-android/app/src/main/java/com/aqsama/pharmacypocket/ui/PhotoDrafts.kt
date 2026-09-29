@@ -6,9 +6,21 @@ import java.io.File
 import java.util.UUID
 
 internal const val MAX_MEDICINE_PHOTO_BYTES = 256_000
+internal const val MAX_MEDICINE_CROP_SOURCE_BYTES = 64L * 1024L * 1024L
 
 private fun medicineDraftDirectory(context: Context): File =
     File(context.noBackupFilesDir, "medicine_drafts")
+
+private fun medicineCropSourceDirectory(context: Context): File =
+    File(context.noBackupFilesDir, "medicine_crop_sources")
+
+internal fun createMedicinePhotoCropSource(context: Context): File {
+    val directory = medicineCropSourceDirectory(context)
+    check(directory.isDirectory || directory.mkdirs()) {
+        "Could not prepare photo crop storage."
+    }
+    return File(directory, "source-${UUID.randomUUID()}.image")
+}
 
 internal fun writeMedicinePhotoDraft(context: Context, bytes: ByteArray): String {
     require(bytes.size in 1..MAX_MEDICINE_PHOTO_BYTES) {
@@ -56,9 +68,11 @@ internal fun cleanupMedicinePhotoDrafts(
     retainedPaths: Set<String>,
     staleBefore: Long = System.currentTimeMillis() - 24L * 60L * 60L * 1000L,
 ) {
-    medicineDraftDirectory(context).listFiles()?.forEach { file ->
-        if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
-            file.delete()
+    listOf(medicineDraftDirectory(context), medicineCropSourceDirectory(context)).forEach { directory ->
+        directory.listFiles()?.forEach { file ->
+            if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
+                file.delete()
+            }
         }
     }
 }
