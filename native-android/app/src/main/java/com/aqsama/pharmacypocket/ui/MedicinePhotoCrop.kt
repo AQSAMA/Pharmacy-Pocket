@@ -106,9 +106,13 @@ internal fun MedicinePhotoCrop(
             object : CropImageView.OnCropImageCompleteListener {
                 override fun onCropImageComplete(view: CropImageView, result: CropImageView.CropResult) {
                     val cropped = result.bitmap
+                    val libraryOutputUri = result.uriContent
                     if (result.error != null || cropped == null) {
                         cropRunning = false
                         error = result.error?.message ?: "Could not crop this photo."
+                        libraryOutputUri?.let { uri ->
+                            runCatching { context.contentResolver.delete(uri, null, null) }
+                        }
                         return
                     }
 
@@ -123,6 +127,11 @@ internal fun MedicinePhotoCrop(
                         } catch (failure: Exception) {
                             cropRunning = false
                             error = failure.message ?: "Could not prepare this photo."
+                        } finally {
+                            libraryOutputUri?.let { uri ->
+                                runCatching { context.contentResolver.delete(uri, null, null) }
+                            }
+                            if (!cropped.isRecycled) cropped.recycle()
                         }
                     }
                 }
