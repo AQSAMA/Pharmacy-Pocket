@@ -62,7 +62,7 @@ class MedicineMediaFlowTest {
         context = ApplicationProvider.getApplicationContext()
         File(context.filesDir, "SQLite").deleteRecursively()
         File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
-        File(context.noBackupFilesDir, "medicine_crop_sources").deleteRecursively()
+        File(context.filesDir, "medicine_crop_sources").deleteRecursively()
         repository = PharmacyRepository(context)
     }
 
