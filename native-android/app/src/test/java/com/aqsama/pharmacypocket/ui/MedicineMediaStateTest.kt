@@ -2,6 +2,7 @@ package com.aqsama.pharmacypocket.ui
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
 import com.aqsama.pharmacypocket.data.CodeKind
 import com.aqsama.pharmacypocket.data.Medicine
@@ -22,7 +23,9 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class MedicineMediaStateTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
-    private fun jpeg() = encodeMedicineBitmap(Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888))
+    private fun jpeg(color: Int = Color.RED) = encodeMedicineBitmap(
+        Bitmap.createBitmap(80, 40, Bitmap.Config.ARGB_8888).apply { eraseColor(color) },
+    )
 
     @Test fun shutterAndScannerAreExclusiveWithCropAndSave() {
         val state = MediaCaptureState()
@@ -125,6 +128,48 @@ class MedicineMediaStateTest {
         assertArrayEquals(bytes, media.preview)
         media.discard()
         assertFalse(File(path).exists())
+    }
+
+    @Test fun existingPhotoReplacementRemovalAndQuickCapturePersistAcrossReopen() = runBlocking {
+        val repository = PharmacyRepository(context)
+        val item = Medicine(
+            id = "replace-remove-quick",
+            category = "tablets",
+            subcategory = "General",
+            name = "Replace remove quick",
+            note = "",
+            official = 100,
+            discounted = null,
+        )
+
+        val original = jpeg(Color.RED)
+        var snapshot = repository.saveMedicine(item, original)
+        assertTrue(snapshot.items.single { it.id == item.id }.hasPhoto)
+        assertArrayEquals(original, repository.loadPhoto(item.id))
+
+        val replacement = jpeg(Color.BLUE)
+        val replacementMedia = MedicineMedia()
+        replacementMedia.acceptPhoto(context, replacement)
+        snapshot = replacementMedia.save(repository, item)
+        replacementMedia.discard()
+        assertTrue(snapshot.items.single { it.id == item.id }.hasPhoto)
+        assertArrayEquals(replacement, repository.loadPhoto(item.id))
+
+        val removalMedia = MedicineMedia()
+        removalMedia.remove()
+        snapshot = removalMedia.save(repository, item)
+        removalMedia.discard()
+        assertFalse(snapshot.items.single { it.id == item.id }.hasPhoto)
+        assertNull(repository.loadPhoto(item.id))
+
+        val quickCapture = jpeg(Color.GREEN)
+        snapshot = repository.saveMedicine(item, quickCapture)
+        assertTrue(snapshot.items.single { it.id == item.id }.hasPhoto)
+        assertArrayEquals(quickCapture, repository.loadPhoto(item.id))
+
+        val reopened = PharmacyRepository(context)
+        assertTrue(reopened.loadSnapshot().items.single { it.id == item.id }.hasPhoto)
+        assertArrayEquals(quickCapture, reopened.loadPhoto(item.id))
     }
 
     @Test fun missingDraftStopsMedicineSaveRatherThanDroppingPhoto() = runBlocking {
