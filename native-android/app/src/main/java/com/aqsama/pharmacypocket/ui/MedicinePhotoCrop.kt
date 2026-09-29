@@ -154,8 +154,6 @@ internal fun MedicinePhotoCrop(
                 }
             },
         )
-        cropView.setImageUriAsync(Uri.fromFile(file))
-
         onDispose {
             if (cropRunning) onProcessingChanged(false)
             cropView.setOnCropImageCompleteListener(null)
