@@ -119,6 +119,7 @@ internal fun MedicineEditorScreen(
     val gallerySource = media.cropSource?.let(::File)
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    var galleryCropError by remember(media.cropSource) { mutableStateOf<String?>(null) }
     var confirmTrash by remember { mutableStateOf(false) }
     var mediaExpanded by rememberSaveable(medicineId) { mutableStateOf(media.photoPath != null || existing?.hasPhoto == true) }
     var detailsExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
@@ -582,7 +583,7 @@ internal fun MedicineEditorScreen(
                         enabled = !media.processing,
                         onClick = { media.cancelCrop() },
                     ) { Text("Cancel") }
-                    validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    galleryCropError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     MedicinePhotoCrop(
                         file = source,
                         saving = media.processing,
@@ -594,7 +595,7 @@ internal fun MedicineEditorScreen(
                                     revealPhotoAfterLoad = true
                                 } catch (error: Exception) {
                                     if (error is CancellationException) throw error
-                                    validationError = error.message ?: "Could not save photo"
+                                    galleryCropError = error.message ?: "Could not save photo"
                                 }
                             }
                         },
