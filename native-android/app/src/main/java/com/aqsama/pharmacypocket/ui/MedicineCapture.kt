@@ -117,7 +117,7 @@ internal fun MedicineCameraScreen(
     var message by remember { mutableStateOf("Scan a code or take a package photo") }
     val captureState = state ?: remember { MediaCaptureState() }
     val capturedFile = captureState.cropFile
-    val photoReviewing = captureState.phase is MediaCapturePhase.Cropping || captureState.phase is MediaCapturePhase.SavingPhoto
+    val photoReviewing = captureState.reviewingPhoto
     val capturing = captureState.capturing
     val saving = captureState.saving
     val pendingCode = captureState.code
@@ -371,7 +371,7 @@ internal fun MedicineCameraScreen(
 
                     if (!photoReviewing) CameraControlDeck(
                         message = message,
-                        canCapture = imageCapture != null && captureState.scanning && !handling.get(),
+                        canCapture = imageCapture != null && captureState.shutterAvailable && !handling.get(),
                         busy = saving || capturing,
                         showRescan = ignoredCodes.isNotEmpty(),
                         onCapture = ::takePhoto,
