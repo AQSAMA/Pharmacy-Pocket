@@ -110,7 +110,8 @@ class MedicineMediaFlowTest {
 
         val draftDirectory = File(context.noBackupFilesDir, "medicine_drafts")
         draftDirectory.deleteRecursively()
-        assertTrue(draftDirectory.writeText("block draft directory creation"))
+        draftDirectory.writeText("block draft directory creation")
+        assertTrue(draftDirectory.isFile)
 
         try {
             compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
