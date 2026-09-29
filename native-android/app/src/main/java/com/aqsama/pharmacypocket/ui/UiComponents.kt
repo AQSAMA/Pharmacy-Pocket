@@ -7,6 +7,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,12 +29,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -45,6 +52,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aqsama.pharmacypocket.data.Category
@@ -114,7 +123,7 @@ fun SoftChip(
     }
 }
 
-/** Displays a medicine with centered details and separate edit and favorite actions. */
+/** A medicine card whose photo is part of the composition rather than a thumbnail. */
 @Composable
 fun MedicineCard(
     item: Medicine,
@@ -130,170 +139,260 @@ fun MedicineCard(
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
 ) {
-    var thumbnail by remember(item.id) { mutableStateOf<ImageBitmap?>(null) }
+    var photo by remember(item.id) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(item.id, item.hasPhoto, photoVersion) {
-        thumbnail = if (item.hasPhoto) {
+        photo = if (item.hasPhoto) {
             loadPhoto(item.id)?.let { bytes ->
                 withContext(Dispatchers.Default) {
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
                 }
             }
-        } else null
+        } else {
+            null
+        }
     }
+
     val shape = RoundedCornerShape(
-        topStart = if (first) 18.dp else 0.dp,
-        topEnd = if (first) 18.dp else 0.dp,
-        bottomStart = if (last) 18.dp else 0.dp,
-        bottomEnd = if (last) 18.dp else 0.dp,
+        topStart = if (first) 20.dp else 0.dp,
+        topEnd = if (first) 20.dp else 0.dp,
+        bottomStart = if (last) 20.dp else 0.dp,
+        bottomEnd = if (last) 20.dp else 0.dp,
     )
+    val accent = colorFromHex(category.color)
+    val originalDirection = LocalLayoutDirection.current
+    val railWidth = if (large) 124.dp else 112.dp
+    val minCardHeight = if (large) 204.dp else 176.dp
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
             .clickable(onClick = onOpen),
-        color = tintCategoryColor(category.color, 0.09f),
+        color = tintCategoryColor(category.color, 0.075f),
         shape = shape,
-        border = BorderStroke(0.5.dp, colorFromHex(category.color).copy(alpha = if (LocalPharmacyDarkTheme.current) 0.34f else 0.20f)),
+        border = BorderStroke(
+            0.5.dp,
+            accent.copy(alpha = if (LocalPharmacyDarkTheme.current) 0.32f else 0.18f),
+        ),
+        tonalElevation = 1.dp,
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .drawBehind {
-                    drawRect(
-                        color = colorFromHex(category.color),
-                        size = Size(4.dp.toPx(), size.height),
-                    )
-                }
-                .padding(horizontal = 13.dp, vertical = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = onEdit,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .semantics { contentDescription = "Edit ${item.name}" },
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Text("✎", fontSize = 19.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(horizontal = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            text = item.name,
-                            modifier = Modifier.fillMaxWidth(),
-                            maxLines = 2,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = if (large) 27.sp else 20.sp,
-                            lineHeight = if (large) 36.sp else 27.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            style = TextStyle(textDirection = TextDirection.Content),
-                        )
-                        if (!large && item.note.isNotBlank()) {
-                            Text(
-                                text = item.note,
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                lineHeight = 19.sp,
-                                maxLines = 2,
-                                textAlign = TextAlign.Start,
-                                style = TextStyle(textDirection = TextDirection.Content),
-                            )
-                        }
-                    }
-                    TextButton(
-                        onClick = onFavorite,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .semantics {
-                                contentDescription = if (item.favorite) {
-                                    "Remove ${item.name} from favorites"
-                                } else {
-                                    "Add ${item.name} to favorites"
-                                }
-                            },
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Text(
-                            if (item.favorite) "★" else "☆",
-                            fontSize = 21.sp,
-                            color = if (item.favorite) {
-                                if (LocalPharmacyDarkTheme.current) Color(0xFFFFD166) else Color(0xFFA87311)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                }
-
-                thumbnail?.let { bitmap ->
+        // The media rail is intentionally physical-left, matching package imagery in the
+        // visual baseline. Restore the user's layout direction for all textual content.
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+                    .defaultMinSize(minHeight = minCardHeight)
+                    .then(
+                        if (photo == null) {
+                            Modifier.drawBehind {
+                                drawRect(
+                                    color = accent,
+                                    size = Size(4.dp.toPx(), size.height),
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                photo?.let { bitmap ->
                     Image(
                         bitmap = bitmap,
                         contentDescription = "Package photo of ${item.name}",
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 100.dp),
-                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .width(railWidth)
+                            .fillMaxHeight(),
+                        contentScale = ContentScale.Crop,
                     )
                 }
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("OFFICIAL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Text(
-                                formatPrice(item.official),
+                CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalArrangement = Arrangement.spacedBy(11.dp),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Column(
+                                Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                Text(
+                                    text = item.name,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    maxLines = if (large) 3 else 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = if (large) 25.sp else 20.sp,
+                                    lineHeight = if (large) 33.sp else 27.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Start,
+                                    style = TextStyle(textDirection = TextDirection.Content),
+                                )
+                                if (!large && item.note.isNotBlank()) {
+                                    Text(
+                                        text = item.note,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        lineHeight = 17.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Start,
+                                        style = TextStyle(textDirection = TextDirection.Content),
+                                    )
+                                }
+                            }
+
+                            TextButton(
+                                onClick = onFavorite,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .semantics {
+                                        contentDescription = if (item.favorite) {
+                                            "Remove ${item.name} from favorites"
+                                        } else {
+                                            "Add ${item.name} to favorites"
+                                        }
+                                    },
+                                contentPadding = PaddingValues(0.dp),
+                            ) {
+                                Text(
+                                    if (item.favorite) "★" else "☆",
+                                    fontSize = 21.sp,
+                                    color = if (item.favorite) {
+                                        if (LocalPharmacyDarkTheme.current) Color(0xFFFFD166) else Color(0xFFA87311)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                        }
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            MedicineCardPrice(
+                                label = "OFFICIAL",
+                                price = item.official,
+                                currency = currency,
+                                large = large,
                                 color = MaterialTheme.colorScheme.primary,
-                                fontSize = if (large) 28.sp else 22.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
+                                modifier = Modifier.weight(1f),
                             )
-                            Text(currency, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            item.discounted?.let { price ->
+                                MedicineCardPrice(
+                                    label = if (price > item.official) "VERIFY" else "IF ASKED",
+                                    price = price,
+                                    currency = null,
+                                    large = large,
+                                    color = if (price > item.official) {
+                                        MaterialTheme.colorScheme.error
+                                    } else if (LocalPharmacyDarkTheme.current) {
+                                        Color(0xFFE1B86C)
+                                    } else {
+                                        Color(0xFFA66C14)
+                                    },
+                                    modifier = Modifier.weight(0.82f),
+                                )
+                            }
                         }
-                    }
-                    item.discounted?.let { price ->
-                        Column(Modifier.weight(0.8f)) {
-                            Text(
-                                if (price > item.official) "VERIFY" else "IF ASKED",
-                                color = if (price > item.official) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                            )
-                            Text(
-                                formatPrice(price),
-                                color = if (LocalPharmacyDarkTheme.current) Color(0xFFE1B86C) else Color(0xFFA66C14),
-                                fontSize = if (large) 26.sp else 20.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
 
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
-                        modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
-                    if (!item.hasPhoto || item.codes.isEmpty()) {
-                        TextButton(
-                            onClick = onCamera,
-                            modifier = Modifier.size(48.dp).semantics {
-                                contentDescription = "Add photo or code to ${item.name}"
-                            },
-                            contentPadding = PaddingValues(0.dp),
-                        ) { Text("📷", fontSize = 20.sp) }
+                        Spacer(Modifier.weight(1f))
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                lineHeight = 17.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                style = TextStyle(textDirection = TextDirection.Content),
+                            )
+                            TextButton(
+                                onClick = onEdit,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .semantics { contentDescription = "Edit ${item.name}" },
+                                contentPadding = PaddingValues(0.dp),
+                            ) {
+                                Text("✎", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(
+                                onClick = onCamera,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .semantics { contentDescription = "Add or replace photo or code for ${item.name}" },
+                                contentPadding = PaddingValues(0.dp),
+                            ) {
+                                Text("📷", fontSize = 18.sp)
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun MedicineCardPrice(
+    label: String,
+    price: Long,
+    currency: String?,
+    large: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+    ) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+        )
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                formatPrice(price),
+                color = color,
+                fontSize = if (large) 26.sp else 21.sp,
+                lineHeight = if (large) 30.sp else 25.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            currency?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
