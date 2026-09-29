@@ -13,6 +13,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.android.asCoroutineDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,6 +59,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowLooper
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -62,11 +71,18 @@ class MedicineMediaFlowTest {
     private val medicine = Medicine(id = "flow", category = "tablets", subcategory = "General", name = "Photo flow", note = "", official = 1000, discounted = null)
 
     @Before fun setup() {
+        // Dispatchers.Main is cached across Robolectric sandboxes; bind the cropper callbacks
+        // to this test's looper instead of the first test's now-inactive looper.
+        Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher())
         context = ApplicationProvider.getApplicationContext()
         File(context.filesDir, "SQLite").deleteRecursively()
         File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
         File(context.filesDir, "medicine_crop_sources").deleteRecursively()
         repository = PharmacyRepository(context)
+    }
+
+    @After fun resetMainDispatcher() {
+        Dispatchers.resetMain()
     }
 
     @Test fun existingMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = false)
