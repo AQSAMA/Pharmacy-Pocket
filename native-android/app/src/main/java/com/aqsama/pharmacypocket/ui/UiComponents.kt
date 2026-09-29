@@ -278,14 +278,14 @@ fun MedicineCard(
                             }
                         }
 
+                        val verifyPriceColor = MaterialTheme.colorScheme.error
+                        val normalDiscountColor = if (LocalPharmacyDarkTheme.current) {
+                            Color(0xFFE1B86C)
+                        } else {
+                            Color(0xFFA66C14)
+                        }
                         val discountColor: (Long) -> Color = { price ->
-                            if (price > item.official) {
-                                MaterialTheme.colorScheme.error
-                            } else if (LocalPharmacyDarkTheme.current) {
-                                Color(0xFFE1B86C)
-                            } else {
-                                Color(0xFFA66C14)
-                            }
+                            if (price > item.official) verifyPriceColor else normalDiscountColor
                         }
 
                         if (photo != null) {
