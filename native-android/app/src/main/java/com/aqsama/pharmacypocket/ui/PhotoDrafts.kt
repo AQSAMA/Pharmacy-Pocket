@@ -6,9 +6,21 @@ import java.io.File
 import java.util.UUID
 
 internal const val MAX_MEDICINE_PHOTO_BYTES = 256_000
+internal const val MAX_MEDICINE_CROP_SOURCE_BYTES = 64L * 1024L * 1024L
 
 private fun medicineDraftDirectory(context: Context): File =
     File(context.noBackupFilesDir, "medicine_drafts")
+
+private fun medicineCropSourceDirectory(context: Context): File =
+    File(context.noBackupFilesDir, "medicine_crop_sources")
+
+internal fun createMedicinePhotoCropSource(context: Context): File {
+    val directory = medicineCropSourceDirectory(context)
+    check(directory.isDirectory || directory.mkdirs()) {
+        "Could not prepare photo crop storage."
+    }
+    return File(directory, "source-${UUID.randomUUID()}.image")
+}
 
 internal fun writeMedicinePhotoDraft(context: Context, bytes: ByteArray): String {
     require(bytes.size in 1..MAX_MEDICINE_PHOTO_BYTES) {
@@ -51,40 +63,16 @@ internal fun deleteMedicinePhotoDraft(path: String?) {
     runCatching { File(path).delete() }
 }
 
-internal fun encodeMedicinePhotoDraftPaths(drafts: Map<String, String>): List<String> =
-    drafts.entries.flatMap { entry -> listOf(entry.key, entry.value) }
-
-internal fun restoreMedicinePhotoDraftPaths(parts: List<String>): Map<String, String> =
-    buildMap {
-        parts.chunked(2).forEach { pair ->
-            if (pair.size == 2) put(pair[0], pair[1])
-        }
-    }
-
-internal fun updateMedicinePhotoDraftPath(
-    drafts: MutableMap<String, String>,
-    entryId: String,
-    nextPath: String?,
-    busy: Boolean,
-) {
-    if (busy) {
-        deleteMedicinePhotoDraft(nextPath)
-        return
-    }
-
-    val previous = drafts.remove(entryId)
-    if (previous != null && previous != nextPath) deleteMedicinePhotoDraft(previous)
-    if (nextPath != null) drafts[entryId] = nextPath
-}
-
 internal fun cleanupMedicinePhotoDrafts(
     context: Context,
     retainedPaths: Set<String>,
     staleBefore: Long = System.currentTimeMillis() - 24L * 60L * 60L * 1000L,
 ) {
-    medicineDraftDirectory(context).listFiles()?.forEach { file ->
-        if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
-            file.delete()
+    listOf(medicineDraftDirectory(context), medicineCropSourceDirectory(context)).forEach { directory ->
+        directory.listFiles()?.forEach { file ->
+            if (file.isFile && file.absolutePath !in retainedPaths && file.lastModified() < staleBefore) {
+                file.delete()
+            }
         }
     }
 }

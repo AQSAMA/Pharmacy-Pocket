@@ -63,6 +63,8 @@ android {
         }
     }
 
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     buildFeatures {
         compose = true
         resValues = true
@@ -137,7 +139,17 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.12.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4:1.12.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest:1.12.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.test:core:1.7.0")
     testImplementation("org.robolectric:robolectric:4.16.1")
+}
+
+// Keep regression failures actionable in CI, including the state/semantics dump.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging {
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
 }

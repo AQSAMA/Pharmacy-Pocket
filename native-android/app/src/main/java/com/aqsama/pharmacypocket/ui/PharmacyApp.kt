@@ -105,13 +105,11 @@ internal fun bumpPhotoVersion(versions: MutableMap<String, Int>, medicineId: Str
     versions[medicineId] = (versions[medicineId] ?: 0) + 1
 }
 
-private val photoDraftSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>, String>(
-    save = { drafts -> encodeMedicinePhotoDraftPaths(drafts) },
-    restore = { parts ->
-        mutableStateMapOf<String, String>().apply {
-            putAll(restoreMedicinePhotoDraftPaths(parts))
-        }
-    },
+private val mediaSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, MedicineMedia>, String>(
+    save = { entries -> entries.flatMap { listOf(it.key, it.value.encode()) } },
+    restore = { parts -> mutableStateMapOf<String, MedicineMedia>().apply {
+        parts.chunked(2).forEach { put(it[0], MedicineMedia.restore(it[1])) }
+    } },
 )
 
 @Composable
@@ -121,14 +119,14 @@ fun PharmacyApp(repository: PharmacyRepository) {
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
     val backStack = rememberSaveable(saver = navSaver) { mutableStateListOf(NavEntry("home", Destination.Home)) }
-    val photoDrafts = rememberSaveable(saver = photoDraftSaver) { mutableStateMapOf<String, String>() }
+    val mediaDrafts = rememberSaveable(saver = mediaSaver) { mutableStateMapOf<String, MedicineMedia>() }
 
     fun discardDraft(entryId: String) {
-        deleteMedicinePhotoDraft(photoDrafts.remove(entryId))
+        mediaDrafts.remove(entryId)?.discard()
     }
 
     LaunchedEffect(Unit) {
-        val retainedPaths = photoDrafts.values.toSet()
+        val retainedPaths = mediaDrafts.values.flatMap { listOfNotNull(it.photoPath, it.cropSource) }.toSet()
         withContext(Dispatchers.IO) {
             cleanupMedicinePhotoDrafts(context, retainedPaths)
         }
@@ -149,7 +147,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
     }
 
     fun pop() {
-        if (backStack.size <= 1) return
+        if (backStack.size <= 1 || mediaDrafts[backStack.last().id]?.locked == true) return
         Haptics.action(view)
         val removed = backStack.removeAt(backStack.lastIndex)
         discardDraft(removed.id)
@@ -264,7 +262,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
     }
 
-    BackHandler(enabled = backStack.size > 1) { pop() }
+    BackHandler(enabled = backStack.size > 1) { if (!busy) pop() }
 
     val current = snapshot
     PharmacyPocketTheme(current?.themePreference ?: ThemePreference.SYSTEM) {
@@ -308,8 +306,8 @@ fun PharmacyApp(repository: PharmacyRepository) {
 
                     Destination.Settings -> SettingsScreen(
                         snapshot = current,
-                        onBack = ::pop,
-                        onManageCategories = { push(Destination.Categories) },
+                        onBack = { if (!busy) pop() },
+                        onManageCategories = { if (!busy) push(Destination.Categories) },
                         onTrash = {
                             trashItems = null
                             push(Destination.Trash)
@@ -375,31 +373,31 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         )
                     }
 
-                    is Destination.Editor -> MedicineEditorScreen(
-                        snapshot = current,
-                        medicineId = destination.medicineId,
-                        initialCategory = destination.category,
-                        initialCapture = destination.initialCapture,
-                        busy = busy,
-                        onBack = ::pop,
-                        onManageCategories = { push(Destination.Categories) },
-                        loadPhoto = repository::loadPhoto,
-                        draftPhotoPath = photoDrafts[entry.id],
-                        onDraftPhotoPathChange = { path ->
-                            updateMedicinePhotoDraftPath(photoDrafts, entry.id, path, busy)
-                        },
-                        onSave = { medicine, photoPath, removePhoto ->
-                            runOperation(
-                                successMessage = "Medicine saved",
-                                onSuccess = ::pop,
-                            ) {
-                                saveMedicineFromEditor(repository, medicine, photoPath, removePhoto) {
-                                    bumpPhotoVersion(photoVersions, medicine.id)
+                    is Destination.Editor -> {
+                        val media = mediaDrafts.getOrPut(entry.id) {
+                            MedicineMedia(current.items.firstOrNull { it.id == destination.medicineId }?.codes.orEmpty())
+                        }
+                        MedicineEditorScreen(
+                            snapshot = current,
+                            medicineId = destination.medicineId,
+                            initialCategory = destination.category,
+                            initialCapture = destination.initialCapture,
+                            busy = busy,
+                            onBack = { if (!busy) pop() },
+                            onManageCategories = { if (!busy && !media.locked) push(Destination.Categories) },
+                            loadPhoto = repository::loadPhoto,
+                            media = media,
+                            onSave = { medicine ->
+                                runOperation(
+                                    successMessage = "Medicine saved",
+                                    onSuccess = ::pop,
+                                ) {
+                                    media.save(repository, medicine).also { bumpPhotoVersion(photoVersions, medicine.id) }
                                 }
-                            }
-                        },
-                        onMoveToTrash = ::moveToTrash,
-                    )
+                            },
+                            onMoveToTrash = ::moveToTrash,
+                        )
+                    }
 
                     is Destination.Detail -> MedicineDetailScreen(
                         snapshot = current,
@@ -446,16 +444,16 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                     candidate.codes.any { it.value == validated.value }
                                 }
                                 when {
-                                    owner?.id == id -> acknowledge("Code already added")
-                                    owner != null -> acknowledge("Code belongs to ${owner.name}")
-                                    item.codes.size >= 20 -> acknowledge("A medicine can have up to 20 codes")
+                                    owner?.id == id -> acknowledge(MediaSaveResult(true, "Code already added"))
+                                    owner != null -> acknowledge(MediaSaveResult(false, "Code belongs to ${owner.name}"))
+                                    item.codes.size >= 20 -> acknowledge(MediaSaveResult(false, "A medicine can have up to 20 codes"))
                                     else -> {
                                         snapshot = repository.saveMedicine(item.copy(codes = item.codes + validated))
-                                        acknowledge("Saved ${if (validated.kind == com.aqsama.pharmacypocket.data.CodeKind.BARCODE) "barcode" else "QR"}")
+                                        acknowledge(MediaSaveResult(true, "Saved ${if (validated.kind == com.aqsama.pharmacypocket.data.CodeKind.BARCODE) "barcode" else "QR"}"))
                                     }
                                 }
                             } } catch (error: Exception) {
-                                acknowledge(error.message ?: "Could not save code")
+                                acknowledge(MediaSaveResult(false, error.message ?: "Could not save code"))
                             }
                         }
                     },
@@ -466,9 +464,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
                                     ?: throw IllegalStateException("Medicine unavailable")
                                 snapshot = repository.saveMedicine(item, bytes)
                                 bumpPhotoVersion(photoVersions, id)
-                                acknowledge("Saved photo")
+                                acknowledge(MediaSaveResult(true, "Saved photo"))
                             } } catch (error: Exception) {
-                                acknowledge(error.message ?: "Could not save photo")
+                                acknowledge(MediaSaveResult(false, error.message ?: "Could not save photo"))
                             }
                         }
                     },
@@ -515,25 +513,4 @@ fun PharmacyApp(repository: PharmacyRepository) {
         )
     }
     }
-}
-
-
-internal suspend fun saveMedicineFromEditor(
-    repository: PharmacyRepository,
-    medicine: Medicine,
-    draftPhotoPath: String?,
-    removePhoto: Boolean,
-    onPhotoChanged: () -> Unit = {},
-): AppSnapshot {
-    val draftPhoto = if (draftPhotoPath == null) {
-        null
-    } else {
-        withContext(Dispatchers.IO) {
-            readMedicinePhotoDraft(draftPhotoPath)
-                ?: throw IllegalStateException("The selected photo is no longer available. Choose it again.")
-        }
-    }
-    val saved = repository.saveMedicine(medicine, draftPhoto, removePhoto)
-    if (draftPhoto != null || removePhoto) onPhotoChanged()
-    return saved
 }

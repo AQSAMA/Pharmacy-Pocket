@@ -222,7 +222,9 @@ internal class MedicineDatabase(context: Context) {
             put("codes", codesToJson(if (item.codesSpecified) item.codes else current?.codes ?: item.codes))
             putNull("deleted_at")
         }
-        db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        check(db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
+            "Could not persist the medicine."
+        }
         return isNew
     }
 
@@ -248,7 +250,9 @@ internal class MedicineDatabase(context: Context) {
             put("codes", codesToJson(if (item.codesSpecified) item.codes else existing(db, item.id)?.codes ?: item.codes))
             putNull("deleted_at")
         }
-        db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        check(db.insertWithOnConflict("medicines", null, values, SQLiteDatabase.CONFLICT_REPLACE) != -1L) {
+            "Could not persist the medicine."
+        }
     }
 
     fun saveMedicine(item: Medicine, photo: ByteArray? = null, removePhoto: Boolean = false) {
@@ -426,10 +430,10 @@ internal class MedicineDatabase(context: Context) {
 
     private fun writePhoto(db: SQLiteDatabase, id: String, jpeg: ByteArray) {
         require(jpeg.size in 1..256_000) { "The photo must be 256 KB or less." }
-        db.insertWithOnConflict("medicine_photos", null, ContentValues().apply {
+        check(db.insertWithOnConflict("medicine_photos", null, ContentValues().apply {
             put("medicine_id", id)
             put("jpeg", jpeg)
-        }, SQLiteDatabase.CONFLICT_REPLACE)
+        }, SQLiteDatabase.CONFLICT_REPLACE) != -1L) { "Could not persist the medicine photo." }
     }
 
     fun loadPhoto(id: String): ByteArray? = open().rawQuery(
