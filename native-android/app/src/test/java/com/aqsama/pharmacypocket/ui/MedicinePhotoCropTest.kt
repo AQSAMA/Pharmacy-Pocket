@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -119,12 +120,18 @@ class MedicinePhotoCropTest {
     ): Bitmap {
         var accepted: ByteArray? = null
         compose.setContent {
-            MedicinePhotoCrop(
-                file = file,
-                saving = false,
-                onAccept = { accepted = it },
-                modifier = Modifier.fillMaxSize(),
-            )
+            CompositionLocalProvider(
+                LocalMedicineCropBitmapLoader provides { source ->
+                    BitmapFactory.decodeFile(source.absolutePath)
+                },
+            ) {
+                MedicinePhotoCrop(
+                    file = file,
+                    saving = false,
+                    onAccept = { accepted = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         waitUntilWithAndroidMain {
