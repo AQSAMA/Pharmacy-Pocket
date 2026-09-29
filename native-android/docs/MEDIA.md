@@ -15,8 +15,11 @@ an independent writable photo draft.
    Android Image Cropper `4.7.0`'s `CropImageView` for crop-window gestures,
    pinch zoom, EXIF-aware loading and rotation. The dependency is Apache-2.0,
    published on Maven Central, and is used as a library rather than copied source.
-   `encodeMedicineBitmap` performs Pharmacy Pocket's final bounded JPEG encoding
-   only after the crop is chosen.
+   The crop view keeps the owned source URI, so its display preview may be sampled
+   for memory but the crop worker reads the original image for tight label crops.
+   Late preview loads are cleared after dismissal rather than leaving a decoded bitmap
+   attached to an abandoned crop view. `encodeMedicineBitmap` performs Pharmacy
+   Pocket's final bounded JPEG encoding only after the crop is chosen.
 3. `MedicineMedia.acceptPhoto` validates/writes the final JPEG, then publishes its
    path and preview together. Only then is acceptance acknowledged. Camera capture
    closes to reveal the editor; Gallery closes its crop dialog.
