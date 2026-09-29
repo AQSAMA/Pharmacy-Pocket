@@ -3,6 +3,7 @@ package com.aqsama.pharmacypocket.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.aqsama.pharmacypocket.data.CodeKind
 import com.aqsama.pharmacypocket.data.Medicine
@@ -170,6 +171,53 @@ class MedicineMediaStateTest {
         val reopened = PharmacyRepository(context)
         assertTrue(reopened.loadSnapshot().items.single { it.id == item.id }.hasPhoto)
         assertArrayEquals(quickCapture, reopened.loadPhoto(item.id))
+    }
+
+    @Test fun discardingUnavailableReplacementKeepsOriginalStoredPhoto() = runBlocking {
+        val repository = PharmacyRepository(context)
+        val item = Medicine(
+            id = "lost-replacement",
+            category = "tablets",
+            subcategory = "General",
+            name = "Lost replacement",
+            note = "",
+            official = 100,
+            discounted = null,
+        )
+        val original = jpeg(Color.RED)
+        repository.saveMedicine(item, original)
+
+        val media = MedicineMedia()
+        media.acceptPhoto(context, jpeg(Color.BLUE))
+        val restored = MedicineMedia.restore(media.encode())
+        File(requireNotNull(restored.photoPath)).delete()
+        restored.restorePreview()
+        assertNotNull(restored.error)
+
+        restored.discardUnavailableDraft()
+        assertNull(restored.photoPath)
+        assertFalse(restored.removePhoto)
+        val snapshot = restored.save(repository, item)
+        restored.discard()
+
+        assertTrue(snapshot.items.single { it.id == item.id }.hasPhoto)
+        assertArrayEquals(original, repository.loadPhoto(item.id))
+    }
+
+    @Test fun galleryCropSourceIsOwnedWithoutLossyPreCropEncoding() = runBlocking {
+        val source = File(context.cacheDir, "gallery-original.jpg")
+        val bytes = jpeg(Color.MAGENTA)
+        source.writeBytes(bytes)
+
+        val owned = copyMedicinePhotoSource(context, Uri.fromFile(source))
+        try {
+            assertTrue(owned.isFile)
+            assertArrayEquals(bytes, owned.readBytes())
+            assertEquals("medicine_crop_sources", owned.parentFile?.name)
+        } finally {
+            owned.delete()
+            source.delete()
+        }
     }
 
     @Test fun missingDraftStopsMedicineSaveRatherThanDroppingPhoto() = runBlocking {
