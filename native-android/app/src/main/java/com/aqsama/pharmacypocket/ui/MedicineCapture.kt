@@ -22,7 +22,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,7 +46,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,7 +62,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -120,9 +117,11 @@ internal fun MedicineCameraScreen(
     var message by remember { mutableStateOf("Scan a code or take a package photo") }
     val captureState = state ?: remember { MediaCaptureState() }
     val capturedFile = captureState.cropFile
+    val photoReviewing = captureState.reviewingPhoto
     val capturing = captureState.capturing
     val saving = captureState.saving
     val pendingCode = captureState.code
+    var cropOperationBusy by remember(captureState) { mutableStateOf(false) }
     LaunchedEffect(captureState) {
         if (!allowed && captureState.scanning) request.launch(Manifest.permission.CAMERA)
     }
@@ -136,10 +135,13 @@ internal fun MedicineCameraScreen(
     val currentOnPhoto by rememberUpdatedState(onPhoto)
     val handling = remember { AtomicBoolean(false) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    LaunchedEffect(photoReviewing) {
+        if (photoReviewing) imageCapture = null
+    }
 
     fun receive(code: MedicineCode) {
         if (
-            capturedFile != null ||
+            photoReviewing ||
             capturing ||
             saving ||
             pendingCode != null ||
@@ -201,7 +203,7 @@ internal fun MedicineCameraScreen(
     }
 
     Dialog(
-        onDismissRequest = { if (!saving && !capturing) onDismiss() },
+        onDismissRequest = { if (!saving && !capturing && !cropOperationBusy) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -212,10 +214,10 @@ internal fun MedicineCameraScreen(
                 CameraHeader(
                     title = title,
                     savedCodeCount = existingCodes.size,
-                    photoPreviewOpen = capturedFile != null,
-                    enabled = !saving && !capturing,
+                    photoPreviewOpen = photoReviewing,
+                    enabled = !saving && !capturing && !cropOperationBusy,
                     onClose = {
-                        if (capturedFile != null) {
+                        if (photoReviewing) {
                             captureState.retake()
                             message = idleCameraMessage()
                         } else {
@@ -224,7 +226,7 @@ internal fun MedicineCameraScreen(
                     },
                 )
 
-                if (!allowed && capturedFile == null) {
+                if (!allowed && !photoReviewing) {
                     Column(
                         Modifier.weight(1f).padding(24.dp),
                         verticalArrangement = Arrangement.Center,
@@ -244,7 +246,7 @@ internal fun MedicineCameraScreen(
                             .padding(horizontal = 10.dp)
                             .clip(RoundedCornerShape(28.dp)),
                     ) {
-                        if (capturedFile == null) LiveMedicineCamera(
+                        if (!photoReviewing) LiveMedicineCamera(
                             enabled = captureState.scanning,
                             onCaptureReady = { imageCapture = it },
                             onDetected = ::receive,
@@ -260,6 +262,8 @@ internal fun MedicineCameraScreen(
                                 file = file,
                                 saving = saving,
                                 statusMessage = message,
+                                onCancel = { if (!saving && !cropOperationBusy) onDismiss() },
+                                onProcessingChanged = { cropOperationBusy = it },
                                 onAccept = { bytes ->
                                     if (!captureState.savePhoto()) return@MedicinePhotoCrop
                                     try { currentOnPhoto(bytes) { result ->
@@ -282,7 +286,7 @@ internal fun MedicineCameraScreen(
                             )
                         }
 
-                        if (capturedFile == null) {
+                        if (!photoReviewing) {
                             if (scannerAvailable) {
                                 Box(
                                     Modifier
@@ -367,9 +371,9 @@ internal fun MedicineCameraScreen(
                         }
                     }
 
-                    if (capturedFile == null) CameraControlDeck(
+                    if (!photoReviewing) CameraControlDeck(
                         message = message,
-                        canCapture = imageCapture != null && captureState.scanning && !handling.get(),
+                        canCapture = imageCapture != null && captureState.shutterAvailable && !handling.get(),
                         busy = saving || capturing,
                         showRescan = ignoredCodes.isNotEmpty(),
                         onCapture = ::takePhoto,
@@ -760,92 +764,6 @@ private fun LiveMedicineCamera(
     )
 }
 
-@Composable
-internal fun MedicinePhotoCrop(
-    file: File,
-    saving: Boolean,
-    onAccept: (ByteArray) -> Unit,
-    modifier: Modifier = Modifier,
-    statusMessage: String? = null,
-) {
-    val context = LocalContext.current
-    var square by remember(file) { mutableStateOf(false) }
-    var horizontal by remember(file) { mutableStateOf(0.5f) }
-    var vertical by remember(file) { mutableStateOf(0.5f) }
-    var error by remember(file) { mutableStateOf<String?>(null) }
-    val bitmap = remember(file) {
-        runCatching { decodeMedicineBitmap(context, Uri.fromFile(file)) }.getOrNull()
-    }
-    val frame = remember(bitmap, square, horizontal, vertical) {
-        bitmap?.let { cropMedicineBitmap(it, square, horizontal, vertical) }
-    }
-
-    Surface(modifier, color = MaterialTheme.colorScheme.background) {
-        Column(
-            Modifier.fillMaxSize().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Column(
-                Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-            Text("Crop package photo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(
-                "Drag to center the package. Rectangle is the default.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp,
-            )
-            frame?.let {
-                Image(
-                    it.asImageBitmap(),
-                    contentDescription = "Cropped medicine photo preview",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .pointerInput(bitmap, square, saving) {
-                            detectDragGestures { change, drag ->
-                                change.consume()
-                                if (saving) return@detectDragGestures
-                                horizontal = (horizontal - drag.x / size.width).coerceIn(0f, 1f)
-                                vertical = (vertical - drag.y / size.height).coerceIn(0f, 1f)
-                            }
-                        },
-                    contentScale = ContentScale.Fit,
-                )
-            } ?: Text("Could not open photo. Retake it.")
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(enabled = !saving, onClick = { square = false }) { Text(if (!square) "✓ Rectangle" else "Rectangle") }
-                TextButton(enabled = !saving, onClick = { square = true }) { Text(if (square) "✓ Square" else "Square") }
-            }
-
-            Text("Horizontal position", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(enabled = !saving, value = horizontal, onValueChange = { horizontal = it })
-            Text("Vertical position", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Slider(enabled = !saving, value = vertical, onValueChange = { vertical = it })
-            statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-
-            }
-
-            Button(
-                onClick = {
-                    try {
-                        onAccept(encodeMedicineBitmap(requireNotNull(frame)))
-                    } catch (exception: Exception) {
-                        error = exception.message ?: "Could not save photo."
-                    }
-                },
-                enabled = frame != null && !saving,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(17.dp),
-            ) {
-                Text(if (saving) "Saving…" else "Save photo", fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
 /** Decodes and re-encodes a selected image; source URI and metadata are never retained. */
 fun prepareMedicinePhoto(context: Context, uri: Uri): ByteArray =
     encodeMedicineBitmap(decodeMedicineBitmap(context, uri))
@@ -922,15 +840,6 @@ private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also { transformed ->
         if (transformed !== bitmap) bitmap.recycle()
     }
-}
-
-internal fun cropMedicineBitmap(bitmap: Bitmap, square: Boolean, horizontal: Float, vertical: Float): Bitmap {
-    val ratio = if (square) 1f else if (bitmap.height > bitmap.width) 3f / 4f else 4f / 3f
-    val width = minOf(bitmap.width, (bitmap.height * ratio).toInt()).coerceAtLeast(1)
-    val height = minOf(bitmap.height, (bitmap.width / ratio).toInt()).coerceAtLeast(1)
-    val x = ((bitmap.width - width) * horizontal.coerceIn(0f, 1f)).toInt()
-    val y = ((bitmap.height - height) * vertical.coerceIn(0f, 1f)).toInt()
-    return Bitmap.createBitmap(bitmap, x, y, width, height)
 }
 
 internal fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {

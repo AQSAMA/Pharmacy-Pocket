@@ -31,22 +31,31 @@ class MedicineMediaStateTest {
     @Test fun shutterAndScannerAreExclusiveWithCropAndSave() {
         val state = MediaCaptureState()
         val file = File(context.cacheDir, "capture-state.jpg").apply { writeBytes(jpeg()) }
+        assertTrue(state.shutterAvailable)
         assertTrue(state.capture(file))
+        assertFalse(state.shutterAvailable)
         assertFalse(state.capture(File(context.cacheDir, "second.jpg")))
         state.captured(file)
         assertFalse(state.scanning)
+        assertTrue(state.reviewingPhoto)
+        assertFalse(state.shutterAvailable)
         assertFalse(state.detect(MedicineCode(CodeKind.QR, "raw sticker payload")))
         assertFalse(state.capture(File(context.cacheDir, "second.jpg")))
         assertTrue(state.savePhoto())
+        assertTrue(state.reviewingPhoto)
         state.retake()
         assertTrue(state.saving)
         assertTrue(file.exists())
         state.photoSaved(file, false)
         assertEquals(file, state.cropFile)
+        assertTrue(state.reviewingPhoto)
+        assertFalse(state.shutterAvailable)
         assertTrue(state.savePhoto())
         state.photoSaved(file, true)
         assertFalse(file.exists())
         assertTrue(state.scanning)
+        assertFalse(state.reviewingPhoto)
+        assertTrue(state.shutterAvailable)
     }
 
     @Test fun staleCameraResultCannotReopenClosedSession() {

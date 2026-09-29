@@ -10,12 +10,26 @@ import androidx.core.app.ActivityOptionsCompat
 import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.android.asCoroutineDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import androidx.core.content.FileProvider
+import org.robolectric.util.ReflectionHelpers
+import org.robolectric.shadows.ShadowLog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -43,9 +57,13 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowLooper
 
+@OptIn(ExperimentalCoroutinesApi::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @LooperMode(LooperMode.Mode.PAUSED)
@@ -56,17 +74,68 @@ class MedicineMediaFlowTest {
     private val medicine = Medicine(id = "flow", category = "tablets", subcategory = "General", name = "Photo flow", note = "", official = 1000, discounted = null)
 
     @Before fun setup() {
+        // Dispatchers.Main is cached across Robolectric sandboxes; bind the cropper callbacks
+        // to this test's looper instead of the first test's now-inactive looper.
+        Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher())
         context = ApplicationProvider.getApplicationContext()
+        // FileProvider caches absolute roots by authority, while Robolectric gives every
+        // test a new data directory under the same application authority.
+        ReflectionHelpers.getStaticField<MutableMap<String, Any>>(
+            FileProvider::class.java, "sCache",
+        ).clear()
+        ShadowLog.stream = System.out
         File(context.filesDir, "SQLite").deleteRecursively()
         File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
-        File(context.noBackupFilesDir, "medicine_crop_sources").deleteRecursively()
+        File(context.filesDir, "medicine_crop_sources").deleteRecursively()
         repository = PharmacyRepository(context)
+    }
+
+    @After fun resetMainDispatcher() {
+        Dispatchers.resetMain()
+        ShadowLog.stream = null
     }
 
     @Test fun existingMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = false)
     @Test fun existingMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = false)
     @Test fun newMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = true)
     @Test fun newMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = true)
+
+    @Test fun photoLessCardSupportsLongMixedNameDiscountLargeTextAndRtlWithoutEmptyMedia() {
+        val snapshot = runBlocking { repository.loadSnapshot() }
+        val category = snapshot.categories.first { it.id == medicine.category }
+        val mixed = medicine.copy(
+            name = "ثيروكسين thyroxine extra long mixed medicine name",
+            discounted = 900,
+            hasPhoto = false,
+        )
+
+        compose.setContent {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                androidx.compose.material3.MaterialTheme {
+                    MedicineCard(
+                        item = mixed,
+                        category = category,
+                        large = true,
+                        currency = snapshot.currency,
+                        first = true,
+                        last = true,
+                        onOpen = {},
+                        onEdit = {},
+                        onFavorite = {},
+                        onCamera = {},
+                        loadPhoto = { null },
+                        photoVersion = 0,
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText(mixed.name).assertExists()
+        compose.onNodeWithContentDescription("Package photo of ${mixed.name}").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit ${mixed.name}").assertExists()
+        compose.onNodeWithContentDescription("Add or replace photo or code for ${mixed.name}").assertExists()
+        compose.onNodeWithText("900").assertExists()
+    }
 
     @Test fun galleryCropWriteFailureStaysInsideCropInsteadOfOpeningEditorAlert() {
         val snapshot = runBlocking { repository.saveMedicine(medicine) }
@@ -89,7 +158,12 @@ class MedicineMediaFlowTest {
         }
 
         compose.setContent {
-            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+            CompositionLocalProvider(
+                LocalActivityResultRegistryOwner provides registryOwner,
+                LocalMedicineCropBitmapLoader provides { source ->
+                    BitmapFactory.decodeFile(source.absolutePath)
+                },
+            ) {
                 MedicineEditorScreen(
                     snapshot = snapshot,
                     medicineId = medicine.id,
@@ -107,7 +181,7 @@ class MedicineMediaFlowTest {
 
         compose.onNodeWithText("Photo & codes").performScrollTo().performClick()
         compose.onNodeWithText("Gallery").performScrollTo().performClick()
-        compose.waitUntil(10_000) { media.cropSource != null }
+        waitUntilWithAndroidMain { media.cropSource != null }
 
         val draftDirectory = File(context.noBackupFilesDir, "medicine_drafts")
         draftDirectory.deleteRecursively()
@@ -115,8 +189,9 @@ class MedicineMediaFlowTest {
         assertTrue(draftDirectory.isFile)
 
         try {
-            compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
-            compose.waitUntil(10_000) {
+            waitForCropReady()
+            compose.onNodeWithText("Save photo").performClick()
+            waitUntilWithAndroidMain {
                 compose.onAllNodesWithText("Could not prepare photo storage.")
                     .fetchSemanticsNodes().isNotEmpty()
             }
@@ -127,6 +202,25 @@ class MedicineMediaFlowTest {
             draftDirectory.delete()
             media.cancelCrop()
             source.delete()
+        }
+    }
+
+    private fun waitForCropReady() {
+        waitUntilWithAndroidMain {
+            runCatching {
+                compose.onNodeWithText("Save photo").assertIsEnabled()
+                true
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun waitUntilWithAndroidMain(
+        timeoutMillis: Long = 10_000,
+        condition: () -> Boolean,
+    ) {
+        compose.waitUntil(timeoutMillis) {
+            ShadowLooper.idleMainLooper()
+            condition()
         }
     }
 
@@ -159,7 +253,12 @@ class MedicineMediaFlowTest {
         var saved = false
         compose.setContent {
             val scope = rememberCoroutineScope()
-            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+            CompositionLocalProvider(
+                LocalActivityResultRegistryOwner provides registryOwner,
+                LocalMedicineCropBitmapLoader provides { source ->
+                    BitmapFactory.decodeFile(source.absolutePath)
+                },
+            ) {
             when (screen) {
                 "editor" -> MedicineEditorScreen(
                     snapshot = snapshot, medicineId = if (newMedicine) null else medicine.id, initialCategory = medicine.category,
@@ -198,12 +297,13 @@ class MedicineMediaFlowTest {
         if (gallery) {
             compose.onNodeWithText("Photo & codes").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("Gallery").performScrollTo().performClick()
-            compose.waitUntil(10_000) { media.cropSource != null }
+            waitUntilWithAndroidMain { media.cropSource != null }
         }
         compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
-        compose.onNodeWithText("Save photo").assertIsDisplayed().assertIsEnabled().performClick()
-        compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
-        compose.waitUntil(10_000) { media.captureState == null }
+        waitForCropReady()
+        compose.onNodeWithText("Save photo").assertIsDisplayed().performClick()
+        waitUntilWithAndroidMain { media.preview != null && media.cropSource == null }
+        waitUntilWithAndroidMain { media.captureState == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
         if (newMedicine) {
             compose.onNode(
@@ -218,16 +318,19 @@ class MedicineMediaFlowTest {
         val accepted = requireNotNull(media.preview)
         val draft = requireNotNull(media.photoPath)
         compose.onNodeWithText("Save medicine").performClick()
-        compose.waitUntil(10_000) { saved }
+        waitUntilWithAndroidMain { saved }
         val id = requireNotNull(savedMedicineId)
         assertFalse(File(draft).exists())
         assertTrue(snapshot.items.single { it.id == id }.hasPhoto)
         assertArrayEquals(accepted, runBlocking { repository.loadPhoto(id) })
-        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Package photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
+        waitUntilWithAndroidMain { compose.onAllNodesWithContentDescription("Package photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Package photo of ${medicine.name}").assertExists()
         compose.runOnIdle { screen = "detail" }
-        compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists()
+        waitUntilWithAndroidMain { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists().performClick()
+        compose.onNodeWithContentDescription("Full image of ${medicine.name}").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithContentDescription("Full image of ${medicine.name}").assertDoesNotExist()
         val reopened = PharmacyRepository(context)
         assertTrue(runBlocking { reopened.loadSnapshot() }.items.single { it.id == id }.hasPhoto)
         assertArrayEquals(accepted, runBlocking { reopened.loadPhoto(id) })

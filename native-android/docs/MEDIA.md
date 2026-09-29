@@ -11,8 +11,15 @@ an independent writable photo draft.
 1. CameraX returns an owned capture file. Gallery copies its temporary URI
    byte-for-byte into private crop-source storage. Neither URI nor acquisition
    file becomes the medicine photo, and Gallery is not JPEG-encoded before crop.
-2. Both inputs use `MedicinePhotoCrop`; `encodeMedicineBitmap` performs the
-   final lossy JPEG encoding only after the crop is chosen.
+2. Both inputs use the same `MedicinePhotoCrop` shell. The shell embeds CanHub
+   Android Image Cropper `4.7.0`'s `CropImageView` for crop-window gestures,
+   pinch zoom, EXIF-aware loading and rotation. The dependency is Apache-2.0,
+   published on Maven Central, and is used as a library rather than copied source.
+   The crop view keeps the owned source URI, so its display preview may be sampled
+   for memory but the crop worker reads the original image for tight label crops.
+   Late preview loads are cleared after dismissal rather than leaving a decoded bitmap
+   attached to an abandoned crop view. `encodeMedicineBitmap` performs Pharmacy
+   Pocket's final bounded JPEG encoding only after the crop is chosen.
 3. `MedicineMedia.acceptPhoto` validates/writes the final JPEG, then publishes its
    path and preview together. Only then is acceptance acknowledged. Camera capture
    closes to reveal the editor; Gallery closes its crop dialog.
@@ -27,8 +34,10 @@ an independent writable photo draft.
 
 `MediaCaptureState` permits scanning, capturing, cropping, reviewing a code, saving
 photo/code, or closed. Cropping unmounts CameraX and removes the shutter deck.
-Saving prevents retake and navigation. Callbacks are checked against their input
-file/code and a closed session cannot accept a late capture. A failed photo write
+Saving prevents retake and navigation. The live CameraX subtree and shutter deck
+are removed whenever the state is `Cropping` or `SavingPhoto`; crop, shutter,
+and scanner controls therefore cannot coexist. Callbacks are checked against their
+input file/code and a closed session cannot accept a late capture. A failed photo write
 returns to crop; a successful one releases only the capture input, never the editor
 JPEG. Save results carry a success flag, not a message-prefix convention.
 
@@ -73,3 +82,14 @@ These are Robolectric/Compose tests. They do not operate physical CameraX hardwa
 or the Android picker. On a device, verify new and existing medicines with Camera
 and Gallery, replacement/removal, rapid taps, back during writes, rotation, app
 restart, code+photo capture, duplicate scans, and full raw sticker QR values.
+
+
+## Media presentation
+
+Home cards treat a stored photo as a physical-left media rail that participates in
+the card's full height. Cards without photos omit the rail entirely instead of
+reserving blank media space. The medicine detail screen uses an enlarged cropped
+preview as a primary surface; tapping it opens the complete stored image in a
+full-screen fit viewer. Text content restores the user's layout direction even
+though the media rail remains physical-left, so RTL and mixed Arabic/English names
+keep natural text direction.

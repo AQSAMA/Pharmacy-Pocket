@@ -121,6 +121,18 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/pharmacy-pocket-ci-release.jks"
 
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-validation-reports-${{ github.event.pull_request.number || github.run_number }}
+          path: |
+            native-android/app/build/reports/tests/
+            native-android/app/build/test-results/
+            native-android/app/build/reports/lint-results-*
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload debug test APK
         uses: actions/upload-artifact@v4
         with:

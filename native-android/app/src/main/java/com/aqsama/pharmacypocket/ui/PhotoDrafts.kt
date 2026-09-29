@@ -12,7 +12,9 @@ private fun medicineDraftDirectory(context: Context): File =
     File(context.noBackupFilesDir, "medicine_drafts")
 
 private fun medicineCropSourceDirectory(context: Context): File =
-    File(context.noBackupFilesDir, "medicine_crop_sources")
+    // Crop sources must be addressable through the cropper's private FileProvider.
+    // App backup is disabled, so filesDir remains private/persistent without cloud backup.
+    File(context.filesDir, "medicine_crop_sources")
 
 internal fun createMedicinePhotoCropSource(context: Context): File {
     val directory = medicineCropSourceDirectory(context)
