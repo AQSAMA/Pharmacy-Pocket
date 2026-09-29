@@ -47,6 +47,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowDialog
 import org.robolectric.shadows.ShadowLooper
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -141,6 +142,8 @@ class MedicineCardLayoutTest {
         compose.onNodeWithContentDescription("Close full photo").performClick()
         compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
         compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
+        compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
+        compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
         compose.onNodeWithContentDescription("Edit ${item.name}").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Add or replace photo or code for ${item.name}").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Add ${item.name} to favorites").assertIsDisplayed().performClick()
