@@ -123,6 +123,7 @@ internal fun MedicineEditorScreen(
     var initialCaptureStarted by rememberSaveable { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
     var galleryCropError by remember(media.cropSource) { mutableStateOf<String?>(null) }
+    var galleryCropBusy by remember(media.cropSource) { mutableStateOf(false) }
     var confirmTrash by remember { mutableStateOf(false) }
     var mediaExpanded by rememberSaveable(medicineId) { mutableStateOf(media.photoPath != null || existing?.hasPhoto == true) }
     var detailsExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
@@ -577,7 +578,7 @@ internal fun MedicineEditorScreen(
 
     gallerySource?.let { source ->
         androidx.compose.ui.window.Dialog(
-            onDismissRequest = { if (!media.processing) media.cancelCrop() },
+            onDismissRequest = { if (!media.processing && !galleryCropBusy) media.cancelCrop() },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         ) {
             Surface(Modifier.fillMaxSize()) {
@@ -585,7 +586,8 @@ internal fun MedicineEditorScreen(
                     file = source,
                     saving = media.processing,
                     statusMessage = galleryCropError,
-                    onCancel = { if (!media.processing) media.cancelCrop() },
+                    onCancel = { if (!media.processing && !galleryCropBusy) media.cancelCrop() },
+                    onProcessingChanged = { galleryCropBusy = it },
                     onAccept = { bytes ->
                         scope.launch {
                             try {
