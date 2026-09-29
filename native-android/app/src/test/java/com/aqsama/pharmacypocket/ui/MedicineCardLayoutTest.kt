@@ -21,6 +21,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -109,7 +111,7 @@ class MedicineCardLayoutTest {
         if (!large) assertEquals(withoutPhoto.height, pendingPhoto.height, 0.5f)
 
         // A 10:1 portrait used to determine the intrinsic row height.
-        val portrait = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val portrait = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.BLUE) }
         val bytes = ByteArrayOutputStream().also { portrait.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         portrait.recycle()
         photoResult.complete(bytes)
@@ -139,7 +141,7 @@ class MedicineCardLayoutTest {
         compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
         compose.onNodeWithContentDescription("Full image of ${item.name}").assertIsDisplayed()
         compose.runOnIdle { assertEquals("Photo tap must not open medicine", 0, opens) }
-        compose.onNodeWithContentDescription("Close full photo").performClick()
+        compose.onNodeWithContentDescription("Close full photo").performTouchInput { click(Offset(1f, 1f)) }
         compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
         compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
         compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
