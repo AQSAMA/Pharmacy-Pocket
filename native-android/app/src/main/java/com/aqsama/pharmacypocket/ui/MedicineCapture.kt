@@ -966,13 +966,41 @@ internal fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
     throw IllegalArgumentException("This photo could not be prepared for local storage.")
 }
 
-/** Copies a temporary picker grant into an owned crop input; never retains an external URI. */
+/**
+ * Copies a temporary picker grant byte-for-byte into private crop storage.
+ * The only lossy JPEG encoding happens after the user chooses the final crop.
+ */
 internal suspend fun copyMedicinePhotoSource(context: Context, uri: Uri): File {
     var file: File? = null
     try {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val bytes = prepareMedicinePhoto(context, uri)
-            file = File(writeMedicinePhotoDraft(context, bytes))
+            val target = createMedicinePhotoCropSource(context)
+            file = target
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw IllegalArgumentException("Could not open the selected photo.")
+            input.use { source ->
+                target.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        total += count
+                        require(total <= MAX_MEDICINE_CROP_SOURCE_BYTES) {
+                            "The selected photo is too large to crop."
+                        }
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            require(target.length() > 0L) { "The selected photo is empty." }
+
+            // Fail while the picker grant is still in this operation instead of
+            // restoring a crop dialog that can never decode its owned input.
+            decodeMedicineBitmap(context, Uri.fromFile(target)).let { bitmap ->
+                if (!bitmap.isRecycled) bitmap.recycle()
+            }
         }
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         return requireNotNull(file)
