@@ -27,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.toArgb
@@ -47,6 +48,9 @@ private enum class MedicineCropMode {
     Square,
 }
 
+internal val LocalMedicineCropBitmapLoader =
+    staticCompositionLocalOf<((File) -> Bitmap?)?> { null }
+
 /**
  * Material 3 shell around CanHub's CropImageView.
  *
@@ -66,6 +70,7 @@ internal fun MedicinePhotoCrop(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val bitmapLoaderOverride = LocalMedicineCropBitmapLoader.current
     var cropMode by remember(file.absolutePath) { mutableStateOf(MedicineCropMode.Rectangle) }
     var imageReady by remember(file.absolutePath) { mutableStateOf(false) }
     var cropRunning by remember(file.absolutePath) { mutableStateOf(false) }
@@ -95,9 +100,11 @@ internal fun MedicinePhotoCrop(
         }
     }
 
-    DisposableEffect(cropView, file.absolutePath) {
+    DisposableEffect(cropView, file.absolutePath, bitmapLoaderOverride) {
         imageReady = false
         error = null
+        var overrideBitmap: Bitmap? = null
+
         cropView.setOnSetImageUriCompleteListener(
             object : CropImageView.OnSetImageUriCompleteListener {
                 override fun onSetImageUriComplete(view: CropImageView, uri: Uri, loadError: Exception?) {
@@ -144,21 +151,39 @@ internal fun MedicinePhotoCrop(
                 }
             },
         )
-        // Keep a content URI attached to CropImageView. The view may sample for display,
-        // but its crop worker reopens the original file through ContentResolver for the final crop.
-        // Both Camera cache files and Gallery-owned files are covered by the cropper FileProvider.
-        val sourceUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.cropper.fileprovider",
-            file,
-        )
-        cropView.setImageUriAsync(sourceUri)
+        if (bitmapLoaderOverride != null) {
+            // A synchronous override keeps JVM UI tests deterministic. Production never installs
+            // this CompositionLocal and always uses the original-URI path below.
+            overrideBitmap = runCatching { bitmapLoaderOverride(file) }.getOrNull()
+            val bitmap = overrideBitmap
+            if (bitmap != null) {
+                cropView.setImageBitmap(bitmap)
+                imageReady = true
+            } else {
+                error = "Could not open this photo."
+            }
+        } else {
+            // Keep a content URI attached to CropImageView. The view may sample for display,
+            // but its crop worker reopens the original file through ContentResolver for the final crop.
+            // Both Camera cache files and Gallery-owned files are covered by the cropper FileProvider.
+            val sourceUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.cropper.fileprovider",
+                file,
+            )
+            cropView.setImageUriAsync(sourceUri)
+        }
 
         onDispose {
             if (cropRunning) onProcessingChanged(false)
             cropView.setOnCropImageCompleteListener(null)
 
-            if (imageReady) {
+            if (overrideBitmap != null) {
+                cropView.setOnSetImageUriCompleteListener(null)
+                cropView.clearImage()
+                overrideBitmap?.takeIf { !it.isRecycled }?.recycle()
+                overrideBitmap = null
+            } else if (imageReady) {
                 // The loaded preview is owned by CropImageView; clearImage recycles it.
                 cropView.setOnSetImageUriCompleteListener(null)
                 cropView.clearImage()
