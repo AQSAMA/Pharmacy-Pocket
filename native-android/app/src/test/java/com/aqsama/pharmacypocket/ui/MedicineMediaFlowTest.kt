@@ -22,6 +22,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -115,12 +116,12 @@ class MedicineMediaFlowTest {
         }
         try {
         if (gallery) {
-            compose.onNodeWithText("Photo & codes").performScrollTo().performClick()
+            compose.onNodeWithText("Photo & codes").performScrollTo().assertIsDisplayed().performClick()
             compose.onNodeWithText("Gallery").performScrollTo().performClick()
             compose.waitUntil(10_000) { media.cropSource != null }
         }
         compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
-        compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
+        compose.onNodeWithText("Save photo").assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
         val accepted = requireNotNull(media.preview)

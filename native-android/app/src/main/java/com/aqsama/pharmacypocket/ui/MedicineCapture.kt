@@ -165,7 +165,7 @@ internal fun MedicineCameraScreen(
 
     fun takePhoto() {
         val capture = imageCapture ?: return
-        if (capturedFile != null || saving || capturing || pendingCode != null || handling.get() || disposed.get()) return
+        if (!captureState.scanning || handling.get() || disposed.get()) return
         val file = File(context.cacheDir, "medicine_capture/${UUID.randomUUID()}.jpg")
         file.parentFile?.mkdirs()
         if (!captureState.capture(file)) return
@@ -245,7 +245,7 @@ internal fun MedicineCameraScreen(
                             .clip(RoundedCornerShape(28.dp)),
                     ) {
                         if (capturedFile == null) LiveMedicineCamera(
-                            enabled = capturedFile == null && pendingCode == null && !capturing && !saving,
+                            enabled = captureState.scanning,
                             onCaptureReady = { imageCapture = it },
                             onDetected = ::receive,
                             onScannerAvailabilityChanged = { available ->
@@ -369,9 +369,9 @@ internal fun MedicineCameraScreen(
 
                     if (capturedFile == null) CameraControlDeck(
                         message = message,
-                        canCapture = capturedFile == null && imageCapture != null && !saving && !capturing && pendingCode == null && !handling.get(),
+                        canCapture = imageCapture != null && captureState.scanning && !handling.get(),
                         busy = saving || capturing,
-                        showRescan = ignoredCodes.isNotEmpty() && capturedFile == null,
+                        showRescan = ignoredCodes.isNotEmpty(),
                         onCapture = ::takePhoto,
                         onDone = onDismiss,
                         onOpenMedicine = onOpenMedicine,
@@ -782,9 +782,13 @@ internal fun MedicinePhotoCrop(
 
     Surface(modifier, color = MaterialTheme.colorScheme.background) {
         Column(
-            Modifier.padding(16.dp),
+            Modifier.fillMaxSize().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            Column(
+                Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
             Text("Crop package photo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 "Drag to center the package. Rectangle is the default.",
@@ -797,7 +801,7 @@ internal fun MedicinePhotoCrop(
                     contentDescription = "Cropped medicine photo preview",
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
+                        .height(220.dp)
                         .pointerInput(bitmap, square, saving) {
                             detectDragGestures { change, drag ->
                                 change.consume()
@@ -821,6 +825,8 @@ internal fun MedicinePhotoCrop(
             Slider(enabled = !saving, value = vertical, onValueChange = { vertical = it })
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+            }
 
             Button(
                 onClick = {

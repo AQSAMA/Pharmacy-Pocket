@@ -37,6 +37,10 @@ QR contents remain raw data; validation and duplicate/ownership checks are uncha
 
 ## Defects established in the previous implementation
 
+- The short-screen rendered tests exposed a zero-height crop Save button and an
+  editor section positioned beneath the fixed Save medicine footer. Crop now keeps
+  Save outside its scrollable controls, and the editor viewport excludes scaffold
+  bars so a section tap cannot hit the footer. New editor IDs stay stable on retry.
 - Crop disabled the analyzer but not the shutter predicate or `takePhoto` handler.
   A second capture could run while the first crop was open.
 - Back navigation called draft deletion without checking an in-flight save. It

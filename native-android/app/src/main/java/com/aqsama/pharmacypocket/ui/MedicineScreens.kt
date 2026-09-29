@@ -98,6 +98,8 @@ internal fun MedicineEditorScreen(
         ?: snapshot.categories.firstOrNull { it.id != "all" }?.id
         ?: "syrups"
 
+    val editorMedicineId = rememberSaveable(medicineId) { medicineId ?: "med-${UUID.randomUUID()}" }
+    val editorCreatedAt = rememberSaveable(medicineId) { existing?.createdAt ?: System.currentTimeMillis() }
     var name by rememberSaveable(medicineId) { mutableStateOf(existing?.name ?: "") }
     var category by rememberSaveable(medicineId) { mutableStateOf(existing?.category ?: fallbackCategory) }
     var subcategory by rememberSaveable(medicineId) { mutableStateOf(subcategoryLabel(existing?.subcategory)) }
@@ -204,7 +206,7 @@ internal fun MedicineEditorScreen(
         Haptics.action(view)
         onSave(
             Medicine(
-                id = existing?.id ?: "med-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(6)}",
+                id = editorMedicineId,
                 name = name.trim(),
                 category = category,
                 subcategory = subcategoryLabel(subcategory),
@@ -214,7 +216,7 @@ internal fun MedicineEditorScreen(
                 description = description.trim(),
                 revision = existing?.revision ?: 0,
                 favorite = existing?.favorite ?: false,
-                createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                createdAt = editorCreatedAt,
                 codes = codes,
             ),
         )
@@ -235,8 +237,7 @@ internal fun MedicineEditorScreen(
         },
     ) { padding ->
         androidx.compose.foundation.lazy.LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = padding,
+            modifier = Modifier.fillMaxSize().padding(padding),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
@@ -743,8 +744,7 @@ fun MedicineDetailScreen(
         } else {
             val category = categoryById(item.category, snapshot.categories)
             androidx.compose.foundation.lazy.LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = padding,
+                modifier = Modifier.fillMaxSize().padding(padding),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item {
