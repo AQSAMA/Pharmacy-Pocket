@@ -16,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -23,6 +25,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyDescendant
@@ -67,6 +71,43 @@ class MedicineMediaFlowTest {
     @Test fun existingMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = false)
     @Test fun newMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = true)
     @Test fun newMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = true)
+
+    @Test fun photoLessCardSupportsLongMixedNameDiscountLargeTextAndRtlWithoutEmptyMedia() {
+        val snapshot = runBlocking { repository.loadSnapshot() }
+        val category = snapshot.categories.first { it.id == medicine.category }
+        val mixed = medicine.copy(
+            name = "ثيروكسين thyroxine extra long mixed medicine name",
+            discounted = 900,
+            hasPhoto = false,
+        )
+
+        compose.setContent {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                androidx.compose.material3.MaterialTheme {
+                    MedicineCard(
+                        item = mixed,
+                        category = category,
+                        large = true,
+                        currency = snapshot.currency,
+                        first = true,
+                        last = true,
+                        onOpen = {},
+                        onEdit = {},
+                        onFavorite = {},
+                        onCamera = {},
+                        loadPhoto = { null },
+                        photoVersion = 0,
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText(mixed.name).assertExists()
+        compose.onNodeWithContentDescription("Package photo of ${mixed.name}").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Edit ${mixed.name}").assertExists()
+        compose.onNodeWithContentDescription("Add or replace photo or code for ${mixed.name}").assertExists()
+        compose.onNodeWithText("900").assertExists()
+    }
 
     @Test fun galleryCropWriteFailureStaysInsideCropInsteadOfOpeningEditorAlert() {
         val snapshot = runBlocking { repository.saveMedicine(medicine) }
@@ -115,7 +156,8 @@ class MedicineMediaFlowTest {
         assertTrue(draftDirectory.isFile)
 
         try {
-            compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
+            waitForCropReady()
+            compose.onNodeWithText("Save photo").performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Could not prepare photo storage.")
                     .fetchSemanticsNodes().isNotEmpty()
@@ -127,6 +169,15 @@ class MedicineMediaFlowTest {
             draftDirectory.delete()
             media.cancelCrop()
             source.delete()
+        }
+    }
+
+    private fun waitForCropReady() {
+        compose.waitUntil(10_000) {
+            runCatching {
+                compose.onNodeWithText("Save photo").assertIsEnabled()
+                true
+            }.getOrDefault(false)
         }
     }
 
@@ -201,7 +252,8 @@ class MedicineMediaFlowTest {
             compose.waitUntil(10_000) { media.cropSource != null }
         }
         compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
-        compose.onNodeWithText("Save photo").assertIsDisplayed().assertIsEnabled().performClick()
+        waitForCropReady()
+        compose.onNodeWithText("Save photo").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
         compose.waitUntil(10_000) { media.captureState == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
@@ -227,7 +279,10 @@ class MedicineMediaFlowTest {
         compose.onNodeWithContentDescription("Package photo of ${medicine.name}").assertExists()
         compose.runOnIdle { screen = "detail" }
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists().performClick()
+        compose.onNodeWithContentDescription("Full image of ${medicine.name}").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithContentDescription("Full image of ${medicine.name}").assertDoesNotExist()
         val reopened = PharmacyRepository(context)
         assertTrue(runBlocking { reopened.loadSnapshot() }.items.single { it.id == id }.hasPhoto)
         assertArrayEquals(accepted, runBlocking { reopened.loadPhoto(id) })
