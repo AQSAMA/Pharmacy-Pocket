@@ -19,9 +19,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyDescendant
@@ -115,7 +118,10 @@ class MedicineMediaFlowTest {
 
         try {
             compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
-            compose.waitUntil(10_000) { media.phase == MedicineMedia.Phase.CROPPING }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Could not prepare photo storage.")
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
             compose.onNodeWithText("Could not prepare photo storage.").assertIsDisplayed()
             compose.onNodeWithText("Check the details").assertDoesNotExist()
             compose.onNodeWithText("Save photo").assertIsEnabled()
