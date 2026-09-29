@@ -30,6 +30,8 @@ internal class MediaCaptureState {
     val scanning: Boolean get() = phase == MediaCapturePhase.Scanning
     val saving: Boolean get() = phase is MediaCapturePhase.SavingCode || phase is MediaCapturePhase.SavingPhoto
     val capturing: Boolean get() = phase is MediaCapturePhase.Capturing
+    val reviewingPhoto: Boolean get() = phase is MediaCapturePhase.Cropping || phase is MediaCapturePhase.SavingPhoto
+    val shutterAvailable: Boolean get() = phase == MediaCapturePhase.Scanning
 
     fun capture(file: File): Boolean {
         if (!scanning) return false
