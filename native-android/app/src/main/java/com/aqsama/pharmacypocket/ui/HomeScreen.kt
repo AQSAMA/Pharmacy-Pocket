@@ -1,119 +1,40 @@
 package com.aqsama.pharmacypocket.ui
 
-import androidx.compose.foundation.BorderStroke
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.SmallFloatingActionButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.aqsama.pharmacypocket.data.AppSnapshot
-import com.aqsama.pharmacypocket.data.Medicine
-import com.aqsama.pharmacypocket.data.MedicineFilters
-import com.aqsama.pharmacypocket.data.MedicineSort
-import com.aqsama.pharmacypocket.data.buildSearchIndex
-import com.aqsama.pharmacypocket.data.categoryById
-import com.aqsama.pharmacypocket.data.filterSortedMedicines
-import com.aqsama.pharmacypocket.data.listSubcategories
-import com.aqsama.pharmacypocket.data.sortSearchIndex
-import com.aqsama.pharmacypocket.data.subcategoryKey
-import com.aqsama.pharmacypocket.data.subcategoryLabel
+import com.aqsama.pharmacypocket.data.*
 
-private data class MedicineSection(
-    val key: String,
-    val groupKey: String,
-    val title: String,
-    val category: String,
-    val data: List<Medicine>,
-)
-
-private val ToolbarControlHeight = 52.dp
-
-private sealed interface HomeRow {
-    val key: String
-    data class Header(val section: MedicineSection) : HomeRow {
-        override val key = "header:${section.key}"
-    }
-    data class Item(val item: Medicine, val first: Boolean, val last: Boolean) : HomeRow {
-        override val key = "medicine:${item.id}"
-    }
+private enum class LibraryTab(val label: String, val icon: PocketIcon) {
+    MEDICINES("Medicines", PocketIcon.LIBRARY), FAVORITES("Favorites", PocketIcon.FAVORITE),
+    OVERVIEW("Overview", PocketIcon.OVERVIEW),
 }
 
-private fun buildRows(items: List<Medicine>): List<HomeRow> {
-    val sections = mutableListOf<MedicineSection>()
-    items.forEach { item ->
-        val key = subcategoryKey(item.subcategory)
-        val current = sections.lastOrNull()
-        if (current != null && current.category == item.category && current.groupKey == key) {
-            sections[sections.lastIndex] = current.copy(data = current.data + item)
-        } else {
-            sections += MedicineSection(
-                key = "run:${sections.size}:${item.category}:$key",
-                groupKey = key,
-                title = subcategoryLabel(item.subcategory),
-                category = item.category,
-                data = listOf(item),
-            )
-        }
-    }
-    return buildList {
-        sections.forEach { section ->
-            add(HomeRow.Header(section))
-            section.data.forEachIndexed { index, item ->
-                add(HomeRow.Item(item, first = index == 0, last = index == section.data.lastIndex))
-            }
-        }
-    }
-}
-
-/** Displays the searchable medicine list with its sticky filters and category controls. */
+/** The library owns view state; medicine/media persistence stays at the existing app owner. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     snapshot: AppSnapshot,
@@ -128,492 +49,225 @@ fun HomeScreen(
     photoVersions: Map<String, Int>,
 ) {
     val view = LocalView.current
+    val focus = LocalFocusManager.current
     val listState = rememberLazyListState()
+    var tabName by rememberSaveable { mutableStateOf(LibraryTab.MEDICINES.name) }
+    val tab = LibraryTab.valueOf(tabName)
     var category by rememberSaveable { mutableStateOf("all") }
-    var selectedSubcategory by rememberSaveable { mutableStateOf<String?>(null) }
+    var subcategory by rememberSaveable { mutableStateOf<String?>(null) }
     var sortName by rememberSaveable { mutableStateOf(MedicineSort.DEFAULT.name) }
+    var filterName by rememberSaveable { mutableStateOf(CollectionFilter.ALL.name) }
     var query by rememberSaveable { mutableStateOf("") }
-    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-    var controlsOpen by rememberSaveable { mutableStateOf(false) }
-    val addCategory = if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
-    val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
-
+    var compact by rememberSaveable { mutableStateOf(false) }
+    var filtersOpen by rememberSaveable { mutableStateOf(false) }
+    var comparisonMode by rememberSaveable { mutableStateOf(false) }
+    var comparisonIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    var comparisonOpen by rememberSaveable { mutableStateOf(false) }
+    val sort = MedicineSort.valueOf(sortName)
+    val collectionFilter = CollectionFilter.valueOf(filterName)
+    val overview = remember(snapshot.items) { collectionOverview(snapshot.items) }
     val searchIndex = remember(snapshot.items) { buildSearchIndex(snapshot.items) }
     val sortedIndex = remember(searchIndex, sort) { sortSearchIndex(searchIndex, sort) }
     val subcategories = remember(searchIndex, category) { listSubcategories(searchIndex, category) }
+    val categories = remember(snapshot.categories, overview) {
+        snapshot.categories.sortedByDescending { if (it.id == "all") Int.MAX_VALUE else overview.categoryCounts[it.id] ?: 0 }
+    }
+    val filters = MedicineFilters(category, subcategory, tab == LibraryTab.FAVORITES)
+    val visible = remember(sortedIndex, filters, query, collectionFilter) {
+        filterSortedMedicines(sortedIndex, filters, query).filter { matchesCollectionFilter(it, collectionFilter) }
+    }
+    val comparison = remember(comparisonIds, snapshot.items) {
+        comparisonIds.mapNotNull { id -> snapshot.items.firstOrNull { it.id == id } }
+    }
+    val filterCount = (if (category != "all") 1 else 0) + (if (subcategory != null) 1 else 0) +
+        (if (collectionFilter != CollectionFilter.ALL) 1 else 0) + (if (sort != MedicineSort.DEFAULT) 1 else 0)
+    val addCategory = category.takeUnless { it == "all" }
+        ?: snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups"
 
-    LaunchedEffect(snapshot.categories, category) {
-        if (category != "all" && snapshot.categories.none { it.id == category }) {
-            category = "all"
-            selectedSubcategory = null
-        }
+    fun clearFilters() {
+        category = "all"
+        subcategory = null
+        filterName = CollectionFilter.ALL.name
+        sortName = MedicineSort.DEFAULT.name
+        query = ""
     }
-    LaunchedEffect(subcategories, selectedSubcategory) {
-        if (selectedSubcategory != null && subcategories.none { it.key == selectedSubcategory }) {
-            selectedSubcategory = null
-        }
-    }
-
-    val filters = remember(category, selectedSubcategory, favoritesOnly) {
-        MedicineFilters(category, selectedSubcategory, favoritesOnly)
-    }
-    val visible = remember(sortedIndex, filters, query) {
-        filterSortedMedicines(sortedIndex, filters, query)
-    }
-    val rows = remember(visible) { buildRows(visible) }
-    val categoryCounts = remember(snapshot.items) {
-        buildMap {
-            put("all", snapshot.items.size)
-            snapshot.items.forEach { item ->
-                if (item.category != "all") put(item.category, (get(item.category) ?: 0) + 1)
-            }
-        }
-    }
-    val favoriteCount = remember(snapshot.items) { snapshot.items.count { it.favorite } }
-    val activeCount = (if (favoritesOnly) 1 else 0) +
-        (if (sort != MedicineSort.DEFAULT) 1 else 0) +
-        (if (category != "all") 1 else 0) +
-        (if (selectedSubcategory != null) 1 else 0) +
-        (if (query.isNotBlank()) 1 else 0)
-
-    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly"
-    var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
-    LaunchedEffect(filterKey) {
-        if (filterKey != lastFilterKey) {
-            lastFilterKey = filterKey
-            if (listState.firstVisibleItemIndex > 0) listState.scrollToItem(0)
-        }
-    }
-
-    /** Selects a category and clears any subcategory from the previous selection. */
-    fun selectCategory(next: String) {
+    fun selectCategory(id: String) {
         Haptics.selection(view)
-        category = next
-        selectedSubcategory = null
+        category = id
+        subcategory = null
     }
-
-
+    fun selectForComparison(id: String) {
+        comparisonMode = true
+        comparisonIds = ArrayList(toggleComparison(comparisonIds, id))
+        Haptics.selection(view)
+    }
+    fun browseFilter(filter: CollectionFilter, categoryId: String = "all") {
+        clearFilters()
+        tabName = LibraryTab.MEDICINES.name
+        category = categoryId
+        filterName = filter.name
+    }
+    LaunchedEffect(snapshot.categories, category) {
+        if (snapshot.categories.none { it.id == category }) { category = "all"; subcategory = null }
+    }
+    LaunchedEffect(subcategories, subcategory) {
+        if (subcategory != null && subcategories.none { it.key == subcategory }) subcategory = null
+    }
+    LaunchedEffect(snapshot.items) {
+        comparisonIds = ArrayList(comparisonIds.filter { id -> snapshot.items.any { it.id == id } })
+        if (comparisonIds.size < 2) comparisonOpen = false
+    }
+    LaunchedEffect(tabName, category, subcategory, query, filterName, sortName) { listState.scrollToItem(0) }
+    BackHandler(comparisonMode && !comparisonOpen && !filtersOpen) {
+        comparisonMode = false; comparisonIds = arrayListOf()
+    }
 
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.background) {
-                Column(
-                    Modifier
-                        .statusBarsPadding()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        HeaderControl(
-                            label = "⚙",
-                            contentDescription = "Settings",
-                            onClick = {
-                                Haptics.action(view)
-                                onSettings()
-                            },
-                        )
+            Column(Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Pharmacy Pocket", style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(tab.label, style = MaterialTheme.typography.headlineLarge)
+                    }
+                    if (tab != LibraryTab.OVERVIEW) PocketIconButton(PocketIcon.COMPARE, "Compare medicines") {
+                        comparisonMode = !comparisonMode
+                        if (!comparisonMode) comparisonIds = arrayListOf()
+                    }
+                    PocketIconButton(PocketIcon.SETTINGS, "Settings", onSettings)
+                }
+                if (tab != LibraryTab.OVERVIEW) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(ToolbarControlHeight),
-                            placeholder = { Text("Search medicines…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            leadingIcon = { Text("⌕", fontSize = 22.sp) },
-                            trailingIcon = {
-                                if (query.isNotEmpty()) {
-                                    TextButton(onClick = {
-                                        Haptics.action(view)
-                                        query = ""
-                                    }) { Text("×", fontSize = 22.sp) }
-                                }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(17.dp),
+                            value = query, onValueChange = { query = it },
+                            modifier = Modifier.weight(1f), singleLine = true,
+                            placeholder = { Text("Name, note or code") },
+                            leadingIcon = { PocketIcon(PocketIcon.SEARCH) },
+                            trailingIcon = { if (query.isNotEmpty()) PocketIconButton(PocketIcon.CLOSE, "Clear search") { query = "" } },
+                            shape = RoundedCornerShape(28.dp),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {}),
+                            keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = MaterialTheme.colorScheme.surface,
                                 unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.65f),
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                                unfocusedBorderColor = MaterialTheme.colorScheme.surface,
                             ),
                         )
-                        HeaderControl(
-                            label = if (favoritesOnly) "★" else "☆",
-                            contentDescription = if (favoritesOnly) {
-                                "Favorites filter on, $favoriteCount favorite medicines"
-                            } else {
-                                "Favorites filter off, $favoriteCount favorite medicines"
-                            },
-                            badge = favoriteCount.takeIf { it > 0 },
-                            selected = favoritesOnly,
-                            onClick = {
-                                Haptics.selection(view)
-                                favoritesOnly = !favoritesOnly
-                            },
-                        )
-                        HeaderControl(
-                            label = "Tune",
-                            contentDescription = if (activeCount > 0) {
-                                "Tune filters, $activeCount active"
-                            } else {
-                                "Tune filters"
-                            },
-                            badge = activeCount.takeIf { it > 0 },
-                            selected = controlsOpen,
-                            onClick = {
-                                Haptics.action(view)
-                                controlsOpen = !controlsOpen
-                            },
-                        )
+                        FilledTonalIconButton(onClick = { focus.clearFocus(); filtersOpen = true }, modifier = Modifier.size(52.dp)) {
+                            BadgedBox(badge = { if (filterCount > 0) Badge { Text(filterCount.toString()) } }) {
+                                PocketIcon(PocketIcon.FILTER, "Filters and display")
+                            }
+                        }
                     }
-                    if (controlsOpen) {
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
+                    Row(Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        categories.forEach { item ->
                             SoftChip(
-                                label = if (snapshot.largeText) "T Large ✓" else "T Large",
-                                selected = snapshot.largeText,
-                                onClick = {
-                                    Haptics.selection(view)
-                                    onSetLargeText(!snapshot.largeText)
-                                },
-                            )
-                            MedicineSort.entries.forEach { option ->
-                                SoftChip(
-                                    label = option.label,
-                                    selected = sort == option,
-                                    onClick = {
-                                        Haptics.selection(view)
-                                        sortName = option.name
-                                    },
-                                )
-                            }
-                            if (activeCount > 0) {
-                                SoftChip("Clear view") {
-                                    Haptics.action(view)
-                                    query = ""
-                                    category = "all"
-                                    selectedSubcategory = null
-                                    favoritesOnly = false
-                                    sortName = MedicineSort.DEFAULT.name
-                                }
-                            }
+                                "${if (item.id == "all") "All" else item.arabic}  ${if (item.id == "all") overview.total else overview.categoryCounts[item.id] ?: 0}",
+                                selected = category == item.id,
+                                accent = if (item.id == "all") null else colorFromHex(item.color),
+                            ) { selectCategory(item.id) }
                         }
                     }
                 }
             }
         },
         bottomBar = {
-            HomeBottomBar(
-                snapshot = snapshot,
-                category = category,
-                categoryCounts = categoryCounts,
-                subcategories = subcategories.map { it.key to it.label },
-                selectedSubcategory = selectedSubcategory,
-                onSelectCategory = ::selectCategory,
-                onSelectSubcategory = {
-                    Haptics.selection(view)
-                    selectedSubcategory = it
-                },
-            )
-        },
-        floatingActionButton = {
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SmallFloatingActionButton(
-                    onClick = {
-                        Haptics.action(view)
-                        onAddMedicine(addCategory, "photo")
-                    },
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.semantics { contentDescription = "Scan code or photograph new medicine" },
-                ) { Text("📷", fontSize = 20.sp) }
-                FloatingActionButton(
-                    onClick = {
-                        Haptics.action(view)
-                        onAddMedicine(addCategory, null)
-                    },
-                    modifier = Modifier.semantics { contentDescription = "Add medicine" },
-                ) { Text("+", fontSize = 30.sp) }
+            Column(Modifier.navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (comparisonMode) Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${comparisonIds.size}/3 selected", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                        Button(onClick = { comparisonOpen = true }, enabled = comparison.size >= 2) { Text("Compare") }
+                        PocketIconButton(PocketIcon.CLOSE, "Cancel comparison") { comparisonMode = false; comparisonIds = arrayListOf() }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(modifier = Modifier.weight(1f), shape = RoundedCornerShape(32.dp), color = MaterialTheme.colorScheme.surfaceContainer, shadowElevation = 2.dp) {
+                        Row(Modifier.padding(4.dp)) {
+                            LibraryTab.entries.forEach { destination ->
+                                val selected = tab == destination
+                                val color by animateColorAsState(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer, label = "dock")
+                                Surface(onClick = { focus.clearFocus(); tabName = destination.name }, modifier = Modifier.weight(1f).semantics { this.selected = selected; role = Role.Tab }, shape = RoundedCornerShape(28.dp), color = color) {
+                                    Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        PocketIcon(destination.icon, destination.label)
+                                        // Icons keep the dock usable at narrow widths; selected label is also in the header.
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    FilledTonalIconButton(onClick = { onAddMedicine(addCategory, "photo") }, modifier = Modifier.size(52.dp)) {
+                        PocketIcon(PocketIcon.CAMERA, "Scan code or photograph new medicine")
+                    }
+                    FloatingActionButton(onClick = { onAddMedicine(addCategory, null) }, shape = RoundedCornerShape(24.dp)) {
+                        PocketIcon(PocketIcon.ADD, "Add medicine")
+                    }
+                }
             }
         },
     ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = padding,
-        ) {
-            item(key = "overview") {
-                Column(
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        if (visible.size == snapshot.items.size) "${visible.size} medicines"
-                        else "${visible.size} of ${snapshot.items.size} medicines",
-                        color = MaterialTheme.colorScheme.onBackground,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 15.sp,
-                    )
-                    Text(
-                        if (category == "all") "All categories" else categoryById(category, snapshot.categories).label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                    )
-                }
-            }
-
-            if (rows.isEmpty()) {
-                item(key = "empty") {
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(48.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(if (snapshot.items.isEmpty()) "＋" else "⌕", fontSize = 30.sp)
-                        Text(
-                            if (snapshot.items.isEmpty()) "Your pocket is empty" else "No medicines found",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        Text(
-                            if (snapshot.items.isEmpty()) "Import your JSON from Settings, or add your first medicine."
-                            else "Try a shorter name or another category.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            } else {
-                items(rows, key = { it.key }) { row ->
-                    when (row) {
-                        is HomeRow.Header -> SectionBreadcrumb(row.section, snapshot)
-                        is HomeRow.Item -> Box(Modifier.padding(horizontal = 16.dp)) {
-                            MedicineCard(
-                                item = row.item,
-                                category = categoryById(row.item.category, snapshot.categories),
-                                large = snapshot.largeText,
-                                currency = snapshot.currency,
-                                first = row.first,
-                                last = row.last,
-                                onOpen = {
-                                    Haptics.action(view)
-                                    onOpenMedicine(row.item.id)
-                                },
-                                onEdit = {
-                                    Haptics.action(view)
-                                    onEditMedicine(row.item.id)
-                                },
-                                onFavorite = {
-                                    Haptics.selection(view)
-                                    onToggleFavorite(row.item)
-                                },
-                                onCamera = { onQuickCapture(row.item.id) },
-                                loadPhoto = loadPhoto,
-                                photoVersion = photoVersions[row.item.id] ?: 0,
-                            )
-                        }
-                    }
-                }
-                item(key = "bottom-spacer") { Spacer(Modifier.size(16.dp)) }
-            }
-        }
-    }
-
-}
-
-/** Renders a header action with its accessibility label and optional count badge. */
-@Composable
-private fun HeaderControl(
-    label: String,
-    contentDescription: String,
-    badge: Int? = null,
-    selected: Boolean = false,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .size(ToolbarControlHeight)
-            .semantics { this.contentDescription = contentDescription },
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.secondary,
-        border = BorderStroke(
-            1.dp,
-            if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.75f),
-        ),
-        shadowElevation = 1.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                label,
-                fontSize = if (label == "Tune") 10.sp else 20.sp,
-                fontWeight = if (label == "Tune") FontWeight.ExtraBold else FontWeight.Bold,
-            )
-            if (badge != null && badge > 0) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 3.dp, end = 3.dp)
-                        .heightIn(min = 17.dp)
-                        .widthIn(min = 17.dp),
-                    shape = RoundedCornerShape(50),
-                    color = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ) {
-                    Box(
-                        Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            if (badge > 99) "99+" else badge.toString(),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** Shows the category, subcategory, and medicine count for a list section. */
-@Composable
-private fun SectionBreadcrumb(section: MedicineSection, snapshot: AppSnapshot) {
-    val selected = categoryById(section.category, snapshot.categories)
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, top = 15.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            BreadcrumbChip(selected.arabic, border = colorFromHex(selected.color))
-            Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-            BreadcrumbChip(section.title, modifier = Modifier.widthIn(max = 190.dp))
-            Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-            BreadcrumbChip(section.data.size.toString(), background = MaterialTheme.colorScheme.surfaceVariant)
-        }
-    }
-}
-
-/** Renders one label in the section breadcrumb with its optional colors. */
-@Composable
-private fun BreadcrumbChip(
-    text: String,
-    modifier: Modifier = Modifier,
-    border: Color = MaterialTheme.colorScheme.outline,
-    background: Color? = null,
-) {
-    Surface(
-        modifier = modifier.heightIn(min = 30.dp),
-        shape = RoundedCornerShape(9.dp),
-        color = background ?: MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, border),
-    ) {
-        Box(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), contentAlignment = Alignment.CenterStart) {
-            Text(text, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-    }
-}
-
-/** Keeps category controls scrollable while staying clear of gesture navigation. */
-@Composable
-private fun HomeBottomBar(
-    snapshot: AppSnapshot,
-    category: String,
-    categoryCounts: Map<String, Int>,
-    subcategories: List<Pair<String, String>>,
-    selectedSubcategory: String?,
-    onSelectCategory: (String) -> Unit,
-    onSelectSubcategory: (String?) -> Unit,
-) {
-    var subcategoriesOpen by rememberSaveable { mutableStateOf(false) }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 10.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+        if (tab == LibraryTab.OVERVIEW) {
+            CollectionOverviewScreen(snapshot, overview, padding, onFilter = ::browseFilter, onFavorites = {
+                clearFilters(); tabName = LibraryTab.FAVORITES.name
+            })
+        } else {
+            LazyColumn(
+                state = listState, modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 16.dp, start = 16.dp, end = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Row(
-                        Modifier
-                            .weight(1f)
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        snapshot.categories.forEach { item ->
-                            SoftChip(
-                                label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                                selected = category == item.id,
-                                accent = if (item.id == "all") null else colorFromHex(item.color),
-                                onClick = { onSelectCategory(item.id) },
-                            )
+                item(key = "results") {
+                    Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (visible.size == 1) "1 medicine" else "${visible.size} medicines", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                            if (filterCount > 0 || query.isNotBlank()) TextButton(onClick = ::clearFilters) { Text("Reset") }
                         }
-                    }
-                    if (subcategories.isNotEmpty()) {
-                        SoftChip(
-                            label = when {
-                                selectedSubcategory != null -> "Sub ✓"
-                                subcategoriesOpen -> "Sub ⌃"
-                                else -> "Sub ⌄"
-                            },
-                            selected = subcategoriesOpen || selectedSubcategory != null,
-                            onClick = { subcategoriesOpen = !subcategoriesOpen },
-                        )
+                        if (comparisonMode) Text("Tap medicines to select up to three. Compare package details and prices.", style = MaterialTheme.typography.bodySmall)
+                        if (subcategory != null || collectionFilter != CollectionFilter.ALL) {
+                            Text(listOfNotNull(subcategories.firstOrNull { it.key == subcategory }?.label,
+                                collectionFilter.label.takeUnless { collectionFilter == CollectionFilter.ALL }).joinToString(" · "),
+                                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                        }
                     }
                 }
-                if (subcategories.isNotEmpty() && subcategoriesOpen) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        SoftChip(
-                            label = "All",
-                            selected = selectedSubcategory == null,
-                            onClick = { onSelectSubcategory(null) },
+                if (visible.isEmpty()) item(key = "empty") {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 36.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        PocketIcon(if (snapshot.items.isEmpty()) PocketIcon.LIBRARY else PocketIcon.SEARCH, modifier = Modifier.size(48.dp))
+                        Text(if (snapshot.items.isEmpty()) "Add your first medicine" else if (tab == LibraryTab.FAVORITES && overview.favorites == 0) "No favorites yet" else "No matching medicines", style = MaterialTheme.typography.titleLarge)
+                        Text(if (snapshot.items.isEmpty()) "Add a medicine or import your existing JSON backup in Settings."
+                            else if (tab == LibraryTab.FAVORITES && overview.favorites == 0) "Tap the heart on a medicine to keep it here."
+                            else "Change the search or reset the filters.", style = MaterialTheme.typography.bodyMedium)
+                        if (snapshot.items.isEmpty()) Button(onClick = { onAddMedicine(addCategory, null) }) { Text("Add medicine") }
+                        else if (filterCount > 0 || query.isNotBlank()) OutlinedButton(onClick = ::clearFilters) { Text("Reset filters") }
+                    }
+                }
+                items(visible, key = { it.id }, contentType = { "medicine" }) { item ->
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (!compact) Text("${categoryById(item.category, snapshot.categories).arabic} / ${subcategoryLabel(item.subcategory)}",
+                            modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        MedicineCard(
+                            item, categoryById(item.category, snapshot.categories), snapshot.largeText, snapshot.currency,
+                            first = true, last = true,
+                            onOpen = { if (comparisonMode) selectForComparison(item.id) else onOpenMedicine(item.id) },
+                            onEdit = { onEditMedicine(item.id) }, onFavorite = { onToggleFavorite(item) },
+                            onCamera = { onQuickCapture(item.id) }, loadPhoto = loadPhoto,
+                            photoVersion = photoVersions[item.id] ?: 0, onCompare = { selectForComparison(item.id) },
+                            comparisonSelected = item.id in comparisonIds, compact = compact,
                         )
-                        subcategories.forEach { (key, label) ->
-                            SoftChip(
-                                label = label,
-                                selected = selectedSubcategory == key,
-                                onClick = { onSelectSubcategory(key) },
-                            )
-                        }
                     }
                 }
             }
         }
     }
+    if (filtersOpen) LibraryFilterSheet(
+        sort, collectionFilter, subcategories, subcategory, compact, snapshot.largeText,
+        onSort = { sortName = it.name }, onFilter = { filterName = it.name },
+        onSubcategory = { subcategory = it }, onCompact = { compact = it },
+        onLargeText = onSetLargeText, onReset = ::clearFilters, onDismiss = { filtersOpen = false },
+    )
+    if (comparisonOpen && comparison.size >= 2) MedicineComparisonSheet(
+        comparison, snapshot, onDismiss = { comparisonOpen = false }, onOpen = { id -> comparisonOpen = false; onOpenMedicine(id) },
+    )
 }

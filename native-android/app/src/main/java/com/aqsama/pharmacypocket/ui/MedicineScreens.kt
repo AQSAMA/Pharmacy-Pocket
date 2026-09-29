@@ -300,11 +300,11 @@ internal fun MedicineEditorScreen(
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(
                             value = official,
                             onValueChange = { official = it },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             label = { Text("Official price") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -312,7 +312,7 @@ internal fun MedicineEditorScreen(
                         OutlinedTextField(
                             value = discounted,
                             onValueChange = { discounted = it },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                             label = { Text("Discounted") },
                             placeholder = { Text("Optional") },
                             singleLine = true,
@@ -326,7 +326,7 @@ internal fun MedicineEditorScreen(
                     )
 
                     EditorSectionButton(
-                        icon = "▣",
+                        icon = PocketIcon.CAMERA,
                         title = "Photo & codes",
                         summary = buildString {
                             append("${codes.size} code")
@@ -501,7 +501,7 @@ internal fun MedicineEditorScreen(
                     }
 
                     EditorSectionButton(
-                        icon = "≡",
+                        icon = PocketIcon.LIBRARY,
                         title = "More details",
                         summary = if (note.isNotBlank() || description.isNotBlank()) "Notes added" else "Notes & description",
                         expanded = detailsExpanded,
@@ -639,7 +639,7 @@ internal fun MedicineEditorScreen(
 
 @Composable
 private fun EditorSectionButton(
-    icon: String,
+    icon: PocketIcon,
     title: String,
     summary: String,
     expanded: Boolean,
@@ -665,7 +665,7 @@ private fun EditorSectionButton(
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(icon, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    PocketIcon(icon)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -737,6 +737,15 @@ fun MedicineDetailScreen(
 
     Scaffold(
         topBar = { ScreenTopBar("Medicine", onBack) },
+        bottomBar = {
+            if (item != null) Button(
+                onClick = onEdit, enabled = !busy,
+                modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp).heightIn(min = 52.dp),
+            ) {
+                PocketIcon(PocketIcon.EDIT)
+                Text("Edit medicine", modifier = Modifier.padding(start = 8.dp))
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (item == null) {
@@ -769,111 +778,8 @@ fun MedicineDetailScreen(
                             )
                         }
 
-                        Surface(
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
-                            color = MaterialTheme.colorScheme.tertiary,
-                        ) {
-                            Column(
-                                Modifier.padding(20.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp),
-                            ) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.08f),
-                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, colorFromHex(category.color)),
-                                    ) {
-                                        Text(
-                                            category.label,
-                                            color = MaterialTheme.colorScheme.onTertiary,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 12.sp,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                        )
-                                    }
-                                    TextButton(onClick = {
-                                        Haptics.selection(view)
-                                        onToggleFavorite(item)
-                                    }) {
-                                        Text(
-                                            if (item.favorite) "★ Favorite" else "☆ Favorite",
-                                            color = if (item.favorite) Color(0xFFFFD166) else MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.82f),
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                    }
-                                }
-
-                                Text(
-                                    item.name,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = MaterialTheme.colorScheme.onTertiary,
-                                    fontSize = 30.sp,
-                                    lineHeight = 40.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    textAlign = TextAlign.Center,
-                                    style = TextStyle(textDirection = TextDirection.Content),
-                                )
-                                if (item.note.isNotBlank()) {
-                                    Text(
-                                        item.note,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.78f),
-                                        textAlign = TextAlign.Center,
-                                    )
-                                }
-
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.11f),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                                ) {
-                                    Column(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        Text(
-                                            "OFFICIAL PRICE · ${snapshot.currency}",
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = Color(0xFFA3CFB9),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                        Text(
-                                            formatPrice(item.official),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = Color(0xFFB8F0CB),
-                                            fontSize = 58.sp,
-                                            fontWeight = FontWeight.Black,
-                                            textAlign = TextAlign.Center,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-
-                                item.discounted?.let { price ->
-                                    Column(Modifier.fillMaxWidth()) {
-                                        Text(
-                                            if (price > item.official) "VERIFY THIS PRICE" else "IF CUSTOMER ASKS",
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = if (price > item.official) Color(0xFFFFB09C) else Color(0xFFDFC68C),
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 11.sp,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                        Text(
-                                            "${formatPrice(price)} ${snapshot.currency}",
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = Color(0xFFFFE2A2),
-                                            fontSize = 27.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        MedicineDetailSummary(item, snapshot.currency, snapshot.largeText,
+                            onFavorite = { onToggleFavorite(item) })
 
                         InfoCard("Medicine info") {
                             InfoValue("CATEGORY", category.label, snapshot.largeText)
@@ -888,8 +794,7 @@ fun MedicineDetailScreen(
 
                         if (item.codes.isNotEmpty()) InfoCard("Package codes") {
                             item.codes.forEach { code ->
-                                InfoValue(when (code.kind) { CodeKind.PRICE_STICKER_QR -> "PRICE STICKER QR"; CodeKind.QR -> "QR"; CodeKind.BARCODE -> "BARCODE" },
-                                    "${code.label.takeIf { it.isNotEmpty() }?.let { "$it · " } ?: ""}${code.value}", snapshot.largeText)
+                                CopyableMedicineCode(code, snapshot.largeText)
                             }
                         }
 
@@ -906,21 +811,7 @@ fun MedicineDetailScreen(
                             }
                         }
 
-                        Button(
-                            onClick = {
-                                Haptics.action(view)
-                                onEdit()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            ),
-                        ) {
-                            Text("✎ Edit medicine", fontWeight = FontWeight.ExtraBold)
-                        }
+                        MedicineShareButton(item, category, snapshot.currency)
                         Button(
                             enabled = !busy,
                             onClick = {
