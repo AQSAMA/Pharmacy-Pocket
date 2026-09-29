@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -277,54 +278,87 @@ fun MedicineCard(
                             }
                         }
 
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.Bottom,
-                        ) {
-                            MedicineCardPrice(
-                                label = "OFFICIAL",
-                                price = item.official,
-                                currency = currency,
-                                large = large,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f),
-                            )
-                            item.discounted?.let { price ->
+                        val discountColor: (Long) -> Color = { price ->
+                            if (price > item.official) {
+                                MaterialTheme.colorScheme.error
+                            } else if (LocalPharmacyDarkTheme.current) {
+                                Color(0xFFE1B86C)
+                            } else {
+                                Color(0xFFA66C14)
+                            }
+                        }
+
+                        if (photo != null) {
+                            Column(
+                                Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(7.dp),
+                            ) {
                                 MedicineCardPrice(
-                                    label = if (price > item.official) "VERIFY" else "IF ASKED",
-                                    price = price,
-                                    currency = null,
+                                    label = "OFFICIAL",
+                                    price = item.official,
+                                    currency = currency,
                                     large = large,
-                                    color = if (price > item.official) {
-                                        MaterialTheme.colorScheme.error
-                                    } else if (LocalPharmacyDarkTheme.current) {
-                                        Color(0xFFE1B86C)
-                                    } else {
-                                        Color(0xFFA66C14)
-                                    },
-                                    modifier = Modifier.weight(0.82f),
+                                    compact = true,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
+                                item.discounted?.let { price ->
+                                    MedicineCardPrice(
+                                        label = if (price > item.official) "VERIFY" else "IF ASKED",
+                                        price = price,
+                                        currency = null,
+                                        large = large,
+                                        compact = true,
+                                        color = discountColor(price),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        } else {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.Bottom,
+                            ) {
+                                MedicineCardPrice(
+                                    label = "OFFICIAL",
+                                    price = item.official,
+                                    currency = currency,
+                                    large = large,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                item.discounted?.let { price ->
+                                    MedicineCardPrice(
+                                        label = if (price > item.official) "VERIFY" else "IF ASKED",
+                                        price = price,
+                                        currency = null,
+                                        large = large,
+                                        color = discountColor(price),
+                                        modifier = Modifier.weight(0.82f),
+                                    )
+                                }
                             }
                         }
 
                         Spacer(Modifier.weight(1f))
 
+                        Text(
+                            "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            maxLines = if (photo != null) 3 else 2,
+                            overflow = TextOverflow.Clip,
+                            style = TextStyle(textDirection = TextDirection.Content),
+                        )
+
                         Row(
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.End,
                         ) {
-                            Text(
-                                "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
-                                modifier = Modifier.weight(1f),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(textDirection = TextDirection.Content),
-                            )
                             TextButton(
                                 onClick = onEdit,
                                 modifier = Modifier
@@ -358,6 +392,7 @@ private fun MedicineCardPrice(
     currency: String?,
     large: Boolean,
     color: Color,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -376,13 +411,22 @@ private fun MedicineCardPrice(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                formatPrice(price),
+                text = formatPrice(price),
                 color = color,
-                fontSize = if (large) 26.sp else 21.sp,
-                lineHeight = if (large) 30.sp else 25.sp,
+                modifier = Modifier.weight(1f, fill = false),
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                overflow = TextOverflow.Clip,
+                autoSize = TextAutoSize.StepBased(
+                    minFontSize = 12.sp,
+                    maxFontSize = when {
+                        compact && large -> 22.sp
+                        compact -> 19.sp
+                        large -> 26.sp
+                        else -> 21.sp
+                    },
+                    stepSize = 1.sp,
+                ),
             )
             currency?.let {
                 Text(
