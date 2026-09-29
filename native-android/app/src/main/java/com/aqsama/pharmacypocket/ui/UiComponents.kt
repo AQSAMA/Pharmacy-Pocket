@@ -424,38 +424,24 @@ private fun MedicineCardPrice(
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Text(
-            label,
+            text = currency?.let { "$label · $it" } ?: label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 10.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
         )
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = formatPrice(price),
-                color = color,
-                modifier = Modifier.weight(1f, fill = false),
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                autoSize = TextAutoSize.StepBased(
-                    minFontSize = 12.sp,
-                    maxFontSize = if (large) 26.sp else 21.sp,
-                    stepSize = 1.sp,
-                ),
-            )
-            currency?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                )
-            }
-        }
+        Text(
+            text = formatPrice(price),
+            color = color,
+            modifier = Modifier.fillMaxWidth(),
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 12.sp,
+                maxFontSize = if (large) 26.sp else 21.sp,
+                stepSize = 1.sp,
+            ),
+        )
     }
 }
