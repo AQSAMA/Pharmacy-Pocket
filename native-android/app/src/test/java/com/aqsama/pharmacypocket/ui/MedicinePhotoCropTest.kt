@@ -5,25 +5,37 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
+import org.robolectric.annotation.LooperMode
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29])
+@Config(sdk = [34])
+@LooperMode(LooperMode.Mode.PAUSED)
 class MedicinePhotoCropTest {
-    @Test fun photoPreparationDecodesResizesAndReencodesOnMinSdk() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val file = File(context.cacheDir, "api29-photo.jpg")
-        val source = Bitmap.createBitmap(1600, 800, Bitmap.Config.ARGB_8888)
-        file.outputStream().use { output ->
-            assertTrue(source.compress(Bitmap.CompressFormat.JPEG, 90, output))
-        }
+    @get:Rule val compose = createComposeRule()
+    private lateinit var context: Context
+
+    @Before fun setup() {
+        context = ApplicationProvider.getApplicationContext()
+    }
+
+    @Test fun photoPreparationDecodesResizesAndReencodesOnMinSdkCompatiblePath() {
+        val file = sourceFile("api29-photo.jpg", width = 1600, height = 800)
 
         try {
             val encoded = prepareMedicinePhoto(context, Uri.fromFile(file))
@@ -50,5 +62,94 @@ class MedicinePhotoCropTest {
         assertTrue(encoded.size <= MAX_MEDICINE_PHOTO_BYTES)
         assertTrue(decoded.width > 0)
         assertTrue(decoded.height > 0)
+    }
+
+    @Test fun cropUiUsesOriginalSourceResolutionInsteadOf1200pxPreview() {
+        val file = sourceFile("full-resolution-crop.jpg", width = 2400, height = 1200)
+        try {
+            val result = saveThroughCropUi(file)
+            // CropImageView is asked for up to 1600px. A 1200px predecode would cap this at 1200.
+            assertTrue("Expected crop to retain source detail, got ${result.width}px", result.width > 1200)
+            assertTrue(result.width > result.height)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test fun squareControlProducesSquareResult() {
+        val file = sourceFile("square-control.jpg", width = 1200, height = 600)
+        try {
+            val result = saveThroughCropUi(file) {
+                compose.onNodeWithText("Square").performClick()
+            }
+            assertEquals(result.width, result.height)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test fun rectangleControlKeepsLandscapeFraming() {
+        val file = sourceFile("rectangle-control.jpg", width = 1200, height = 600)
+        try {
+            val result = saveThroughCropUi(file) {
+                compose.onNodeWithText("Rectangle").performClick()
+            }
+            assertTrue("Rectangle crop should remain landscape", result.width > result.height)
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test fun rotateControlProducesRotatedPortraitResult() {
+        val file = sourceFile("rotate-control.jpg", width = 1200, height = 600)
+        try {
+            val result = saveThroughCropUi(file) {
+                compose.onNodeWithText("Rotate ↷").performClick()
+            }
+            assertTrue("90-degree rotation should produce a portrait crop", result.height > result.width)
+        } finally {
+            file.delete()
+        }
+    }
+
+    private fun saveThroughCropUi(
+        file: File,
+        beforeSave: () -> Unit = {},
+    ): Bitmap {
+        var accepted: ByteArray? = null
+        compose.setContent {
+            MedicinePhotoCrop(
+                file = file,
+                saving = false,
+                onAccept = { accepted = it },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        compose.waitUntil(10_000) {
+            runCatching {
+                compose.onNodeWithText("Save photo").assertIsEnabled()
+                true
+            }.getOrDefault(false)
+        }
+        beforeSave()
+        compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { accepted != null }
+
+        return requireNotNull(
+            BitmapFactory.decodeByteArray(requireNotNull(accepted), 0, requireNotNull(accepted).size),
+        )
+    }
+
+    private fun sourceFile(name: String, width: Int, height: Int): File {
+        val file = File(context.cacheDir, name)
+        val source = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(37, 111, 182))
+        }
+        file.outputStream().use { output ->
+            assertTrue(source.compress(Bitmap.CompressFormat.JPEG, 96, output))
+        }
+        source.recycle()
+        return file
     }
 }
