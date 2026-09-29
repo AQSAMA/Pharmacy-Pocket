@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import java.io.File
@@ -143,9 +144,15 @@ internal fun MedicinePhotoCrop(
                 }
             },
         )
-        // Keep the source URI attached to CropImageView. The view may sample for display,
-        // but its crop worker reads the original URI so a small label crop keeps source detail.
-        cropView.setImageUriAsync(Uri.fromFile(file))
+        // Keep a content URI attached to CropImageView. The view may sample for display,
+        // but its crop worker reopens the original file through ContentResolver for the final crop.
+        // Both Camera cache files and Gallery-owned files are covered by the cropper FileProvider.
+        val sourceUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.cropper.fileprovider",
+            file,
+        )
+        cropView.setImageUriAsync(sourceUri)
 
         onDispose {
             if (cropRunning) onProcessingChanged(false)
