@@ -58,6 +58,7 @@ class MedicineMediaFlowTest {
         context = ApplicationProvider.getApplicationContext()
         File(context.filesDir, "SQLite").deleteRecursively()
         File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
+        File(context.noBackupFilesDir, "medicine_crop_sources").deleteRecursively()
         repository = PharmacyRepository(context)
     }
 
@@ -65,6 +66,64 @@ class MedicineMediaFlowTest {
     @Test fun existingMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = false)
     @Test fun newMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = true)
     @Test fun newMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = true)
+
+    @Test fun galleryCropWriteFailureStaysInsideCropInsteadOfOpeningEditorAlert() {
+        val snapshot = runBlocking { repository.saveMedicine(medicine) }
+        val media = MedicineMedia()
+        val source = File(context.cacheDir, "gallery-failure-source.jpg")
+        val bitmap = Bitmap.createBitmap(800, 400, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it)) }
+
+        val registryOwner = object : ActivityResultRegistryOwner {
+            override val activityResultRegistry = object : ActivityResultRegistry() {
+                override fun <I, O> onLaunch(
+                    requestCode: Int,
+                    contract: ActivityResultContract<I, O>,
+                    input: I,
+                    options: ActivityOptionsCompat?,
+                ) {
+                    dispatchResult(requestCode, Activity.RESULT_OK, Intent().setData(Uri.fromFile(source)))
+                }
+            }
+        }
+
+        compose.setContent {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+                MedicineEditorScreen(
+                    snapshot = snapshot,
+                    medicineId = medicine.id,
+                    initialCategory = medicine.category,
+                    busy = false,
+                    onBack = {},
+                    onManageCategories = {},
+                    onMoveToTrash = {},
+                    onSave = {},
+                    loadPhoto = repository::loadPhoto,
+                    media = media,
+                )
+            }
+        }
+
+        compose.onNodeWithText("Photo & codes").performScrollTo().performClick()
+        compose.onNodeWithText("Gallery").performScrollTo().performClick()
+        compose.waitUntil(10_000) { media.cropSource != null }
+
+        val draftDirectory = File(context.noBackupFilesDir, "medicine_drafts")
+        draftDirectory.deleteRecursively()
+        assertTrue(draftDirectory.writeText("block draft directory creation"))
+
+        try {
+            compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { media.phase == MedicineMedia.Phase.CROPPING }
+            compose.onNodeWithText("Could not prepare photo storage.").assertIsDisplayed()
+            compose.onNodeWithText("Check the details").assertDoesNotExist()
+            compose.onNodeWithText("Save photo").assertIsEnabled()
+        } finally {
+            draftDirectory.delete()
+            media.cancelCrop()
+            source.delete()
+        }
+    }
 
     private fun exerciseFlow(gallery: Boolean, newMedicine: Boolean) {
         var snapshot by mutableStateOf(runBlocking {
