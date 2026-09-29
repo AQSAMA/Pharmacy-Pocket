@@ -56,7 +56,11 @@ The source code for the obsolete Expo application is no longer required for this
 
 - Native Kotlin + Jetpack Compose UI
 - Offline SQLite storage
-- Arabic/English normalized search
+- Arabic/English multiword search across names, notes and package codes
+- Medicine library, Favorites and collection Overview with a reachable action dock
+- Record filters for missing photos/codes, discounts and inconsistent prices
+- Side-by-side comparison of up to three medicines
+- Copyable package codes, medicine text sharing and calculated price savings
 - Categories, subcategories, favorites, sorting, and custom category colors
 - Medicine notes, descriptions, prices, dates, barcode/QR data, and package photos
 - CameraX + ML Kit scanning
@@ -65,3 +69,5 @@ The source code for the obsolete Expo application is no longer required for this
 - Light/dark/system themes and large-text mode
 
 See `../RELEASING.md` for preview and production release instructions.
+
+See `docs/LIBRARY.md` for the library workflows and verification details.

@@ -4,6 +4,8 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -49,6 +51,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -86,9 +89,7 @@ fun ScreenTopBar(title: String, onBack: () -> Unit) {
     TopAppBar(
         title = { Text(title, fontWeight = FontWeight.Bold) },
         navigationIcon = {
-            TextButton(onClick = onBack, modifier = Modifier.size(56.dp)) {
-                Text("‹", fontSize = 30.sp, color = MaterialTheme.colorScheme.secondary)
-            }
+            PocketIconButton(PocketIcon.BACK, "Back", onBack)
         },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
     )
@@ -102,16 +103,16 @@ fun SoftChip(
     accent: Color? = null,
     onClick: () -> Unit,
 ) {
-    val background = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-    val foreground = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val background = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+    val foreground = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = Modifier
             .heightIn(min = 48.dp)
-            .clip(RoundedCornerShape(13.dp))
+            .clip(RoundedCornerShape(50))
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(13.dp),
+        shape = RoundedCornerShape(50),
         color = background,
-        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+        border = null,
     ) {
         Row(
             Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
@@ -141,6 +142,9 @@ fun MedicineCard(
     onCamera: () -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
+    onCompare: (() -> Unit)? = null,
+    comparisonSelected: Boolean = false,
+    compact: Boolean = false,
 ) {
     var photo by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf<ImageBitmap?>(null) }
     var photoLoading by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf(item.hasPhoto) }
@@ -163,12 +167,7 @@ fun MedicineCard(
     // Reserve space during loading, but fall back to a full-width card for absent/invalid bytes.
     val showMediaRail = item.hasPhoto && (photoLoading || photo != null)
 
-    val shape = RoundedCornerShape(
-        topStart = if (first) 20.dp else 0.dp,
-        topEnd = if (first) 20.dp else 0.dp,
-        bottomStart = if (last) 20.dp else 0.dp,
-        bottomEnd = if (last) 20.dp else 0.dp,
-    )
+    val shape = RoundedCornerShape(24.dp)
     val accent = colorFromHex(category.color)
     val originalDirection = LocalLayoutDirection.current
     val railWidth = if (large) 96.dp else 88.dp
@@ -178,12 +177,13 @@ fun MedicineCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .clickable(onClick = onOpen),
-        color = tintCategoryColor(category.color, 0.075f),
+            .combinedClickable(onClick = onOpen, onLongClick = onCompare, onLongClickLabel = "Compare medicine")
+            .semantics { selected = comparisonSelected },
+        color = if (comparisonSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         shape = shape,
         border = BorderStroke(
-            0.5.dp,
-            accent.copy(alpha = if (LocalPharmacyDarkTheme.current) 0.32f else 0.18f),
+            if (comparisonSelected) 2.dp else 0.5.dp,
+            if (comparisonSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
         ),
         tonalElevation = 1.dp,
     ) {
@@ -216,8 +216,9 @@ fun MedicineCard(
                             modifier = Modifier
                                 .width(railWidth)
                                 .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
                                 .clickable(onClickLabel = "View full photo") { showFullPhoto = true },
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.Fit,
                         )
                     }
                 }
@@ -228,9 +229,9 @@ fun MedicineCard(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .defaultMinSize(minHeight = minCardHeight)
-                                .padding(horizontal = 12.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                .defaultMinSize(minHeight = if (compact && !large) 144.dp else minCardHeight)
+                                .padding(horizontal = 12.dp, vertical = if (compact) 8.dp else 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
                         ) {
                             Row(
                                 Modifier.fillMaxWidth(),
@@ -271,7 +272,7 @@ fun MedicineCard(
                                 TextButton(
                                     onClick = onFavorite,
                                     modifier = Modifier
-                                        .size(44.dp)
+                                        .size(48.dp)
                                         .semantics {
                                             contentDescription = if (item.favorite) {
                                                 "Remove ${item.name} from favorites"
@@ -281,15 +282,7 @@ fun MedicineCard(
                                         },
                                     contentPadding = PaddingValues(0.dp),
                                 ) {
-                                    Text(
-                                        if (item.favorite) "★" else "☆",
-                                        fontSize = 21.sp,
-                                        color = if (item.favorite) {
-                                            if (LocalPharmacyDarkTheme.current) Color(0xFFFFD166) else Color(0xFFA87311)
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                    )
+                                    PocketIcon(if (item.favorite) PocketIcon.FAVORITE_FILLED else PocketIcon.FAVORITE)
                                 }
                             }
 
@@ -309,7 +302,7 @@ fun MedicineCard(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Text(
+                                if (!compact) Text(
                                     "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
                                     modifier = Modifier.weight(1f),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -318,24 +311,24 @@ fun MedicineCard(
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     style = TextStyle(textDirection = TextDirection.Content),
-                                )
+                                ) else androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                                 TextButton(
                                     onClick = onEdit,
                                     modifier = Modifier
-                                        .size(44.dp)
+                                        .size(48.dp)
                                         .semantics { contentDescription = "Edit ${item.name}" },
                                     contentPadding = PaddingValues(0.dp),
                                 ) {
-                                    Text("✎", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    PocketIcon(PocketIcon.EDIT)
                                 }
                                 TextButton(
                                     onClick = onCamera,
                                     modifier = Modifier
-                                        .size(44.dp)
+                                        .size(48.dp)
                                         .semantics { contentDescription = "Add or replace photo or code for ${item.name}" },
                                     contentPadding = PaddingValues(0.dp),
                                 ) {
-                                    Text("📷", fontSize = 18.sp)
+                                    PocketIcon(PocketIcon.CAMERA)
                                 }
                             }
                         }
@@ -419,19 +412,19 @@ private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean,
             item.discounted?.let { requiredWidth(it) > discountedWidth } == true
         if (reflow) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                MedicineCardPrice("OFFICIAL", item.official, currency, large, MaterialTheme.colorScheme.primary,
+                MedicineCardPrice("Official", item.official, currency, large, MaterialTheme.colorScheme.primary,
                     allowWrap = true, modifier = Modifier.fillMaxWidth())
                 item.discounted?.let { price ->
-                    MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
+                    MedicineCardPrice(if (price > item.official) "Check price" else "Discounted", price, null,
                         large, discountColor(price), allowWrap = true, modifier = Modifier.fillMaxWidth())
                 }
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
-                MedicineCardPrice("OFFICIAL", item.official, currency, large, MaterialTheme.colorScheme.primary,
+                MedicineCardPrice("Official", item.official, currency, large, MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f))
                 item.discounted?.let { price ->
-                    MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
+                    MedicineCardPrice(if (price > item.official) "Check price" else "Discounted", price, null,
                         large, discountColor(price), modifier = Modifier.weight(0.82f))
                 }
             }

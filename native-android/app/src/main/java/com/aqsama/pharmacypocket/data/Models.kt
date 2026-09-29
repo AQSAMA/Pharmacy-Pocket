@@ -300,12 +300,13 @@ fun filterSortedMedicines(
     query: String,
 ): List<Medicine> {
     val needle = normalizeSearch(query.trim())
+    val terms = needle.split(Regex("\\s+")).filter { it.isNotEmpty() }
     return sortedIndex.asSequence()
         .filter { entry ->
             (filters.category == "all" || entry.item.category == filters.category) &&
                 (filters.subcategoryKey == null || entry.subcategoryKey == filters.subcategoryKey) &&
                 (!filters.favoritesOnly || entry.item.favorite) &&
-                (needle.isEmpty() || entry.searchText.contains(needle))
+                terms.all { entry.searchText.contains(it) }
         }
         .map { it.item }
         .toList()

@@ -125,44 +125,13 @@ fun SettingsScreen(
                     Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.tertiary,
-                    ) {
-                        Column(
-                            Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp),
-                        ) {
-                            Text(
-                                snapshot.items.size.toString(),
-                                color = MaterialTheme.colorScheme.onTertiary,
-                                fontSize = 34.sp,
-                                fontWeight = FontWeight.Black,
-                            )
-                            Text(
-                                "medicines stored locally",
-                                color = MaterialTheme.colorScheme.onTertiary,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                            )
-                            Text(
-                                "Fast, offline-first, and fully exportable.",
-                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.78f),
-                                fontSize = 13.sp,
-                            )
-                            Surface(
-                                modifier = Modifier.padding(top = 7.dp),
-                                shape = RoundedCornerShape(11.dp),
-                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.08f),
-                            ) {
-                                Text(
-                                    "● Offline ready",
-                                    color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.88f),
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
+                    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            PocketIcon(PocketIcon.LIBRARY, modifier = Modifier.size(32.dp))
+                            Column {
+                                Text("${snapshot.items.size} medicines", style = MaterialTheme.typography.titleLarge)
+                                Text("Stored on this device", style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }
@@ -611,7 +580,7 @@ fun CategoryManagerScreen(
                                         fontWeight = FontWeight.ExtraBold,
                                     )
                                 }
-                                Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 25.sp)
+                                PocketIcon(PocketIcon.CHEVRON)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                 Surface(modifier = Modifier.size(10.dp), shape = RoundedCornerShape(50), color = colorFromHex(category.color)) {}
@@ -622,25 +591,7 @@ fun CategoryManagerScreen(
                 }
             }
 
-            item {
-                Surface(
-                    modifier = Modifier
-                        .padding(horizontal = 18.dp, vertical = 4.dp)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(17.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Why there is no delete button", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold)
-                        Text(
-                            "Category IDs stay stable when you rename or recolor them, so medicines never lose their category. A safe delete/move flow can be added separately.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            lineHeight = 19.sp,
-                        )
-                    }
-                }
-            }
+
         }
     }
 
