@@ -124,6 +124,20 @@ internal class MedicineMedia(
         }
     }
 
+    /**
+     * Drops an unreadable replacement draft without changing the durable-photo intent.
+     * This is not the same action as Remove photo: the original SQLite photo must survive.
+     */
+    fun discardUnavailableDraft() {
+        check(!locked)
+        generation++
+        deleteMedicinePhotoDraft(photoPath)
+        photoPath = null
+        preview = null
+        removePhoto = false
+        error = null
+    }
+
     fun remove() {
         check(!locked)
         generation++
