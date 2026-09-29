@@ -3,6 +3,8 @@ package com.aqsama.pharmacypocket.ui
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
@@ -18,8 +20,10 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
@@ -73,7 +77,19 @@ class MedicineCardLayoutTest {
 
     @Test fun landscapeStaysCompact() = checkCard(false, LayoutDirection.Ltr, 1f, 800, 80)
 
-    private fun checkCard(large: Boolean, direction: LayoutDirection, fontScale: Float, width: Int = 80, height: Int = 800) {
+    @Test fun maximumValidPricesStayCompleteAtLargeAccessibilityScale() = checkCard(
+        true, LayoutDirection.Rtl, 2f, official = 9_007_199_254_740_991, discounted = 8_007_199_254_740_991,
+    )
+
+    @Test fun missingPhotoUsesFullWidthCard() = checkCard(false, LayoutDirection.Ltr, 1f, invalidPhoto = true)
+    @Test fun corruptPhotoUsesFullWidthCard() = checkCard(false, LayoutDirection.Rtl, 1f, invalidPhoto = true, corruptPhoto = true)
+
+    private fun checkCard(
+        large: Boolean, direction: LayoutDirection, fontScale: Float,
+        width: Int = 80, height: Int = 800,
+        official: Long = 1_000_000, discounted: Long = 900_000,
+        invalidPhoto: Boolean = false, corruptPhoto: Boolean = false,
+    ) {
         var hasPhoto by mutableStateOf(false)
         val photoResult = CompletableDeferred<ByteArray?>()
         var opens = 0
@@ -82,8 +98,8 @@ class MedicineCardLayoutTest {
         var captures = 0
         val item = Medicine(
             id = "layout", category = "tablets", subcategory = "General",
-            name = "thyro ثيروكسين", note = "", official = 1_000_000,
-            discounted = 900_000,
+            name = "thyro ثيروكسين", note = "", official = official,
+            discounted = discounted,
         )
         compose.setContent {
             val density = LocalDensity.current.density
@@ -92,24 +108,38 @@ class MedicineCardLayoutTest {
                 LocalDensity provides Density(density, fontScale),
             ) {
                 MaterialTheme {
-                    Box(Modifier.width(328.dp).testTag("card")) { // 360dp phone minus Home margins.
-                        MedicineCard(
-                            item = item.copy(hasPhoto = hasPhoto),
-                            category = Category("tablets", "Tablets & strips", "حبوب", "#758790"),
-                            large = large, currency = "IQD", first = true, last = true,
-                            onOpen = { opens++ }, onEdit = { edits++ },
-                            onFavorite = { favorites++ }, onCamera = { captures++ },
-                            loadPhoto = { photoResult.await() }, photoVersion = 0,
-                        )
+                    Box(Modifier.verticalScroll(rememberScrollState())) {
+                        Box(Modifier.width(328.dp).testTag("card")) { // 360dp phone minus Home margins.
+                            MedicineCard(
+                                item = item.copy(hasPhoto = hasPhoto),
+                                category = Category("tablets", "Tablets & strips", "حبوب", "#758790"),
+                                large = large, currency = "IQD", first = true, last = true,
+                                onOpen = { opens++ }, onEdit = { edits++ },
+                                onFavorite = { favorites++ }, onCamera = { captures++ },
+                                loadPhoto = { photoResult.await() }, photoVersion = 0,
+                            )
+                        }
                     }
                 }
             }
         }
         val withoutPhoto = compose.onNodeWithTag("card").fetchSemanticsNode().boundsInRoot
+        val originalNameBounds = compose.onNodeWithText(item.name, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         compose.runOnIdle { hasPhoto = true }
         val pendingPhoto = compose.onNodeWithTag("card").fetchSemanticsNode().boundsInRoot
         // Ordinary text must stay as compact as the card without a photo.
         if (!large) assertEquals(withoutPhoto.height, pendingPhoto.height, 0.5f)
+
+        if (invalidPhoto) {
+            photoResult.complete(if (corruptPhoto) byteArrayOf(1, 2, 3, 4) else null)
+            compose.waitUntil(10_000) {
+                ShadowLooper.idleMainLooper()
+                compose.onNodeWithText(item.name, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot == originalNameBounds
+            }
+            compose.onNodeWithContentDescription("Package photo of ${item.name}").assertDoesNotExist()
+            assertEquals(withoutPhoto.height, compose.onNodeWithTag("card").fetchSemanticsNode().boundsInRoot.height, 0.5f)
+            return
+        }
 
         // A 10:1 portrait used to determine the intrinsic row height.
         val portrait = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.BLUE) }
@@ -134,11 +164,13 @@ class MedicineCardLayoutTest {
 
         for (price in listOf(item.official, requireNotNull(item.discounted))) {
             val node = compose.onNodeWithText(formatPrice(price), useUnmergedTree = true)
-            node.assertIsDisplayed()
+            node.performScrollTo().assertIsDisplayed()
             val layouts = mutableListOf<TextLayoutResult>()
             assertTrue(node.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!.invoke(layouts))
             assertFalse("Price digits must be fully visible", layouts.single().hasVisualOverflow)
         }
+        if (fontScale >= 2f) return
+        compose.onNodeWithText(item.name).performScrollTo()
         compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
         compose.onNodeWithContentDescription("Full image of ${item.name}").assertIsDisplayed()
         compose.runOnIdle { assertEquals("Photo tap must not open medicine", 0, opens) }
@@ -146,6 +178,15 @@ class MedicineCardLayoutTest {
         compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
         compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
         compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
+        compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Package photo of ${item.name}").performClick()
+        compose.runOnIdle { hasPhoto = false }
+        compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
+        compose.runOnIdle { hasPhoto = true }
+        compose.waitUntil(10_000) {
+            ShadowLooper.idleMainLooper()
+            compose.onAllNodesWithContentDescription("Package photo of ${item.name}").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Full image of ${item.name}").assertDoesNotExist()
         compose.onNodeWithContentDescription("Edit ${item.name}").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Add or replace photo or code for ${item.name}").assertIsDisplayed().performClick()
