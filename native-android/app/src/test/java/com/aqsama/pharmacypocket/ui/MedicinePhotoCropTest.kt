@@ -22,6 +22,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29, 34])
@@ -126,7 +127,7 @@ class MedicinePhotoCropTest {
             )
         }
 
-        compose.waitUntil(10_000) {
+        waitUntilWithAndroidMain {
             runCatching {
                 compose.onNodeWithText("Save photo").assertIsEnabled()
                 true
@@ -134,11 +135,21 @@ class MedicinePhotoCropTest {
         }
         beforeSave()
         compose.onNodeWithText("Save photo").assertIsEnabled().performClick()
-        compose.waitUntil(10_000) { accepted != null }
+        waitUntilWithAndroidMain { accepted != null }
 
         return requireNotNull(
             BitmapFactory.decodeByteArray(requireNotNull(accepted), 0, requireNotNull(accepted).size),
         )
+    }
+
+    private fun waitUntilWithAndroidMain(
+        timeoutMillis: Long = 10_000,
+        condition: () -> Boolean,
+    ) {
+        compose.waitUntil(timeoutMillis) {
+            ShadowLooper.idleMainLooper()
+            condition()
+        }
     }
 
     private fun sourceFile(name: String, width: Int, height: Int): File {
