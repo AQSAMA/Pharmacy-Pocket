@@ -971,11 +971,12 @@ internal fun encodeMedicineBitmap(bitmap: Bitmap): ByteArray {
  * The only lossy JPEG encoding happens after the user chooses the final crop.
  */
 internal suspend fun copyMedicinePhotoSource(context: Context, uri: Uri): File {
-    var file: File? = null
+    // Allocate the path before crossing the cancellable IO boundary. Even if
+    // withContext completes its write but cancellation wins the resume race,
+    // this scope still knows exactly which private file must be deleted.
+    val target = createMedicinePhotoCropSource(context)
     try {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            val target = createMedicinePhotoCropSource(context)
-            file = target
             val input = context.contentResolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("Could not open the selected photo.")
             input.use { source ->
@@ -1003,9 +1004,9 @@ internal suspend fun copyMedicinePhotoSource(context: Context, uri: Uri): File {
             }
         }
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        return requireNotNull(file)
+        return target
     } catch (error: Throwable) {
-        file?.delete()
+        target.delete()
         throw error
     }
 }
