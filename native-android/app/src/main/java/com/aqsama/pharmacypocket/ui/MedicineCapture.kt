@@ -121,6 +121,7 @@ internal fun MedicineCameraScreen(
     val capturing = captureState.capturing
     val saving = captureState.saving
     val pendingCode = captureState.code
+    var cropOperationBusy by remember(captureState) { mutableStateOf(false) }
     LaunchedEffect(captureState) {
         if (!allowed && captureState.scanning) request.launch(Manifest.permission.CAMERA)
     }
@@ -202,7 +203,7 @@ internal fun MedicineCameraScreen(
     }
 
     Dialog(
-        onDismissRequest = { if (!saving && !capturing) onDismiss() },
+        onDismissRequest = { if (!saving && !capturing && !cropOperationBusy) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -214,7 +215,7 @@ internal fun MedicineCameraScreen(
                     title = title,
                     savedCodeCount = existingCodes.size,
                     photoPreviewOpen = photoReviewing,
-                    enabled = !saving && !capturing,
+                    enabled = !saving && !capturing && !cropOperationBusy,
                     onClose = {
                         if (photoReviewing) {
                             captureState.retake()
@@ -261,7 +262,8 @@ internal fun MedicineCameraScreen(
                                 file = file,
                                 saving = saving,
                                 statusMessage = message,
-                                onCancel = { if (!saving) onDismiss() },
+                                onCancel = { if (!saving && !cropOperationBusy) onDismiss() },
+                                onProcessingChanged = { cropOperationBusy = it },
                                 onAccept = { bytes ->
                                     if (!captureState.savePhoto()) return@MedicinePhotoCrop
                                     try { currentOnPhoto(bytes) { result ->
