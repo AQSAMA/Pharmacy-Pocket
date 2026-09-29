@@ -21,6 +21,9 @@ import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import androidx.core.content.FileProvider
+import org.robolectric.util.ReflectionHelpers
+import org.robolectric.shadows.ShadowLog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -75,6 +78,12 @@ class MedicineMediaFlowTest {
         // to this test's looper instead of the first test's now-inactive looper.
         Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher())
         context = ApplicationProvider.getApplicationContext()
+        // FileProvider caches absolute roots by authority, while Robolectric gives every
+        // test a new data directory under the same application authority.
+        ReflectionHelpers.getStaticField<MutableMap<String, Any>>(
+            FileProvider::class.java, "sCache",
+        ).clear()
+        ShadowLog.stream = System.out
         File(context.filesDir, "SQLite").deleteRecursively()
         File(context.noBackupFilesDir, "medicine_drafts").deleteRecursively()
         File(context.filesDir, "medicine_crop_sources").deleteRecursively()
@@ -83,6 +92,7 @@ class MedicineMediaFlowTest {
 
     @After fun resetMainDispatcher() {
         Dispatchers.resetMain()
+        ShadowLog.stream = null
     }
 
     @Test fun existingMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = false)
