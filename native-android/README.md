@@ -2,6 +2,16 @@
 
 This is the canonical Pharmacy Pocket application: Kotlin + Jetpack Compose, offline-first SQLite storage, and native Android camera/barcode support.
 
+## Android UI and Compose reference
+
+For UI, Compose architecture, navigation, motion, theming, screen composition, or state-ownership work, read the pinned June reference before making significant changes:
+
+- `../reference/june/README.md`
+- `../reference/june/PATTERNS.md`
+- `../reference/june/AGENTS.md`
+
+June is a design and implementation reference only; production Pharmacy Pocket code remains under `native-android/`.
+
 ## Identity
 
 - Production: `Pharmacy Pocket` — `com.aqsama.pharmacypocket`
