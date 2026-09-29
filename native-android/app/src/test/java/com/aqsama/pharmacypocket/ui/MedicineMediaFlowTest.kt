@@ -24,7 +24,9 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
@@ -140,9 +142,14 @@ class MedicineMediaFlowTest {
         compose.waitUntil(10_000) { media.captureState == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
         if (newMedicine) {
-            val fields = compose.onAllNodes(hasSetTextAction())
-            fields[0].performTextInput(medicine.name)
-            fields[1].performTextInput(medicine.official.toString())
+            compose.onNode(
+                hasSetTextAction() and hasAnyDescendant(hasText("Medicine / brand")),
+                useUnmergedTree = true,
+            ).performTextInput(medicine.name)
+            compose.onNode(
+                hasSetTextAction() and hasAnyDescendant(hasText("Official price")),
+                useUnmergedTree = true,
+            ).performTextInput(medicine.official.toString())
         }
         val accepted = requireNotNull(media.preview)
         val draft = requireNotNull(media.photoPath)
