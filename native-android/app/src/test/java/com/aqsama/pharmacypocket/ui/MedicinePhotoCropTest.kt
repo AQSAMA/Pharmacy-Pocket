@@ -5,6 +5,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.android.asCoroutineDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -26,6 +34,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowLooper
 
+@OptIn(ExperimentalCoroutinesApi::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29, 34])
@@ -35,7 +44,14 @@ class MedicinePhotoCropTest {
     private lateinit var context: Context
 
     @Before fun setup() {
+        // Dispatchers.Main is cached across Robolectric sandboxes; bind the cropper callbacks
+        // to this test's looper instead of the first test's now-inactive looper.
+        Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher())
         context = ApplicationProvider.getApplicationContext()
+    }
+
+    @After fun resetMainDispatcher() {
+        Dispatchers.resetMain()
     }
 
     @Test fun photoPreparationDecodesResizesAndReencodesOnMinSdkCompatiblePath() {
