@@ -486,7 +486,7 @@ internal fun MedicineEditorScreen(
                                     TextButton(
                                         enabled = !busy,
                                         onClick = {
-                                            media.remove()
+                                            media.discardUnavailableDraft()
                                         },
                                     ) { Text("Discard unavailable draft") }
                                 }
