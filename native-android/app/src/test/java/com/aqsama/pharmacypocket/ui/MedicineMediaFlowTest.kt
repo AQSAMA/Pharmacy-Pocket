@@ -129,7 +129,12 @@ class MedicineMediaFlowTest {
         }
 
         compose.setContent {
-            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+            CompositionLocalProvider(
+                LocalActivityResultRegistryOwner provides registryOwner,
+                LocalMedicineCropBitmapLoader provides { source ->
+                    BitmapFactory.decodeFile(source.absolutePath)
+                },
+            ) {
                 MedicineEditorScreen(
                     snapshot = snapshot,
                     medicineId = medicine.id,
@@ -219,7 +224,12 @@ class MedicineMediaFlowTest {
         var saved = false
         compose.setContent {
             val scope = rememberCoroutineScope()
-            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
+            CompositionLocalProvider(
+                LocalActivityResultRegistryOwner provides registryOwner,
+                LocalMedicineCropBitmapLoader provides { source ->
+                    BitmapFactory.decodeFile(source.absolutePath)
+                },
+            ) {
             when (screen) {
                 "editor" -> MedicineEditorScreen(
                     snapshot = snapshot, medicineId = if (newMedicine) null else medicine.id, initialCategory = medicine.category,
