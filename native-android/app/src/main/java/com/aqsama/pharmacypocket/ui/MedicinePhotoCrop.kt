@@ -1,6 +1,7 @@
 package com.aqsama.pharmacypocket.ui
 
 import android.graphics.Bitmap
+import android.net.Uri
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +22,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,7 +37,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import java.io.File
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,7 +67,6 @@ internal fun MedicinePhotoCrop(
     val scope = rememberCoroutineScope()
     var cropMode by remember(file.absolutePath) { mutableStateOf(MedicineCropMode.Rectangle) }
     var imageReady by remember(file.absolutePath) { mutableStateOf(false) }
-    var sourceBitmap by remember(file.absolutePath) { mutableStateOf<Bitmap?>(null) }
     var cropRunning by remember(file.absolutePath) { mutableStateOf(false) }
     var error by remember(file.absolutePath) { mutableStateOf<String?>(null) }
     val busy = saving || cropRunning
@@ -96,26 +94,17 @@ internal fun MedicinePhotoCrop(
         }
     }
 
-    LaunchedEffect(cropView, file.absolutePath) {
+    DisposableEffect(cropView, file.absolutePath) {
         imageReady = false
         error = null
-        try {
-            val decoded = withContext(Dispatchers.IO) {
-                decodeMedicineBitmap(context, android.net.Uri.fromFile(file))
-            }
-            sourceBitmap?.takeIf { it !== decoded && !it.isRecycled }?.recycle()
-            sourceBitmap = decoded
-            cropView.setImageBitmap(decoded)
-            imageReady = true
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            imageReady = false
-            error = failure.message ?: "Could not open this photo."
-        }
-    }
-
-    DisposableEffect(cropView, file.absolutePath) {
+        cropView.setOnSetImageUriCompleteListener(
+            object : CropImageView.OnSetImageUriCompleteListener {
+                override fun onSetImageUriComplete(view: CropImageView, uri: Uri, loadError: Exception?) {
+                    imageReady = loadError == null
+                    error = loadError?.message?.let { "Could not open photo: $it" }
+                }
+            },
+        )
         cropView.setOnCropImageCompleteListener(
             object : CropImageView.OnCropImageCompleteListener {
                 override fun onCropImageComplete(view: CropImageView, result: CropImageView.CropResult) {
@@ -154,12 +143,15 @@ internal fun MedicinePhotoCrop(
                 }
             },
         )
+        // Keep the source URI attached to CropImageView. The view may sample for display,
+        // but its crop worker reads the original URI so a small label crop keeps source detail.
+        cropView.setImageUriAsync(Uri.fromFile(file))
+
         onDispose {
             if (cropRunning) onProcessingChanged(false)
+            cropView.setOnSetImageUriCompleteListener(null)
             cropView.setOnCropImageCompleteListener(null)
             cropView.clearImage()
-            sourceBitmap?.takeIf { !it.isRecycled }?.recycle()
-            sourceBitmap = null
         }
     }
 
