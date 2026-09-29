@@ -61,6 +61,7 @@ internal fun MedicinePhotoCrop(
     modifier: Modifier = Modifier,
     statusMessage: String? = null,
     onCancel: (() -> Unit)? = null,
+    onProcessingChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -109,6 +110,7 @@ internal fun MedicinePhotoCrop(
                     val libraryOutputUri = result.uriContent
                     if (result.error != null || cropped == null) {
                         cropRunning = false
+                        onProcessingChanged(false)
                         error = result.error?.message ?: "Could not crop this photo."
                         libraryOutputUri?.let { uri ->
                             runCatching { context.contentResolver.delete(uri, null, null) }
@@ -123,9 +125,11 @@ internal fun MedicinePhotoCrop(
                             }
                             error = null
                             cropRunning = false
+                            onProcessingChanged(false)
                             onAccept(bytes)
                         } catch (failure: Exception) {
                             cropRunning = false
+                            onProcessingChanged(false)
                             error = failure.message ?: "Could not prepare this photo."
                         } finally {
                             libraryOutputUri?.let { uri ->
@@ -140,6 +144,7 @@ internal fun MedicinePhotoCrop(
         cropView.setImageUriAsync(Uri.fromFile(file))
 
         onDispose {
+            if (cropRunning) onProcessingChanged(false)
             cropView.setOnSetImageUriCompleteListener(null)
             cropView.setOnCropImageCompleteListener(null)
             cropView.clearImage()
@@ -250,6 +255,7 @@ internal fun MedicinePhotoCrop(
                     onClick = {
                         error = null
                         cropRunning = true
+                        onProcessingChanged(true)
                         cropView.croppedImageAsync(
                             saveCompressFormat = Bitmap.CompressFormat.JPEG,
                             saveCompressQuality = 92,
