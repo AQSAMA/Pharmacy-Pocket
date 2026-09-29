@@ -137,6 +137,7 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.5.2")
     implementation("androidx.camera:camera-view:1.5.2")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("com.vanniktech:android-image-cropper:4.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.12.1")
     testImplementation("androidx.compose.ui:ui-test-junit4:1.12.1")
