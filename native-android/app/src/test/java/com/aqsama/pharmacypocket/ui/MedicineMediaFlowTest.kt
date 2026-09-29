@@ -24,8 +24,10 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.aqsama.pharmacypocket.data.Medicine
 import com.aqsama.pharmacypocket.data.PharmacyRepository
@@ -57,11 +59,15 @@ class MedicineMediaFlowTest {
         repository = PharmacyRepository(context)
     }
 
-    @Test fun cameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false)
-    @Test fun galleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true)
+    @Test fun existingMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = false)
+    @Test fun existingMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = false)
+    @Test fun newMedicineCameraCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = false, newMedicine = true)
+    @Test fun newMedicineGalleryCropSaveEditorDatabaseHomeDetailAndRestart() = exerciseFlow(gallery = true, newMedicine = true)
 
-    private fun exerciseFlow(gallery: Boolean) {
-        var snapshot by mutableStateOf(runBlocking { repository.saveMedicine(medicine) })
+    private fun exerciseFlow(gallery: Boolean, newMedicine: Boolean) {
+        var snapshot by mutableStateOf(runBlocking {
+            if (newMedicine) repository.loadSnapshot() else repository.saveMedicine(medicine)
+        })
         val media = MedicineMedia()
         val source = File(context.cacheDir, "flow-source.jpg")
         val bitmap = Bitmap.createBitmap(800, 400, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
@@ -83,34 +89,42 @@ class MedicineMediaFlowTest {
             }
         }
         var screen by mutableStateOf("editor")
+        var savedMedicineId: String? = if (newMedicine) null else medicine.id
         var saved = false
         compose.setContent {
             val scope = rememberCoroutineScope()
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides registryOwner) {
             when (screen) {
                 "editor" -> MedicineEditorScreen(
-                    snapshot = snapshot, medicineId = medicine.id, initialCategory = null,
+                    snapshot = snapshot, medicineId = if (newMedicine) null else medicine.id, initialCategory = medicine.category,
                     busy = false, onBack = {}, onManageCategories = {}, onMoveToTrash = {},
                     loadPhoto = repository::loadPhoto, media = media,
                     onSave = { item -> scope.launch {
+                        savedMedicineId = item.id
                         snapshot = media.save(repository, item)
                         media.discard()
                         saved = true
                         screen = "home"
                     } },
                 )
-                "home" -> MedicineCard(
-                    item = snapshot.items.single { it.id == medicine.id },
-                    category = snapshot.categories.first { it.id == medicine.category },
-                    large = false, currency = snapshot.currency, first = true, last = true,
-                    onOpen = { screen = "detail" }, onEdit = {}, onFavorite = {}, onCamera = {},
-                    loadPhoto = repository::loadPhoto, photoVersion = 1,
-                )
-                "detail" -> MedicineDetailScreen(
-                    snapshot = snapshot, medicineId = medicine.id, busy = false,
-                    onBack = {}, onEdit = {}, onToggleFavorite = {}, onMoveToTrash = {},
-                    loadPhoto = repository::loadPhoto, photoVersion = 1,
-                )
+                "home" -> {
+                    val id = requireNotNull(savedMedicineId)
+                    MedicineCard(
+                        item = snapshot.items.single { it.id == id },
+                        category = snapshot.categories.first { it.id == medicine.category },
+                        large = false, currency = snapshot.currency, first = true, last = true,
+                        onOpen = { screen = "detail" }, onEdit = {}, onFavorite = {}, onCamera = {},
+                        loadPhoto = repository::loadPhoto, photoVersion = 1,
+                    )
+                }
+                "detail" -> {
+                    val id = requireNotNull(savedMedicineId)
+                    MedicineDetailScreen(
+                        snapshot = snapshot, medicineId = id, busy = false,
+                        onBack = {}, onEdit = {}, onToggleFavorite = {}, onMoveToTrash = {},
+                        loadPhoto = repository::loadPhoto, photoVersion = 1,
+                    )
+                }
             }
             }
         }
@@ -123,22 +137,29 @@ class MedicineMediaFlowTest {
         compose.onNodeWithContentDescription("Take package photo").assertDoesNotExist()
         compose.onNodeWithText("Save photo").assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(10_000) { media.preview != null && media.cropSource == null }
+        compose.waitUntil(10_000) { media.captureState == null }
         compose.onNodeWithContentDescription("Medicine photo").performScrollTo().assertExists()
+        if (newMedicine) {
+            val fields = compose.onAllNodes(hasSetTextAction())
+            fields[0].performTextInput(medicine.name)
+            fields[1].performTextInput(medicine.official.toString())
+        }
         val accepted = requireNotNull(media.preview)
         val draft = requireNotNull(media.photoPath)
         compose.onNodeWithText("Save medicine").performClick()
         compose.waitUntil(10_000) { saved }
+        val id = requireNotNull(savedMedicineId)
         assertFalse(File(draft).exists())
-        assertTrue(snapshot.items.single { it.id == medicine.id }.hasPhoto)
-        assertArrayEquals(accepted, runBlocking { repository.loadPhoto(medicine.id) })
+        assertTrue(snapshot.items.single { it.id == id }.hasPhoto)
+        assertArrayEquals(accepted, runBlocking { repository.loadPhoto(id) })
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Package photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Package photo of ${medicine.name}").assertExists()
         compose.runOnIdle { screen = "detail" }
         compose.waitUntil(10_000) { compose.onAllNodesWithContentDescription("Photo of ${medicine.name}").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("Photo of ${medicine.name}").performScrollTo().assertExists()
         val reopened = PharmacyRepository(context)
-        assertTrue(runBlocking { reopened.loadSnapshot() }.items.single { it.id == medicine.id }.hasPhoto)
-        assertArrayEquals(accepted, runBlocking { reopened.loadPhoto(medicine.id) })
+        assertTrue(runBlocking { reopened.loadSnapshot() }.items.single { it.id == id }.hasPhoto)
+        assertArrayEquals(accepted, runBlocking { reopened.loadPhoto(id) })
         } catch (failure: Throwable) {
             println("Media phase=${media.phase}, capture=${media.captureState?.phase}, preview=${media.preview?.size}, crop=${media.cropSource}, error=${media.error}")
             val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true)
