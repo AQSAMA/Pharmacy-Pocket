@@ -7,6 +7,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Column
@@ -137,6 +140,7 @@ fun MedicineCard(
     photoVersion: Int,
 ) {
     var photo by remember(item.id) { mutableStateOf<ImageBitmap?>(null) }
+    var showFullPhoto by remember(item.id, photoVersion) { mutableStateOf(false) }
     LaunchedEffect(item.id, item.hasPhoto, photoVersion) {
         photo = if (item.hasPhoto) {
             loadPhoto(item.id)?.let { bytes ->
@@ -201,7 +205,8 @@ fun MedicineCard(
                             contentDescription = "Package photo of ${item.name}",
                             modifier = Modifier
                                 .width(railWidth)
-                                .fillMaxHeight(),
+                                .fillMaxHeight()
+                                .clickable(onClickLabel = "View full photo") { showFullPhoto = true },
                             contentScale = ContentScale.Crop,
                         )
                     }
@@ -289,29 +294,29 @@ fun MedicineCard(
                             }
 
                             Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.Bottom,
-                                ) {
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.Bottom,
+                            ) {
+                                MedicineCardPrice(
+                                    label = "OFFICIAL",
+                                    price = item.official,
+                                    currency = currency,
+                                    large = large,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                item.discounted?.let { price ->
                                     MedicineCardPrice(
-                                        label = "OFFICIAL",
-                                        price = item.official,
-                                        currency = currency,
+                                        label = if (price > item.official) "VERIFY" else "IF ASKED",
+                                        price = price,
+                                        currency = null,
                                         large = large,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.weight(1f),
+                                        color = discountColor(price),
+                                        modifier = Modifier.weight(0.82f),
                                     )
-                                    item.discounted?.let { price ->
-                                        MedicineCardPrice(
-                                            label = if (price > item.official) "VERIFY" else "IF ASKED",
-                                            price = price,
-                                            currency = null,
-                                            large = large,
-                                            color = discountColor(price),
-                                            modifier = Modifier.weight(0.82f),
-                                        )
-                                    }
                                 }
+                            }
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -349,6 +354,57 @@ fun MedicineCard(
                         }
                     }
                 }
+            }
+        }
+    }
+    if (showFullPhoto && item.hasPhoto) {
+        photo?.let { bitmap ->
+            MedicineCardPhotoDialog(item.name, bitmap) { showFullPhoto = false }
+        }
+    }
+}
+
+/** The fitted image consumes its own taps; the surrounding backdrop dismisses the dialog. */
+@Composable
+private fun MedicineCardPhotoDialog(name: String, bitmap: ImageBitmap, onDismiss: () -> Unit) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        ),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    onClickLabel = "Close full photo",
+                    onClick = onDismiss,
+                )
+                .semantics { contentDescription = "Close full photo" }
+                .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+            val imageWidth = minOf(maxWidth, maxHeight * ratio)
+            Surface(
+                modifier = Modifier
+                    .width(imageWidth)
+                    .height(imageWidth / ratio)
+                    .clickable(interactionSource = null, indication = null, onClick = {}),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 12.dp,
+            ) {
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Full image of $name",
+                    modifier = Modifier.fillMaxSize().padding(6.dp),
+                    contentScale = ContentScale.Fit,
+                )
             }
         }
     }
