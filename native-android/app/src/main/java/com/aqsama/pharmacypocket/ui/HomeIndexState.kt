@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** Retains the expensive normalized index when Home leaves composition for a detail page. */
-internal class HomeIndexViewModel : ViewModel() {
+internal class HomeIndexViewModel(private val worker: CoroutineDispatcher = Dispatchers.Default) : ViewModel() {
     private var items: List<Medicine>? = null
     private var job: Job? = null
     private var requestedSort: MedicineSort? = null
@@ -23,18 +23,25 @@ internal class HomeIndexViewModel : ViewModel() {
         requestedSort = sort
         job?.cancel()
         if (items !== next) {
-            // Publish changed favorites/details and remove retired rows immediately while
-            // search normalization and sorting refresh in the background.
+            // Reuse normalized keys only for changes that cannot affect search or sorting.
+            // Actual field edits wait for the fresh index; unchanged navigation stays cached.
             val latest = next.associateBy { it.id }
-            mutable.value = mutable.value?.mapNotNull { entry -> latest[entry.item.id]?.let { item ->
+            val current = mutable.value
+            val indexedIds = current?.mapTo(mutableSetOf()) { it.item.id }.orEmpty()
+            val canReuse = latest.keys.all { it in indexedIds } && current?.all { entry ->
+                latest[entry.item.id]?.let { item ->
+                    entry.item.copy(favorite = item.favorite, hasPhoto = item.hasPhoto, revision = item.revision) == item
+                } ?: true
+            } == true
+            mutable.value = if (canReuse) current?.mapNotNull { entry -> latest[entry.item.id]?.let { item ->
                 if (item === entry.item) entry else entry.copy(item = item)
-            } }
+            } } else null
             items = next; cached.clear(); normalized = null
         }
         cached[sort]?.let { mutable.value = it; return }
         job = viewModelScope.launch {
             val base = normalized
-            val result = withContext(Dispatchers.Default) {
+            val result = withContext(worker) {
                 val normalized = base ?: buildSearchIndex(next)
                 normalized to sortSearchIndex(normalized, sort)
             }

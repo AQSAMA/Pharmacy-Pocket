@@ -42,6 +42,30 @@ class HomeIndexStateTest {
         model.update(listOf(second.copy(favorite = true)), MedicineSort.DEFAULT)
         assertEquals(listOf("second"), model.index.value!!.map { it.item.id })
         assertTrue(model.index.value!!.single().item.favorite)
+        model.clear()
+    }
+
+    @Test fun changedNamesFieldsAndPricesNeverUseOldSearchKeysOrSortOrder() {
+        val worker = StandardTestDispatcher(dispatcher.scheduler)
+        val model = HomeIndexViewModel(worker)
+        val first = Medicine("first", "tablets", "General", "Old brand", "", official = 100, discounted = null, imported = true,
+            importedFields = listOf(ImportedField("price", "Pharmacy price", "100", ImportField.PHARMACY_PRICE, true),
+                ImportedField("science", "Scientific name", "Old ingredient", ImportField.SCIENTIFIC, true)))
+        val second = first.copy(id = "second", name = "Other", importedFields = first.importedFields.map { if (it.field.isPrice) it.copy(value = "200") else it })
+        model.update(listOf(first, second), MedicineSort.PRICE_ASC)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(listOf("first", "second"), model.index.value!!.map { it.item.id })
+        val edited = first.copy(name = "New brand", importedFields = first.importedFields.map {
+            it.copy(value = if (it.field.isPrice) "900" else "New ingredient")
+        })
+        model.update(listOf(edited, second), MedicineSort.PRICE_ASC)
+        assertNull(model.index.value)
+        dispatcher.scheduler.advanceUntilIdle()
+        val fresh = model.index.value!!
+        assertEquals(listOf("second", "first"), fresh.map { it.item.id })
+        assertTrue(filterSortedMedicines(fresh, MedicineFilters(), "Old brand").isEmpty())
+        assertEquals(listOf("first"), filterSortedMedicines(fresh, MedicineFilters(), "New ingredient").map { it.id })
+        model.clear()
     }
 
 }
