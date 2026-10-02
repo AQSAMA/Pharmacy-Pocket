@@ -253,7 +253,12 @@ fun MedicineCard(
                                         textAlign = TextAlign.Start,
                                         style = TextStyle(textDirection = TextDirection.Content),
                                     )
-                                    if (!large && item.note.isNotBlank()) {
+                                    if (!item.imported && item.importedFields.any { it.key == "source-name" }) {
+                                        val subtitle = item.importedFields.firstOrNull { it.key == "source-name" }?.value?.takeIf { it.isNotBlank() && it != item.name }
+                                            ?: item.importedFields.firstOrNull { it.field == com.aqsama.pharmacypocket.data.ImportField.SCIENTIFIC }?.value?.takeIf { it.isNotBlank() && it != item.name }
+                                        subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                                    }
+                                    if (!large && item.note.isNotBlank() && item.importedFields.none { it.key == "source-name" }) {
                                         Text(
                                             text = item.note,
                                             modifier = Modifier.fillMaxWidth(),
@@ -303,7 +308,9 @@ fun MedicineCard(
                                 if (price > item.official) verifyPriceColor else normalDiscountColor
                             }
 
-                            MedicineCardPrices(item, currency, large, discountColor)
+                            if (item.imported) {
+                                ImportedFields(item.importedFields, compact = true, large = large)
+                            } else MedicineCardPrices(item, currency, large, discountColor)
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -400,6 +407,7 @@ private fun MedicineCardPhotoDialog(name: String, bitmap: ImageBitmap, onDismiss
 /** Keep ordinary prices in one row; reflow amounts that cannot fit at a readable size. */
 @Composable
 private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean, discountColor: (Long) -> Color) {
+    val priceLabel = if (item.importedFields.any { it.key == "source-name" }) "YOUR PRICE" else "OFFICIAL"
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val minimumStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
@@ -419,7 +427,7 @@ private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean,
             item.discounted?.let { requiredWidth(it) > discountedWidth } == true
         if (reflow) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                MedicineCardPrice("OFFICIAL", item.official, currency, large, MaterialTheme.colorScheme.primary,
+                MedicineCardPrice(priceLabel, item.official, currency, large, MaterialTheme.colorScheme.primary,
                     allowWrap = true, modifier = Modifier.fillMaxWidth())
                 item.discounted?.let { price ->
                     MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
@@ -428,7 +436,7 @@ private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean,
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
-                MedicineCardPrice("OFFICIAL", item.official, currency, large, MaterialTheme.colorScheme.primary,
+                MedicineCardPrice(priceLabel, item.official, currency, large, MaterialTheme.colorScheme.primary,
                     modifier = Modifier.weight(1f))
                 item.discounted?.let { price ->
                     MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,

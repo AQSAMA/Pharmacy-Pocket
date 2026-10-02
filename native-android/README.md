@@ -65,3 +65,62 @@ The source code for the obsolete Expo application is no longer required for this
 - Light/dark/system themes and large-text mode
 
 See `../RELEASING.md` for preview and production release instructions.
+
+## Spreadsheet lists
+
+Open **☰ > Import a spreadsheet** to create a separate offline list from XLSX,
+UTF-8 CSV (comma, semicolon or tab separated), or a Google Sheets document link.
+Private Google Sheets can be exported to XLSX and imported using the file picker;
+link imports require “Anyone with the link” viewing access and respect the link's
+`gid` worksheet. These are local copies, not live synchronization.
+
+Use the Rows, Columns and Preview tabs. Choose the worksheet, any header row by its
+spreadsheet number, and the first/last data rows. Review suggested mappings, assign display
+labels, and select up to six extra fields for cards. Map categories in order from
+level 1 through level 4. Use **Custom field** to retain any other column, or **Skip
+column** to omit it. Decimal prices and original text are preserved. Price mappings
+accept nonnegative numbers with the selected **1,234.56** or **1.234,56** number
+format, including Arabic numerals/separators; currency symbols should be kept in their own column. Review
+errors before creating the list. Empty Name rows are counted and skipped; duplicate
+names are retained as distinct entries.
+
+Reopen **☰ > Import settings** for the selected list to change its name, row range,
+column roles, labels and card fields. Imports retain a compressed local source table;
+skipped columns remain recoverable. Earlier imports can be configured from their saved
+fields, although previously skipped source columns cannot be recovered. Applying changes
+preserves local field edits, favorites, codes and photos by source row ID. Excluded active
+rows move to Trash; expanding the selection does not silently restore Trash or recreate
+moved/permanently deleted rows. Settings and source tables are local to the installation;
+JSON backups preserve medication fields but do not embed the spreadsheet source table.
+
+Switch between **My medications** and imported lists from the side menu. Imported
+items use the existing cards, favorites, sorting, normalized search, photo/code
+capture, editor, details and Trash. **Tune** exposes deeper category filters.
+The editor's **Imported fields** section contains fields omitted from the card.
+The prepared search index stays in memory while visiting details, so returning to a
+large unchanged list does not prepare it again. Switching lists releases that index.
+
+From an imported medicine's details, choose **Move to My medications**. Set a common
+name, your pharmacy price and a main-list category. Its main card shows the common name,
+original name underneath (scientific name if the names match), and your chosen price.
+All source fields/prices/currency, notes, photo, codes and favorite status remain in the
+medicine's details and JSON backups. Source details stay separate from your editable
+main-list price. Package-code conflicts block the move without changing either list;
+a successful move places the original row in the source list's Trash.
+Settings identify the selected list: categories, currency, JSON backups/imports and
+Trash belong to that list; theme and text size are shared. Custom fields survive
+editing, Trash/restore and JSON backup round trips. Restore an imported-list JSON
+backup while that imported list is selected.
+
+Limits: 32 MB source files, 128 MB expanded XLSX data, 64 worksheets, 100,000 rows
+across the workbook, 128 columns and 2 million cells. A cell can contain up to 4,096
+characters. XLSX formulas use stored values and are never executed. XML document
+declarations (DTD) and custom entities are rejected. Interrupted creation is
+reconciled on startup: committed lists are recovered and incomplete seeds discarded. Excel styling,
+merged-cell expansion and date-format conversion are not imported.
+
+To run the supplied workbook integration test without committing the source file:
+
+```sh
+PHARMACY_SPREADSHEET_FIXTURE=/path/to/products-price.xlsx gradle testDebugUnitTest
+```

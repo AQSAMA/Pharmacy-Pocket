@@ -61,6 +61,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aqsama.pharmacypocket.data.AppSnapshot
 import com.aqsama.pharmacypocket.data.Medicine
+import com.aqsama.pharmacypocket.data.ImportedField
+import com.aqsama.pharmacypocket.data.fieldsFromJson
+import com.aqsama.pharmacypocket.data.fieldsToJson
+import com.aqsama.pharmacypocket.data.syncImportedFields
+import org.json.JSONArray
 import com.aqsama.pharmacypocket.data.MedicineCode
 import com.aqsama.pharmacypocket.data.CodeKind
 import com.aqsama.pharmacypocket.data.validateCodes
@@ -91,11 +96,16 @@ internal fun MedicineEditorScreen(
     loadPhoto: suspend (String) -> ByteArray?,
     initialCapture: String? = null,
     media: MedicineMedia,
+    importedTemplate: List<ImportedField>? = null,
 ) {
     val view = LocalView.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val existing = remember(snapshot.items, medicineId) { snapshot.items.firstOrNull { it.id == medicineId } }
+    val imported = existing?.imported == true || importedTemplate != null
+    var fieldsJson by rememberSaveable(medicineId) { mutableStateOf(fieldsToJson(existing?.importedFields ?: importedTemplate.orEmpty()).toString()) }
+    val importedFields = remember(fieldsJson) { fieldsFromJson(JSONArray(fieldsJson)) }
+    var importedExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
     val fallbackCategory = initialCategory
         ?.takeIf { candidate -> candidate != "all" && snapshot.categories.any { it.id == candidate } }
         ?: snapshot.categories.firstOrNull { it.id != "all" }?.id
@@ -194,9 +204,9 @@ internal fun MedicineEditorScreen(
     }
 
     fun submit() {
-        val officialNumber = official.trim().toLongOrNull()
-        val discountedNumber = discounted.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
-        val discountWasInvalid = discounted.trim().isNotEmpty() && discountedNumber == null
+        val officialNumber = if (imported) 0L else official.trim().toLongOrNull()
+        val discountedNumber = if (imported) null else discounted.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
+        val discountWasInvalid = !imported && discounted.trim().isNotEmpty() && discountedNumber == null
         if (
             name.trim().isEmpty() ||
             officialNumber == null ||
@@ -209,8 +219,7 @@ internal fun MedicineEditorScreen(
             return
         }
         Haptics.action(view)
-        onSave(
-            Medicine(
+        val draft = Medicine(
                 id = editorMedicineId,
                 name = name.trim(),
                 category = category,
@@ -223,8 +232,12 @@ internal fun MedicineEditorScreen(
                 favorite = existing?.favorite ?: false,
                 createdAt = editorCreatedAt,
                 codes = codes,
-            ),
-        )
+                imported = imported,
+                importedFields = importedFields,
+            )
+        try { onSave(syncImportedFields(draft)) } catch (error: IllegalArgumentException) {
+            validationError = error.message ?: "Check the mapped prices."
+        }
     }
 
     Scaffold(
@@ -251,79 +264,94 @@ internal fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Category", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                            TextButton(onClick = {
-                                Haptics.action(view)
-                                onManageCategories()
-                            }) { Text("Manage categories") }
-                        }
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            snapshot.categories.filter { it.id != "all" }.forEach { item ->
-                                SoftChip(
-                                    label = item.arabic,
-                                    selected = category == item.id,
-                                    accent = colorFromHex(item.color),
-                                    onClick = {
-                                        Haptics.selection(view)
-                                        category = item.id
-                                    },
-                                )
-                            }
-                        }
+                    if (!imported && importedFields.isNotEmpty()) {
+                        EditorSectionButton("≡", "Source details", "Original names, prices and custom fields", importedExpanded, { importedExpanded = !importedExpanded })
+                        if (importedExpanded) ImportedFields(importedFields, compact = false)
                     }
 
-                    Field("Subcategory", subcategory, { subcategory = it })
-                    if (existingSubcategories.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Text("Or select an existing subcategory", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    if (imported) {
+                        importedFields.filter { it.onCard }.forEach { field ->
+                            Field(field.label, field.value, { value -> fieldsJson = fieldsToJson(importedFields.map { if (it.key == field.key) it.copy(value = value.take(com.aqsama.pharmacypocket.data.SpreadsheetLimits.maxCellLength)) else it }).toString() })
+                        }
+                        EditorSectionButton("≡", "Imported fields", "${importedFields.size} mapped fields · categories & details", importedExpanded, { importedExpanded = !importedExpanded })
+                        if (importedExpanded) importedFields.filterNot { it.onCard }.forEach { field ->
+                            Field(field.label, field.value, { value -> fieldsJson = fieldsToJson(importedFields.map { if (it.key == field.key) it.copy(value = value.take(com.aqsama.pharmacypocket.data.SpreadsheetLimits.maxCellLength)) else it }).toString() })
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Category", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                                TextButton(onClick = {
+                                    Haptics.action(view)
+                                    onManageCategories()
+                                }) { Text("Manage categories") }
+                            }
                             Row(
                                 Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(7.dp),
                             ) {
-                                existingSubcategories.forEach { option ->
+                                snapshot.categories.filter { it.id != "all" }.forEach { item ->
                                     SoftChip(
-                                        label = option.label,
-                                        selected = subcategoryKey(subcategory) == option.key,
+                                        label = item.arabic,
+                                        selected = category == item.id,
+                                        accent = colorFromHex(item.color),
                                         onClick = {
                                             Haptics.selection(view)
-                                            subcategory = option.label
+                                            category = item.id
                                         },
                                     )
                                 }
                             }
                         }
-                    }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                        OutlinedTextField(
-                            value = official,
-                            onValueChange = { official = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Official price") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        Field("Subcategory", subcategory, { subcategory = it })
+                        if (existingSubcategories.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text("Or select an existing subcategory", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                                Row(
+                                    Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                ) {
+                                    existingSubcategories.forEach { option ->
+                                        SoftChip(
+                                            label = option.label,
+                                            selected = subcategoryKey(subcategory) == option.key,
+                                            onClick = {
+                                                Haptics.selection(view)
+                                                subcategory = option.label
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+                            OutlinedTextField(
+                                value = official,
+                                onValueChange = { official = it },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("Official price") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            )
+                            OutlinedTextField(
+                                value = discounted,
+                                onValueChange = { discounted = it },
+                                modifier = Modifier.weight(1f),
+                                label = { Text("Discounted") },
+                                placeholder = { Text("Optional") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            )
+                        }
+                        Text(
+                            "${snapshot.currency} · Leave Discounted blank if there is no second price.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
                         )
-                        OutlinedTextField(
-                            value = discounted,
-                            onValueChange = { discounted = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Discounted") },
-                            placeholder = { Text("Optional") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        )
+
                     }
-                    Text(
-                        "${snapshot.currency} · Leave Discounted blank if there is no second price.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
 
                     EditorSectionButton(
                         icon = "▣",
@@ -719,6 +747,7 @@ fun MedicineDetailScreen(
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
+    onMoveToMain: ((Medicine) -> Unit)? = null,
 ) {
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
@@ -822,37 +851,39 @@ fun MedicineDetailScreen(
                                     )
                                 }
 
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.11f),
-                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                                ) {
-                                    Column(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                                if (!item.imported) {
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.11f),
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
                                     ) {
-                                        Text(
-                                            "OFFICIAL PRICE · ${snapshot.currency}",
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = Color(0xFFA3CFB9),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            textAlign = TextAlign.Center,
-                                        )
-                                        Text(
-                                            formatPrice(item.official),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = Color(0xFFB8F0CB),
-                                            fontSize = 58.sp,
-                                            fontWeight = FontWeight.Black,
-                                            textAlign = TextAlign.Center,
-                                            maxLines = 1,
-                                        )
+                                        Column(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            Text(
+                                                "${if (item.importedFields.any { it.key == "source-name" }) "YOUR PRICE" else "OFFICIAL PRICE"} · ${snapshot.currency}",
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = Color(0xFFA3CFB9),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                textAlign = TextAlign.Center,
+                                            )
+                                            Text(
+                                                formatPrice(item.official),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                color = Color(0xFFB8F0CB),
+                                                fontSize = 58.sp,
+                                                fontWeight = FontWeight.Black,
+                                                textAlign = TextAlign.Center,
+                                                maxLines = 1,
+                                            )
+                                        }
                                     }
                                 }
 
-                                item.discounted?.let { price ->
+                                if (!item.imported) item.discounted?.let { price ->
                                     Column(Modifier.fillMaxWidth()) {
                                         Text(
                                             if (price > item.official) "VERIFY THIS PRICE" else "IF CUSTOMER ASKS",
@@ -874,6 +905,12 @@ fun MedicineDetailScreen(
                                 }
                             }
                         }
+                        if (onMoveToMain != null) OutlinedButton(onClick = { onMoveToMain(item) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Move to My medications") }
+                        if (item.importedFields.isNotEmpty()) {
+                            Text(if (item.imported) "Imported details" else "Source details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            ImportedFields(item.importedFields, compact = false, large = snapshot.largeText)
+                        }
+
 
                         InfoCard("Medicine info") {
                             InfoValue("CATEGORY", category.label, snapshot.largeText)

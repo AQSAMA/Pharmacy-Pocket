@@ -68,6 +68,7 @@ fun SettingsScreen(
     onSetTheme: (ThemePreference) -> Unit,
     onImport: (ParsedBackup, ImportMode) -> Unit,
     exportBackup: suspend () -> String,
+    listName: String? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -125,6 +126,10 @@ fun SettingsScreen(
                     Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    if (listName != null) {
+                        Text(listName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("Backup, import, categories, currency and Trash apply to this list. Theme and text size apply across the app.", style = MaterialTheme.typography.bodySmall)
+                    }
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(24.dp),
