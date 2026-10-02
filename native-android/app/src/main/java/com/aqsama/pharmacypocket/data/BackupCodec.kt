@@ -7,6 +7,9 @@ import java.time.Instant
 import java.util.Locale
 import android.util.Base64
 import android.graphics.BitmapFactory
+import android.util.JsonReader
+import android.util.JsonToken
+import java.io.StringReader
 
 object BackupCodec {
     const val schema = "pharmacy-pocket-backup"
@@ -51,13 +54,19 @@ object BackupCodec {
             // Avoid retaining a second complete object graph for large spreadsheet lists.
             val prefix = root.toString().dropLast(1) + ",\"medicines\":["
             var bytes = prefix.toByteArray(Charsets.UTF_8).size.toLong() + 2
-            val output = StringBuilder(prefix)
+            var characters = prefix.length.toLong() + 2
+            // Size first so buffer expansion cannot briefly retain two large character arrays.
             items.forEachIndexed { index, item ->
                 val encoded = medicineToJson(item, photos).toString()
-                bytes += encoded.toByteArray(Charsets.UTF_8).size + if (index == 0) 0 else 1
+                val separator = if (index == 0) 0 else 1
+                bytes += encoded.toByteArray(Charsets.UTF_8).size + separator
+                characters += encoded.length + separator
                 require(bytes <= PharmacyDefaults.maxBackupBytes) { "The backup exceeds 128 MB." }
+            }
+            val output = StringBuilder(characters.toInt()).append(prefix)
+            items.forEachIndexed { index, item ->
                 if (index > 0) output.append(',')
-                output.append(encoded)
+                output.append(medicineToJson(item, photos).toString())
             }
             return output.append("]}").toString()
         }
@@ -90,6 +99,8 @@ object BackupCodec {
 
     fun parse(raw: String): ParsedBackup {
         try {
+            // Our large-list exporter puts this marker first. Read its records incrementally.
+            if (Regex("""^\s*\{\s*"importedList"\s*:\s*true\s*[,}]""").containsMatchIn(raw)) return parseImported(raw)
             val root = JSONObject(raw)
             val medicineArray = root.optJSONArray("medicines")
                 ?: throw IllegalArgumentException("This file does not contain a valid medicines list.")
@@ -113,21 +124,7 @@ object BackupCodec {
                 val item = parseMedicine(obj, favoriteIds)
                 require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
                 medicines += item
-                if (obj.has("photoJpeg")) {
-                    val encoded = requiredString(obj, "photoJpeg")
-                    require(encoded.length <= 342_000) { "A photo in this backup is too large." }
-                    val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                    require(bytes.size in 1..256_000 && bytes.size >= 3 &&
-                        bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()) {
-                        "A photo in this backup is invalid."
-                    }
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                    require(bounds.outWidth in 1..2000 && bounds.outHeight in 1..2000) {
-                        "A photo in this backup has invalid dimensions."
-                    }
-                    photos[item.id] = bytes
-                }
+                decodePhoto(obj)?.let { photos[item.id] = it }
             }
 
             val sections = if (root.has("sections")) {
@@ -180,8 +177,135 @@ object BackupCodec {
             )
         } catch (error: IllegalArgumentException) {
             throw error
+        } catch (error: IllegalStateException) {
+            throw IllegalArgumentException("This is not a valid Pharmacy Pocket JSON file.", error)
+        } catch (error: java.io.IOException) {
+            throw IllegalArgumentException("This is not a valid Pharmacy Pocket JSON file.", error)
         } catch (error: JSONException) {
             throw IllegalArgumentException("This is not a valid Pharmacy Pocket JSON file.", error)
+        }
+    }
+
+    private fun decodePhoto(obj: JSONObject): ByteArray? {
+        if (!obj.has("photoJpeg")) return null
+        val encoded = requiredString(obj, "photoJpeg")
+        require(encoded.length <= 342_000) { "A photo in this backup is too large." }
+        val bytes = Base64.decode(encoded, Base64.DEFAULT)
+        require(bytes.size in 1..256_000 && bytes.size >= 3 &&
+            bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()) {
+            "A photo in this backup is invalid."
+        }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        require(bounds.outWidth in 1..2000 && bounds.outHeight in 1..2000) {
+            "A photo in this backup has invalid dimensions."
+        }
+        return bytes
+    }
+
+    /** Restores our compact imported-list backups without retaining a full JSON object graph. */
+    private fun parseImported(raw: String): ParsedBackup {
+        val medicines = mutableListOf<Medicine>()
+        val photos = mutableMapOf<String, ByteArray>()
+        val favorites = mutableSetOf<String>()
+        val ids = mutableSetOf<String>()
+        var sections: List<BackupSection>? = null
+        var categories: List<Category>? = null
+        var currency = "IQD"
+        var hasCurrency = false
+        var sourceVersion = 1
+        var hasMedicines = false
+        JsonReader(StringReader(raw)).use { reader ->
+            reader.beginObject()
+            while (reader.hasNext()) when (reader.nextName()) {
+                "importedList" -> require(reader.nextBoolean())
+                "version" -> sourceVersion = reader.nextInt()
+                "currency" -> {
+                    if (reader.peek() == JsonToken.NULL) reader.nextNull() else {
+                        currency = reader.nextString().trim().ifBlank { "IQD" }; hasCurrency = true
+                        require(currency.length <= 24) { "The currency name in this file is too long." }
+                    }
+                }
+                "favoriteIds" -> {
+                    reader.beginArray()
+                    while (reader.hasNext()) { require(favorites.size <= SpreadsheetLimits.maxRows); favorites += reader.nextString() }
+                    reader.endArray()
+                }
+                "medicines" -> {
+                    hasMedicines = true
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        require(medicines.size < SpreadsheetLimits.maxRows) { "This file contains too many medicines." }
+                        val obj = readObject(reader)
+                        val item = parseMedicine(obj, emptySet())
+                        require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
+                        medicines += item
+                        decodePhoto(obj)?.let { photos[item.id] = it }
+                    }
+                    reader.endArray()
+                }
+                "sections" -> {
+                    val parsed = mutableListOf<BackupSection>()
+                    reader.beginArray()
+                    while (reader.hasNext()) { require(parsed.size < SpreadsheetLimits.maxRows); parsed += parseSection(readObject(reader)) }
+                    reader.endArray(); sections = parsed
+                }
+                "categories" -> {
+                    val parsed = mutableListOf<Category>()
+                    val categoryIds = mutableSetOf<String>()
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        require(parsed.size < SpreadsheetLimits.maxRows)
+                        val category = parseCategory(readObject(reader))
+                        if (category.id != "all") {
+                            require(categoryIds.add(category.id)) { "Duplicate category ID: ${category.id}" }
+                            parsed += category
+                        }
+                    }
+                    reader.endArray(); categories = parsed
+                }
+                else -> reader.skipValue()
+            }
+            reader.endObject()
+            require(reader.peek() == JsonToken.END_DOCUMENT) { "Unexpected content after the backup." }
+        }
+        require(hasMedicines) { "This file does not contain a valid medicines list." }
+        require(sourceVersion in 1..version) { "Backup version $sourceVersion is not supported by this app." }
+        val completeSections = sections ?: buildSections(medicines, PharmacyDefaults.categories)
+        val completeCategories = categories ?: categoriesFromSections(completeSections)
+        val favorited = medicines.map { if (it.id in favorites) it.copy(favorite = true) else it }
+        return ParsedBackup(orderBySections(favorited, completeSections), completeSections, completeCategories,
+            currency, hasCurrency, sourceVersion, photos, importedList = true)
+    }
+
+    private fun readObject(reader: JsonReader, depth: Int = 0): JSONObject {
+        require(depth < 16) { "The backup contains excessive nesting." }
+        val obj = JSONObject()
+        reader.beginObject()
+        while (reader.hasNext()) {
+            require(obj.length() < 256) { "The backup contains too many object fields." }
+            val name = reader.nextName()
+            val arrayLimit = when (name) { "importedFields" -> SpreadsheetLimits.maxColumns; "codes" -> 20; "medicineIds" -> SpreadsheetLimits.maxRows; else -> 128 }
+            obj.put(name, readValue(reader, depth + 1, arrayLimit))
+        }
+        reader.endObject()
+        return obj
+    }
+
+    private fun readValue(reader: JsonReader, depth: Int, arrayLimit: Int): Any {
+        require(depth < 16) { "The backup contains excessive nesting." }
+        return when (reader.peek()) {
+            JsonToken.BEGIN_OBJECT -> readObject(reader, depth)
+            JsonToken.BEGIN_ARRAY -> JSONArray().apply {
+                reader.beginArray()
+                while (reader.hasNext()) { require(length() < arrayLimit) { "An array in the backup is too large." }; put(readValue(reader, depth + 1, 128)) }
+                reader.endArray()
+            }
+            JsonToken.STRING -> reader.nextString().also { require(it.length <= 342_000) { "A value in the backup is too large." } }
+            JsonToken.NUMBER -> reader.nextString().toBigDecimal()
+            JsonToken.BOOLEAN -> reader.nextBoolean()
+            JsonToken.NULL -> { reader.nextNull(); JSONObject.NULL }
+            else -> throw IllegalArgumentException("Invalid backup value.")
         }
     }
 

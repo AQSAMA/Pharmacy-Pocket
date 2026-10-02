@@ -94,7 +94,9 @@ backup while that imported list is selected.
 
 Limits: 32 MB source files, 128 MB expanded XLSX data, 64 worksheets, 100,000 rows
 across the workbook, 128 columns and 2 million cells. A cell can contain up to 4,096
-characters. XLSX formulas use stored values and are never executed. Excel styling,
+characters. XLSX formulas use stored values and are never executed. XML document
+declarations (DTD) and custom entities are rejected. Interrupted creation is
+reconciled on startup: committed lists are recovered and incomplete seeds discarded. Excel styling,
 merged-cell expansion and date-format conversion are not imported.
 
 To run the supplied workbook integration test without committing the source file:

@@ -2,6 +2,7 @@ package com.aqsama.pharmacypocket.data
 
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserException
 import java.io.File
 import java.io.InputStream
 import java.io.Reader
@@ -76,12 +77,29 @@ object SpreadsheetReader {
             require(entry.size <= SpreadsheetLimits.maxExpandedBytes) { "The workbook is too large when expanded." }
             zip.getInputStream(entry).use { stream ->
                 val limited = object : java.io.FilterInputStream(stream) {
-                    override fun read(): Int = super.read().also { if (it >= 0) count(1) }
-                    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = `in`.read(buffer, offset, length).also { if (it > 0) count(it) }
+                    private val declaration = "<!DOCTYPE".toByteArray(Charsets.US_ASCII)
+                    private var matched = 0
+                    private fun inspect(byte: Int) {
+                        matched = if (byte == declaration[matched].toInt()) matched + 1 else if (byte == declaration[0].toInt()) 1 else 0
+                        require(matched != declaration.size) { "XLSX document declarations and custom XML entities are not supported." }
+                    }
+                    override fun read(): Int = super.read().also { if (it >= 0) { count(1); inspect(it) } }
+                    override fun read(buffer: ByteArray, offset: Int, length: Int): Int = `in`.read(buffer, offset, length).also {
+                        if (it > 0) { count(it); for (index in offset until offset + it) inspect(buffer[index].toInt() and 0xff) }
+                    }
                     private fun count(size: Int) { expandedBytes += size; require(expandedBytes <= SpreadsheetLimits.maxExpandedBytes) { "The workbook exceeds the expanded size limit." } }
                 }
-                val parser = Xml.newPullParser().apply { setInput(limited, "UTF-8") }
-                block(parser)
+                try {
+                    val parser = Xml.newPullParser().apply {
+                        setFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL, false)
+                        setInput(limited, "UTF-8")
+                    }
+                    block(parser)
+                } catch (error: XmlPullParserException) {
+                    val cause = error.detail
+                    if (cause is IllegalArgumentException) throw cause
+                    throw IllegalArgumentException("The XLSX file contains invalid XML.", error)
+                }
             }
         }
         val strings = mutableListOf<String>()

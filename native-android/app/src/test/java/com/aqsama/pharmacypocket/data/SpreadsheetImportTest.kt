@@ -88,6 +88,48 @@ class SpreadsheetImportTest {
         } finally { file.delete() }
     }
 
+    @Test fun rejectsDoctypeAndExternalEntityDeclarationsBeforeXmlParsing() {
+        listOf("<!DOCTYPE workbook [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>",
+            "<!DOCTYPE workbook SYSTEM \"https://example.invalid/evil.dtd\">").forEach { declaration ->
+            val file = File.createTempFile("hostile-sheet-", ".xlsx")
+            try {
+                ZipOutputStream(file.outputStream()).use { zip ->
+                    zip.putNextEntry(ZipEntry("xl/sharedStrings.xml"))
+                    zip.write((declaration + "<sst><si><t>&xxe;</t></si></sst>").toByteArray())
+                    zip.closeEntry()
+                }
+                val error = assertThrows(IllegalArgumentException::class.java) { SpreadsheetReader.read(file) }
+                assertTrue(error.message!!.contains("document declarations"))
+            } finally { file.delete() }
+        }
+    }
+
+    @Test fun startupRecoversCommittedPendingSeedsAndDiscardsIncompleteSeeds() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = ImportedListStore(context)
+        store.lists()
+        val completeId = java.util.UUID.randomUUID().toString()
+        val incompleteId = java.util.UUID.randomUUID().toString()
+        val input = prepared()
+        val seed = PharmacyRepository(context, completeId)
+        try { seed.seedImportedList(input.medicines) } finally { seed.close() }
+        val incomplete = PharmacyRepository(context, incompleteId)
+        try { incomplete.seedImportedList(input.medicines.take(1)) } finally { incomplete.close() }
+        val file = File(context.filesDir, "SQLite/imported-lists.db")
+        android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(file, null).use { db ->
+            listOf(completeId, incompleteId).forEach { id ->
+                db.execSQL("INSERT INTO lists (id,name,source,mappings,ready,expected_rows) VALUES (?,?,?,?,0,?)",
+                    arrayOf<Any>(id, "Interrupted import", "prices.xlsx", mappingsToJson(mappings()).toString(), input.medicines.size))
+            }
+        }
+        val recovered = ImportedListStore(context).lists()
+        assertTrue(recovered.any { it.id == completeId })
+        assertFalse(recovered.any { it.id == incompleteId })
+        assertTrue(File(context.filesDir, "SQLite/imported-$completeId.db").exists())
+        assertFalse(File(context.filesDir, "SQLite/imported-$incompleteId.db").exists())
+        assertEquals(recovered, store.lists())
+    }
+
     @Test fun googleLinksOnlyAcceptSheetsAndPreserveSelectedTab() {
         assertEquals("https://docs.google.com/spreadsheets/d/abc_123/export?format=csv&gid=456", SpreadsheetReader.sheetsExportUrl("https://docs.google.com/spreadsheets/d/abc_123/edit#gid=456").toString())
         assertEquals("https://docs.google.com/spreadsheets/d/id/export?format=csv", SpreadsheetReader.sheetsExportUrl("https://docs.google.com/spreadsheets/u/1/d/id/edit").toString())
@@ -146,23 +188,33 @@ class SpreadsheetImportTest {
     @Test fun suppliedSyndicateWorkbookImportsEveryRecord() {
         val path = System.getenv("PHARMACY_SPREADSHEET_FIXTURE")
         assumeTrue("Supply PHARMACY_SPREADSHEET_FIXTURE for the user workbook integration test", path != null)
-        val workbook = SpreadsheetReader.read(File(path!!))
-        val sheet = workbook.sheets.single()
-        assertEquals(21465, sheet.rows.size)
-        assertEquals(14, sheet.rows[0].cells.size)
-        val prepared = prepareSpreadsheet(sheet, 0, suggestMappings(sheet.rows[0].cells))
-        assertEquals(21464, prepared.medicines.size)
-        assertEquals(0, prepared.errorCount)
-        assertEquals(0, prepared.skippedRows)
-        assertEquals("Methyl prednisolone (as sod. Succinate) 125 mg/2 ml ACT-O vial  I.V,I.M use + diluent in the same vial", prepared.medicines.first().importedFields.first { it.field == ImportField.SCIENTIFIC }.value)
-        assertEquals("14,500.00", prepared.medicines.first().importedFields.first { it.field == ImportField.PHARMACY_PRICE }.value)
-        assertEquals(12, prepared.medicines.first().importedFields.size)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        // Match the app lifecycle: release the workbook and preparation before opening/exporting.
+        fun createList(): Pair<ImportedList, List<ImportedField>> {
+            val workbook = SpreadsheetReader.read(File(path!!))
+            val sheet = workbook.sheets.single()
+            assertEquals(21465, sheet.rows.size)
+            assertEquals(14, sheet.rows[0].cells.size)
+            val mappings = suggestMappings(sheet.rows[0].cells)
+            val prepared = prepareSpreadsheet(sheet, 0, mappings)
+            assertEquals(21464, prepared.medicines.size)
+            assertEquals(0, prepared.errorCount)
+            assertEquals(0, prepared.skippedRows)
+            val fields = prepared.medicines.first().importedFields
+            assertEquals("Methyl prednisolone (as sod. Succinate) 125 mg/2 ml ACT-O vial  I.V,I.M use + diluent in the same vial", fields.first { it.field == ImportField.SCIENTIFIC }.value)
+            assertEquals("14,500.00", fields.first { it.field == ImportField.PHARMACY_PRICE }.value)
+            assertEquals(12, fields.size)
+            return runBlocking { ImportedListStore(context).create("Iraqi syndicate", "products-price.xlsx", mappings, prepared) } to fields
+        }
+        val (imported, fields) = createList()
         runBlocking {
-            val context = ApplicationProvider.getApplicationContext<Context>()
-            val store = ImportedListStore(context)
-            val imported = store.create("Iraqi syndicate", "products-price.xlsx", suggestMappings(sheet.rows[0].cells), prepared)
             val repository = PharmacyRepository(context, imported.id)
-            try { assertEquals(21464, repository.loadSnapshot().items.size) } finally { repository.close() }
+            try {
+                assertEquals(21464, repository.loadSnapshot().items.size)
+                val restored = BackupCodec.parse(repository.exportBackup())
+                assertEquals(21464, restored.medicines.size)
+                assertEquals(fields, restored.medicines.first().importedFields)
+            } finally { repository.close() }
         }
     }
 }

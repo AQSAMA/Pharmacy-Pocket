@@ -174,6 +174,10 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
         return result
     }
 
+    fun activeCount(): Int = open().rawQuery("SELECT COUNT(*) FROM medicines WHERE deleted_at IS NULL", null).use {
+        if (it.moveToFirst()) it.getInt(0) else 0
+    }
+
     fun trashCount(): Int =
         open().rawQuery(
             "SELECT COUNT(*) FROM medicines WHERE deleted_at IS NOT NULL",
