@@ -2,6 +2,21 @@ package com.aqsama.pharmacypocket.ui
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
+import com.aqsama.pharmacypocket.data.ImportedList
+import com.aqsama.pharmacypocket.data.ImportedListStore
+import com.aqsama.pharmacypocket.data.ImportedField
+import com.aqsama.pharmacypocket.data.ImportField
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +68,7 @@ private sealed interface Destination {
     data object Settings : Destination
     data object Categories : Destination
     data object Trash : Destination
+    data object SpreadsheetImport : Destination
     data class Editor(val medicineId: String?, val category: String?, val initialCapture: String? = null) : Destination
     data class Detail(val medicineId: String) : Destination
 }
@@ -67,6 +83,7 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
                 Destination.Settings -> put("screen", "settings")
                 Destination.Categories -> put("screen", "categories")
                 Destination.Trash -> put("screen", "trash")
+                Destination.SpreadsheetImport -> put("screen", "spreadsheetImport")
                 is Destination.Editor -> {
                     put("screen", "editor")
                     put("medicineId", destination.medicineId)
@@ -86,6 +103,7 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
                     "settings" -> Destination.Settings
                     "categories" -> Destination.Categories
                     "trash" -> Destination.Trash
+                    "spreadsheetImport" -> Destination.SpreadsheetImport
                     "editor" -> Destination.Editor(obj.optString("medicineId").takeUnless { it.isEmpty() || it == "null" },
                         obj.optString("category").takeUnless { it.isEmpty() || it == "null" },
                         obj.optString("capture").takeUnless { it.isEmpty() || it == "null" })
@@ -113,8 +131,15 @@ private val mediaSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotSt
 )
 
 @Composable
-fun PharmacyApp(repository: PharmacyRepository) {
+fun PharmacyApp(baseRepository: PharmacyRepository) {
     val context = LocalContext.current
+    var selectedListId by rememberSaveable { mutableStateOf<String?>(null) }
+    val repositories = remember { mutableMapOf<String?, PharmacyRepository>(null to baseRepository) }
+    val repository = remember(selectedListId) { repositories.getOrPut(selectedListId) { baseRepository.forList(selectedListId) } }
+    val listStore = remember { ImportedListStore(context.applicationContext) }
+    var importedLists by remember { mutableStateOf<List<ImportedList>>(emptyList()) }
+    val selectedList = importedLists.firstOrNull { it.id == selectedListId }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     val view = LocalView.current
     val scope = rememberCoroutineScope()
     val stateHolder = rememberSaveableStateHolder()
@@ -129,6 +154,12 @@ fun PharmacyApp(repository: PharmacyRepository) {
         val retainedPaths = mediaDrafts.values.flatMap { listOfNotNull(it.photoPath, it.cropSource) }.toSet()
         withContext(Dispatchers.IO) {
             cleanupMedicinePhotoDrafts(context, retainedPaths)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            val scoped = repositories.values.filter { it !== baseRepository }
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { scoped.forEach { it.closeWhenIdle() } }
         }
     }
     var snapshot by remember { mutableStateOf<AppSnapshot?>(null) }
@@ -198,7 +229,8 @@ fun PharmacyApp(repository: PharmacyRepository) {
                 )
                 if (result == SnackbarResult.ActionPerformed) {
                     try {
-                        snapshot = repository.restoreMedicine(item.id)
+                        val restored = repository.restoreMedicine(item.id)
+                        if (selectedListId == repository.listId) snapshot = restored
                         Haptics.confirm(view)
                     } catch (error: Throwable) {
                         Haptics.reject(view)
@@ -254,10 +286,28 @@ fun PharmacyApp(repository: PharmacyRepository) {
         }
     }
 
+    LaunchedEffect(Unit) {
+        try { importedLists = listStore.lists() } catch (error: Exception) { errorMessage = error.message }
+    }
+
+    fun selectList(id: String?) {
+        if (busy) return
+        backStack.forEach { stateHolder.removeState(it.id); discardDraft(it.id) }
+        backStack.clear()
+        backStack += NavEntry("home-${id ?: "manual"}", Destination.Home)
+        quickCaptureId = null
+        trashItems = null
+        snapshot = null
+        selectedListId = id
+        loadAttempt++
+        scope.launch { snackbarHostState.currentSnackbarData?.dismiss(); drawerState.close() }
+    }
+
     LaunchedEffect(repository, loadAttempt) {
         try {
             snapshot = repository.loadSnapshot()
         } catch (error: Throwable) {
+            if (error is kotlinx.coroutines.CancellationException) throw error
             errorMessage = error.message ?: "Unable to open local storage."
         }
     }
@@ -266,6 +316,30 @@ fun PharmacyApp(repository: PharmacyRepository) {
 
     val current = snapshot
     PharmacyPocketTheme(current?.themePreference ?: ThemePreference.SYSTEM) {
+        ModalNavigationDrawer(
+            drawerState = drawerState,
+            gesturesEnabled = backStack.last().destination == Destination.Home && !busy,
+            drawerContent = {
+                ModalDrawerSheet {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Pharmacy Pocket", style = androidx.compose.material3.MaterialTheme.typography.titleLarge)
+                        Text("Your lists", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+                        NavigationDrawerItem(label = { Text("My medications") }, selected = selectedListId == null,
+                            onClick = { selectList(null) })
+                        importedLists.forEach { list ->
+                            NavigationDrawerItem(label = { Text(list.name) }, selected = list.id == selectedListId,
+                                onClick = { selectList(list.id) })
+                        }
+                        NavigationDrawerItem(label = { Text("＋ Import a spreadsheet") }, selected = false, onClick = {
+                            if (!busy) { scope.launch { drawerState.close() }; push(Destination.SpreadsheetImport) }
+                        })
+                        NavigationDrawerItem(label = { Text("Settings · ${selectedList?.name ?: "My medications"}") }, selected = false, onClick = {
+                            if (!busy) { scope.launch { drawerState.close() }; push(Destination.Settings) }
+                        })
+                    }
+                }
+            },
+        ) {
         Box(Modifier.fillMaxSize()) {
         if (current == null) {
             CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -275,6 +349,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
                 when (val destination = entry.destination) {
                     Destination.Home -> HomeScreen(
                         snapshot = current,
+                        onLists = { scope.launch { drawerState.open() } },
+                        listName = selectedList?.name,
+                        imported = selectedListId != null,
                         onSettings = { push(Destination.Settings) },
                         onAddMedicine = { category, initialCapture -> push(Destination.Editor(null, category, initialCapture)) },
                         onOpenMedicine = { push(Destination.Detail(it)) },
@@ -283,7 +360,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             scope.launch {
                                 try {
                                     val next = repository.toggleFavorite(item.id)
-                                    if (next != null) {
+                                    if (next != null && selectedListId == repository.listId) {
                                         snapshot = snapshot?.copy(
                                             items = snapshot!!.items.map { candidate ->
                                                 if (candidate.id == item.id) candidate.copy(favorite = next) else candidate
@@ -302,6 +379,27 @@ fun PharmacyApp(repository: PharmacyRepository) {
                         onQuickCapture = { quickCaptureId = it },
                         loadPhoto = repository::loadPhoto,
                         photoVersions = photoVersions,
+                    )
+
+                    Destination.SpreadsheetImport -> SpreadsheetImportScreen(
+                        busy = busy,
+                        onBack = ::pop,
+                        onImport = { name, source, mappings, prepared, onCreated ->
+                            if (!busy) {
+                                busy = true
+                                scope.launch {
+                                    try {
+                                        val list = listStore.create(name, source, mappings, prepared)
+                                        importedLists = importedLists + list
+                                        onCreated()
+                                        busy = false
+                                        selectList(list.id)
+                                    } catch (error: Exception) {
+                                        errorMessage = error.message ?: "Could not create the imported list."
+                                    } finally { busy = false }
+                                }
+                            }
+                        },
                     )
 
                     Destination.Settings -> SettingsScreen(
@@ -325,6 +423,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             runOperation("Import complete") { repository.importBackup(data, mode) }
                         },
                         exportBackup = repository::exportBackup,
+                        listName = selectedList?.name,
                     )
 
                     Destination.Categories -> CategoryManagerScreen(
@@ -386,6 +485,9 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             onBack = { if (!busy) pop() },
                             onManageCategories = { if (!busy && !media.locked) push(Destination.Categories) },
                             loadPhoto = repository::loadPhoto,
+                            importedTemplate = selectedList?.mappings?.filter { it.field !in listOf(ImportField.NAME, ImportField.NOTE, ImportField.DESCRIPTION, ImportField.IGNORE) }?.map {
+                                ImportedField("column-${it.column}", it.label, if (it.field.categoryLevel == 1) destination.category.orEmpty() else "", it.field, it.onCard, it.priceFormat)
+                            },
                             media = media,
                             onSave = { medicine ->
                                 runOperation(
@@ -409,7 +511,7 @@ fun PharmacyApp(repository: PharmacyRepository) {
                             scope.launch {
                                 try {
                                     val next = repository.toggleFavorite(item.id)
-                                    if (next != null) {
+                                    if (next != null && selectedListId == repository.listId) {
                                         snapshot = snapshot?.copy(
                                             items = snapshot!!.items.map { candidate ->
                                                 if (candidate.id == item.id) candidate.copy(favorite = next) else candidate
@@ -490,6 +592,8 @@ fun PharmacyApp(repository: PharmacyRepository) {
             hostState = snackbarHostState,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+    }
+
     }
 
     errorMessage?.let { message ->

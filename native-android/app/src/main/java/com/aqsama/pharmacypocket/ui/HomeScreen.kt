@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -39,6 +40,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,7 +75,7 @@ private data class MedicineSection(
     val groupKey: String,
     val title: String,
     val category: String,
-    val data: List<Medicine>,
+    val count: Int,
 )
 
 private val ToolbarControlHeight = 52.dp
@@ -86,30 +90,18 @@ private sealed interface HomeRow {
     }
 }
 
-private fun buildRows(items: List<Medicine>): List<HomeRow> {
-    val sections = mutableListOf<MedicineSection>()
-    items.forEach { item ->
-        val key = subcategoryKey(item.subcategory)
-        val current = sections.lastOrNull()
-        if (current != null && current.category == item.category && current.groupKey == key) {
-            sections[sections.lastIndex] = current.copy(data = current.data + item)
-        } else {
-            sections += MedicineSection(
-                key = "run:${sections.size}:${item.category}:$key",
-                groupKey = key,
-                title = subcategoryLabel(item.subcategory),
-                category = item.category,
-                data = listOf(item),
-            )
-        }
-    }
-    return buildList {
-        sections.forEach { section ->
-            add(HomeRow.Header(section))
-            section.data.forEachIndexed { index, item ->
-                add(HomeRow.Item(item, first = index == 0, last = index == section.data.lastIndex))
-            }
-        }
+private fun buildRows(items: List<Medicine>): List<HomeRow> = buildList {
+    var offset = 0
+    var run = 0
+    while (offset < items.size) {
+        val first = items[offset]
+        val key = subcategoryKey(first.subcategory)
+        var end = offset + 1
+        while (end < items.size && items[end].category == first.category && subcategoryKey(items[end].subcategory) == key) end++
+        val section = MedicineSection("run:${run++}:${first.category}:$key", key, subcategoryLabel(first.subcategory), first.category, end - offset)
+        add(HomeRow.Header(section))
+        for (index in offset until end) add(HomeRow.Item(items[index], index == offset, index == end - 1))
+        offset = end
     }
 }
 
@@ -126,6 +118,9 @@ fun HomeScreen(
     onQuickCapture: (String) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersions: Map<String, Int>,
+    onLists: () -> Unit = onSettings,
+    listName: String? = null,
+    imported: Boolean = false,
 ) {
     val view = LocalView.current
     val listState = rememberLazyListState()
@@ -134,13 +129,16 @@ fun HomeScreen(
     var sortName by rememberSaveable { mutableStateOf(MedicineSort.DEFAULT.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    var categoryPath by rememberSaveable { mutableStateOf(listOf<String>()) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
     val addCategory = if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 
-    val searchIndex = remember(snapshot.items) { buildSearchIndex(snapshot.items) }
-    val sortedIndex = remember(searchIndex, sort) { sortSearchIndex(searchIndex, sort) }
-    val subcategories = remember(searchIndex, category) { listSubcategories(searchIndex, category) }
+    val sortedIndexState by produceState<List<com.aqsama.pharmacypocket.data.MedicineSearchEntry>?>(null, snapshot.items, sort) {
+        value = withContext(Dispatchers.Default) { sortSearchIndex(buildSearchIndex(snapshot.items), sort) }
+    }
+    val sortedIndex = sortedIndexState.orEmpty()
+    val subcategories = remember(sortedIndex, category) { listSubcategories(sortedIndex, category) }
 
     LaunchedEffect(snapshot.categories, category) {
         if (category != "all" && snapshot.categories.none { it.id == category }) {
@@ -149,7 +147,7 @@ fun HomeScreen(
         }
     }
     LaunchedEffect(subcategories, selectedSubcategory) {
-        if (selectedSubcategory != null && subcategories.none { it.key == selectedSubcategory }) {
+        if (sortedIndexState != null && selectedSubcategory != null && subcategories.none { it.key == selectedSubcategory }) {
             selectedSubcategory = null
         }
     }
@@ -157,9 +155,15 @@ fun HomeScreen(
     val filters = remember(category, selectedSubcategory, favoritesOnly) {
         MedicineFilters(category, selectedSubcategory, favoritesOnly)
     }
-    val visible = remember(sortedIndex, filters, query) {
-        filterSortedMedicines(sortedIndex, filters, query)
+    val visible = remember(sortedIndex, filters, query, categoryPath) {
+        filterSortedMedicines(sortedIndex, filters, query).filter { item ->
+            categoryPath.mapIndexed { index, value ->
+                item.importedFields.firstOrNull { it.field.categoryLevel == index + 2 }?.value?.trim()?.ifBlank { "Uncategorized" } == value
+            }.all { it }
+        }
     }
+    val hierarchyLevels = remember(snapshot.items) { snapshot.items.flatMap { it.importedFields }.maxOfOrNull { it.field.categoryLevel } ?: 0 }
+
     val rows = remember(visible) { buildRows(visible) }
     val categoryCounts = remember(snapshot.items) {
         buildMap {
@@ -173,10 +177,10 @@ fun HomeScreen(
     val activeCount = (if (favoritesOnly) 1 else 0) +
         (if (sort != MedicineSort.DEFAULT) 1 else 0) +
         (if (category != "all") 1 else 0) +
-        (if (selectedSubcategory != null) 1 else 0) +
+        (if (selectedSubcategory != null) 1 else 0) + categoryPath.size +
         (if (query.isNotBlank()) 1 else 0)
 
-    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly"
+    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly|$categoryPath"
     var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
     LaunchedEffect(filterKey) {
         if (filterKey != lastFilterKey) {
@@ -190,6 +194,7 @@ fun HomeScreen(
         Haptics.selection(view)
         category = next
         selectedSubcategory = null
+        categoryPath = emptyList()
     }
 
 
@@ -210,11 +215,11 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         HeaderControl(
-                            label = "⚙",
-                            contentDescription = "Settings",
+                            label = "☰",
+                            contentDescription = "Lists and settings",
                             onClick = {
                                 Haptics.action(view)
-                                onSettings()
+                                onLists()
                             },
                         )
                         OutlinedTextField(
@@ -302,9 +307,28 @@ fun HomeScreen(
                                     query = ""
                                     category = "all"
                                     selectedSubcategory = null
+                                    categoryPath = emptyList()
                                     favoritesOnly = false
                                     sortName = MedicineSort.DEFAULT.name
                                 }
+                            }
+                        }
+                        if (imported && hierarchyLevels > 1) {
+                            for (level in 2..hierarchyLevels) {
+                                val options = snapshot.items.asSequence().filter { item ->
+                                    (category == "all" || item.category == category) && categoryPath.take(level - 2).mapIndexed { index, value ->
+                                        item.importedFields.firstOrNull { it.field.categoryLevel == index + 2 }?.value?.trim()?.ifBlank { "Uncategorized" } == value
+                                    }.all { it }
+                                }.mapNotNull { item -> item.importedFields.firstOrNull { it.field.categoryLevel == level }?.value?.trim()?.ifBlank { "Uncategorized" } }.distinct().sorted().toList()
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    item { SoftChip("Level $level · All", selected = categoryPath.size < level - 1) { categoryPath = categoryPath.take(level - 2) } }
+                                    items(options) { value ->
+                                        SoftChip(value, selected = categoryPath.getOrNull(level - 2) == value) {
+                                            if (categoryPath.size >= level - 2) categoryPath = categoryPath.take(level - 2) + value
+                                        }
+                                    }
+                                }
+                                if (categoryPath.size < level - 1) break
                             }
                         }
                     }
@@ -316,7 +340,7 @@ fun HomeScreen(
                 snapshot = snapshot,
                 category = category,
                 categoryCounts = categoryCounts,
-                subcategories = subcategories.map { it.key to it.label },
+                subcategories = if (imported) emptyList() else subcategories.map { it.key to it.label },
                 selectedSubcategory = selectedSubcategory,
                 onSelectCategory = ::selectCategory,
                 onSelectSubcategory = {
@@ -356,8 +380,10 @@ fun HomeScreen(
                     Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
+                    if (listName != null) Text(listName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        if (visible.size == snapshot.items.size) "${visible.size} medicines"
+                        if (sortedIndexState == null) "Preparing list…"
+                        else if (visible.size == snapshot.items.size) "${visible.size} medicines"
                         else "${visible.size} of ${snapshot.items.size} medicines",
                         color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.ExtraBold,
@@ -372,7 +398,9 @@ fun HomeScreen(
                 }
             }
 
-            if (rows.isEmpty()) {
+            if (sortedIndexState == null) {
+                item(key = "preparing") { androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp)) }
+            } else if (rows.isEmpty()) {
                 item(key = "empty") {
                     Column(
                         Modifier
@@ -506,7 +534,7 @@ private fun SectionBreadcrumb(section: MedicineSection, snapshot: AppSnapshot) {
             Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             BreadcrumbChip(section.title, modifier = Modifier.widthIn(max = 190.dp))
             Text("/", color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-            BreadcrumbChip(section.data.size.toString(), background = MaterialTheme.colorScheme.surfaceVariant)
+            BreadcrumbChip(section.count.toString(), background = MaterialTheme.colorScheme.surfaceVariant)
         }
     }
 }
@@ -565,13 +593,11 @@ private fun HomeBottomBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Row(
-                        Modifier
-                            .weight(1f)
-                            .horizontalScroll(rememberScrollState()),
+                    LazyRow(
+                        Modifier.weight(1f),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        snapshot.categories.forEach { item ->
+                        items(snapshot.categories, key = { it.id }) { item ->
                             SoftChip(
                                 label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
                                 selected = category == item.id,

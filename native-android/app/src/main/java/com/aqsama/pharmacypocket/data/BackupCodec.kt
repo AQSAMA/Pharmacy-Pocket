@@ -19,12 +19,14 @@ object BackupCodec {
         categoryDefinitions: List<Category>,
         exportedAt: String = Instant.now().toString(),
         photos: Map<String, ByteArray> = emptyMap(),
+        importedList: Boolean = false,
     ): String {
         val estimatedPhotoBytes = photos.values.sumOf { ((it.size.toLong() + 2L) / 3L) * 4L }
         require(estimatedPhotoBytes < PharmacyDefaults.maxBackupBytes) {
             "Photos exceed the 128 MB single-file backup limit. Remove some photos before exporting."
         }
         val root = JSONObject()
+            .put("importedList", importedList)
             .put("schema", schema)
             .put("version", version)
             .put("exportedAt", exportedAt)
@@ -37,33 +39,28 @@ object BackupCodec {
         root.put("favoriteIds", JSONArray().apply {
             items.filter { it.favorite }.forEach { put(it.id) }
         })
-        root.put("medicines", JSONArray().apply {
-            items.forEach { item ->
-                put(JSONObject().apply {
-                    put("id", item.id)
-                    put("category", item.category)
-                    put("subcategory", item.subcategory)
-                    put("name", item.name)
-                    put("note", item.note)
-                    put("description", item.description)
-                    put("official", item.official)
-                    put("discounted", item.discounted ?: JSONObject.NULL)
-                    put("revision", item.revision.coerceAtLeast(0))
-                    item.createdAt?.let { put("createdAt", it) }
-                    put("codes", JSONArray().apply {
-                        item.codes.forEach { code ->
-                            put(JSONObject().put("kind", code.kind.name).put("value", code.value).put("label", code.label))
-                        }
-                    })
-                    photos[item.id]?.let { jpeg -> put("photoJpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)) }
-                })
-            }
+        if (!importedList) root.put("medicines", JSONArray().apply {
+            items.forEach { put(medicineToJson(it, photos)) }
         })
         root.put("categories", JSONArray().apply {
             categoryDefinitions.filter { it.id != "all" }.forEach { category ->
                 put(categoryToJson(category))
             }
         })
+        if (importedList) {
+            // Avoid retaining a second complete object graph for large spreadsheet lists.
+            val prefix = root.toString().dropLast(1) + ",\"medicines\":["
+            var bytes = prefix.toByteArray(Charsets.UTF_8).size.toLong() + 2
+            val output = StringBuilder(prefix)
+            items.forEachIndexed { index, item ->
+                val encoded = medicineToJson(item, photos).toString()
+                bytes += encoded.toByteArray(Charsets.UTF_8).size + if (index == 0) 0 else 1
+                require(bytes <= PharmacyDefaults.maxBackupBytes) { "The backup exceeds 128 MB." }
+                if (index > 0) output.append(',')
+                output.append(encoded)
+            }
+            return output.append("]}").toString()
+        }
         val json = root.toString(2)
         require(json.toByteArray(Charsets.UTF_8).size <= PharmacyDefaults.maxBackupBytes) {
             "The backup exceeds 128 MB. Remove some photos or shorten large notes before exporting."
@@ -71,12 +68,32 @@ object BackupCodec {
         return json
     }
 
+    private fun medicineToJson(item: Medicine, photos: Map<String, ByteArray>): JSONObject = JSONObject().apply {
+        put("id", item.id)
+        put("category", item.category)
+        put("subcategory", item.subcategory)
+        put("name", item.name)
+        put("note", item.note)
+        put("description", item.description)
+        if (item.imported) { put("imported", true); put("importedFields", fieldsToJson(item.importedFields)) }
+        put("official", item.official)
+        put("discounted", item.discounted ?: JSONObject.NULL)
+        put("revision", item.revision.coerceAtLeast(0))
+        item.createdAt?.let { put("createdAt", it) }
+        put("codes", JSONArray().apply {
+            item.codes.forEach { code ->
+                put(JSONObject().put("kind", code.kind.name).put("value", code.value).put("label", code.label))
+            }
+        })
+        photos[item.id]?.let { jpeg -> put("photoJpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)) }
+    }
+
     fun parse(raw: String): ParsedBackup {
         try {
             val root = JSONObject(raw)
             val medicineArray = root.optJSONArray("medicines")
                 ?: throw IllegalArgumentException("This file does not contain a valid medicines list.")
-            require(medicineArray.length() <= PharmacyDefaults.maxBackupMedicines) {
+            require(medicineArray.length() <= if (root.optBoolean("importedList", false)) SpreadsheetLimits.maxRows else PharmacyDefaults.maxBackupMedicines) {
                 "This file contains too many medicines."
             }
 
@@ -159,6 +176,7 @@ object BackupCodec {
                 hasCurrency = hasCurrency,
                 sourceVersion = sourceVersion,
                 photos = photos,
+                importedList = root.optBoolean("importedList", false),
             )
         } catch (error: IllegalArgumentException) {
             throw error
@@ -168,28 +186,15 @@ object BackupCodec {
     }
 
     fun buildSections(items: List<Medicine>, definitions: List<Category>): List<BackupSection> {
-        val sections = linkedMapOf<String, BackupSection>()
-        items.forEach { item ->
-            val subcategory = subcategoryLabel(item.subcategory)
-            val id = "${item.category}::$subcategory"
-            val existing = sections[id]
-            if (existing != null) {
-                sections[id] = existing.copy(medicineIds = existing.medicineIds + item.id)
-            } else {
-                val category = categoryById(item.category, definitions)
-                sections[id] = BackupSection(
-                    id = id,
-                    category = item.category,
-                    subcategory = subcategory,
-                    title = if (subcategory == PharmacyDefaults.generalSubcategory) category.label else subcategory,
-                    categoryLabel = category.label,
-                    categoryArabic = category.arabic,
-                    color = category.color,
-                    medicineIds = listOf(item.id),
-                )
-            }
+        val groups = linkedMapOf<Pair<String, String>, MutableList<String>>()
+        items.forEach { item -> groups.getOrPut(item.category to subcategoryLabel(item.subcategory)) { mutableListOf() }.add(item.id) }
+        return groups.map { (key, ids) ->
+            val (categoryId, subcategory) = key
+            val category = categoryById(categoryId, definitions)
+            BackupSection("$categoryId::$subcategory", categoryId, subcategory,
+                if (subcategory == PharmacyDefaults.generalSubcategory) category.label else subcategory,
+                category.label, category.arabic, category.color, ids)
         }
-        return sections.values.toList()
     }
 
     private fun parseMedicine(obj: JSONObject, favoriteIds: Set<String>): Medicine {
@@ -237,6 +242,8 @@ object BackupCodec {
             createdAt = createdAt,
             codes = codes,
             codesSpecified = obj.has("codes"),
+            imported = obj.optBoolean("imported", false),
+            importedFields = fieldsFromJson(obj.optJSONArray("importedFields")),
         )
     }
 

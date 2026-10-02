@@ -65,3 +65,40 @@ The source code for the obsolete Expo application is no longer required for this
 - Light/dark/system themes and large-text mode
 
 See `../RELEASING.md` for preview and production release instructions.
+
+## Spreadsheet lists
+
+Open **☰ > Import a spreadsheet** to create a separate offline list from XLSX,
+UTF-8 CSV (comma, semicolon or tab separated), or a Google Sheets document link.
+Private Google Sheets can be exported to XLSX and imported using the file picker;
+link imports require “Anyone with the link” viewing access and respect the link's
+`gid` worksheet. These are local copies, not live synchronization.
+
+Choose the worksheet and header row, review suggested mappings, assign display
+labels, and select up to six extra fields for cards. Map categories in order from
+level 1 through level 4. Use **Custom field** to retain any other column, or **Skip
+column** to omit it. Decimal prices and original text are preserved. Price mappings
+accept nonnegative numbers with the selected **1,234.56** or **1.234,56** number
+format, including Arabic numerals/separators; currency symbols should be kept in their own column. Review
+errors before creating the list. Empty Name rows are counted and skipped; duplicate
+names are retained as distinct entries.
+
+Switch between **My medications** and imported lists from the side menu. Imported
+items use the existing cards, favorites, sorting, normalized search, photo/code
+capture, editor, details and Trash. **Tune** exposes deeper category filters.
+The editor's **Imported fields** section contains fields omitted from the card.
+Settings identify the selected list: categories, currency, JSON backups/imports and
+Trash belong to that list; theme and text size are shared. Custom fields survive
+editing, Trash/restore and JSON backup round trips. Restore an imported-list JSON
+backup while that imported list is selected.
+
+Limits: 32 MB source files, 128 MB expanded XLSX data, 64 worksheets, 100,000 rows
+across the workbook, 128 columns and 2 million cells. A cell can contain up to 4,096
+characters. XLSX formulas use stored values and are never executed. Excel styling,
+merged-cell expansion and date-format conversion are not imported.
+
+To run the supplied workbook integration test without committing the source file:
+
+```sh
+PHARMACY_SPREADSHEET_FIXTURE=/path/to/products-price.xlsx gradle testDebugUnitTest
+```

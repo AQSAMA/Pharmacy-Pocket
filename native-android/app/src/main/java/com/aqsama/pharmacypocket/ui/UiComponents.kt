@@ -303,7 +303,9 @@ fun MedicineCard(
                                 if (price > item.official) verifyPriceColor else normalDiscountColor
                             }
 
-                            MedicineCardPrices(item, currency, large, discountColor)
+                            if (item.imported) {
+                                ImportedFields(item.importedFields, compact = true, large = large)
+                            } else MedicineCardPrices(item, currency, large, discountColor)
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,

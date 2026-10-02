@@ -21,6 +21,8 @@ data class Medicine(
     val codes: List<MedicineCode> = emptyList(),
     val hasPhoto: Boolean = false,
     val codesSpecified: Boolean = true,
+    val imported: Boolean = false,
+    val importedFields: List<ImportedField> = emptyList(),
 )
 
 enum class CodeKind { BARCODE, QR, PRICE_STICKER_QR }
@@ -105,6 +107,7 @@ data class ParsedBackup(
     val hasCurrency: Boolean,
     val sourceVersion: Int,
     val photos: Map<String, ByteArray> = emptyMap(),
+    val importedList: Boolean = false,
 )
 
 object PharmacyDefaults {
@@ -233,7 +236,7 @@ data class SubcategoryOption(val key: String, val label: String)
 fun buildSearchIndex(items: List<Medicine>): List<MedicineSearchEntry> = items.map { item ->
     MedicineSearchEntry(
         item,
-        normalizeSearch("${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)} ${item.codes.joinToString(" ") { it.value }}"),
+        normalizeSearch("${item.name} ${item.note} ${item.description} ${subcategoryLabel(item.subcategory)} ${item.codes.joinToString(" ") { it.value }} ${item.importedFields.joinToString(" ") { it.value }}"),
         subcategoryKey(item.subcategory),
     )
 }
@@ -252,15 +255,19 @@ fun listSubcategories(index: List<MedicineSearchEntry>, category: String): List<
 private fun compareNames(left: String, right: String): Int =
     normalizeSearch(left).compareTo(normalizeSearch(right))
 
+private fun sortablePrice(item: Medicine): java.math.BigDecimal =
+    if (item.imported) runCatching { item.importedFields.firstOrNull { it.field == ImportField.PHARMACY_PRICE }?.let { spreadsheetPrice(it.value, it.priceFormat) } }.getOrNull() ?: java.math.BigDecimal.ZERO
+    else java.math.BigDecimal.valueOf(item.official)
+
 fun compareMedicines(left: Medicine, right: Medicine, sort: MedicineSort): Int = when (sort) {
     MedicineSort.NAME_ASC -> compareNames(left.name, right.name)
     MedicineSort.NAME_DESC -> -compareNames(left.name, right.name)
     MedicineSort.PRICE_ASC -> {
-        val price = left.official.compareTo(right.official)
+        val price = sortablePrice(left).compareTo(sortablePrice(right))
         if (price != 0) price else compareNames(left.name, right.name)
     }
     MedicineSort.PRICE_DESC -> {
-        val price = right.official.compareTo(left.official)
+        val price = sortablePrice(right).compareTo(sortablePrice(left))
         if (price != 0) price else -compareNames(left.name, right.name)
     }
     MedicineSort.DATE_ASC -> {

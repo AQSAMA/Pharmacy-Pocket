@@ -117,7 +117,7 @@ class TrashStorageTest {
                 cursor.moveToFirst()
                 cursor.getInt(0)
             }
-            assertEquals(3, version)
+            assertEquals(4, version)
             val columns = mutableSetOf<String>()
             db.rawQuery("PRAGMA table_info(medicines)", null).use { cursor ->
                 val nameIndex = cursor.getColumnIndexOrThrow("name")
