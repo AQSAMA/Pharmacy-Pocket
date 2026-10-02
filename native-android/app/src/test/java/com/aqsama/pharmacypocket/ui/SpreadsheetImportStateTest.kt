@@ -57,4 +57,45 @@ class SpreadsheetImportStateTest {
             assertNull(model.state.value.workbook)
         } finally { model.reset(); file.delete() }
     }
+    @Test fun assigningNameMovesItAndRangeSelectionUsesActualRowNumbers() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.cacheDir, "role-range.csv").apply { writeText("Name,Alternate,Price\nBrand,Common name,100\nSecond,Other name,200") }
+        val model = SpreadsheetImportViewModel()
+        try {
+            model.loadFile(context, Uri.fromFile(file))
+            val loaded = awaitState(model) { it.prepared != null && !it.working }
+            model.updateMapping(loaded.mappings[1].copy(field = ImportField.NAME))
+            val reassigned = awaitState(model) { it.prepared != null && !it.working }
+            assertEquals(1, reassigned.mappings.count { it.field == ImportField.NAME })
+            assertEquals(ImportField.CUSTOM, reassigned.mappings[0].field)
+            assertEquals("Common name", reassigned.prepared!!.medicines.first().name)
+            model.selectRange(3, 3)
+            val limited = awaitState(model) { it.prepared != null && !it.working }
+            assertEquals(listOf("Other name"), limited.prepared!!.medicines.map { it.name })
+            assertEquals(limited.idPrefix + "-3", limited.prepared.medicines.single().id)
+            model.selectRange(4, 2)
+            assertTrue(awaitState(model) { it.error != null && !it.working }.error!!.contains("row range"))
+        } finally { model.reset(); file.delete() }
+    }
+
+    @Test fun choosingAnotherHeaderPreservesCustomMappingsAndRowRange() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val file = File(context.cacheDir, "headers.csv").apply { writeText("Title,\nName,Store Price\nFirst,100\nSecond,200") }
+        val model = SpreadsheetImportViewModel()
+        try {
+            model.loadFile(context, Uri.fromFile(file))
+            val loaded = awaitState(model) { it.prepared != null && !it.working }
+            assertEquals(1, loaded.headerRow)
+            model.updateMapping(loaded.mappings[0].copy(label = "Common name"))
+            model.selectRange(4, 4)
+            awaitState(model) { it.prepared != null && !it.working }
+            model.selectHeader(0)
+            val retained = awaitState(model) { it.prepared != null && !it.working }
+            assertEquals("Common name", retained.mappings[0].label)
+            assertEquals(ImportField.NAME, retained.mappings[0].field)
+            assertEquals(4, retained.firstRow); assertEquals(4, retained.lastRow)
+            assertEquals(listOf("Second"), retained.prepared!!.medicines.map { it.name })
+        } finally { model.reset(); file.delete() }
+    }
+
 }

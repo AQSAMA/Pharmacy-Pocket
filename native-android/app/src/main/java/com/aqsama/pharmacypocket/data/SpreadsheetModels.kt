@@ -22,6 +22,8 @@ data class ImportedField(val key: String, val label: String, val value: String, 
 data class SpreadsheetRow(val number: Int, val cells: List<String>)
 data class SpreadsheetSheet(val name: String, val rows: List<SpreadsheetRow>)
 data class SpreadsheetWorkbook(val sheets: List<SpreadsheetSheet>)
+data class ImportSelection(val sheetIndex: Int = 0, val headerRow: Int = 0, val firstRow: Int = 1, val lastRow: Int = Int.MAX_VALUE)
+data class ImportSource(val workbook: SpreadsheetWorkbook, val selection: ImportSelection, val idPrefix: String, val originalAvailable: Boolean = true)
 data class ImportedList(val id: String, val name: String, val source: String, val mappings: List<ColumnMapping>)
 data class PreparedImport(val medicines: List<Medicine>, val skippedRows: Int, val errors: List<String>, val errorCount: Int)
 
@@ -30,6 +32,7 @@ object SpreadsheetLimits {
     const val maxExpandedBytes = 128 * 1024 * 1024
     const val maxRows = 100_000
     const val maxColumns = 128
+    const val maxFields = maxColumns + 4
     const val maxCells = 2_000_000
     const val maxCellLength = 4096
 }
@@ -41,7 +44,7 @@ fun fieldsToJson(fields: List<ImportedField>): JSONArray = JSONArray().apply {
 
 fun fieldsFromJson(array: JSONArray?): List<ImportedField> {
     if (array == null) return emptyList()
-    require(array.length() <= SpreadsheetLimits.maxColumns) { "Too many custom fields." }
+    require(array.length() <= SpreadsheetLimits.maxFields) { "Too many custom fields." }
     return List(array.length()) { index ->
         val obj = array.getJSONObject(index)
         val value = obj.getString("value")
@@ -130,7 +133,7 @@ fun syncImportedFields(item: Medicine): Medicine {
     )
 }
 
-fun prepareSpreadsheet(sheet: SpreadsheetSheet, headerRow: Int, mappings: List<ColumnMapping>, checkCancelled: () -> Unit = {}): PreparedImport {
+fun prepareSpreadsheet(sheet: SpreadsheetSheet, headerRow: Int, mappings: List<ColumnMapping>, checkCancelled: () -> Unit = {}, firstRow: Int = 1, lastRow: Int = Int.MAX_VALUE, idPrefix: String? = null): PreparedImport {
     validateMappings(mappings)
     require(headerRow in 0 until sheet.rows.size) { "Select a valid header row." }
     val medicines = mutableListOf<Medicine>()
@@ -138,8 +141,10 @@ fun prepareSpreadsheet(sheet: SpreadsheetSheet, headerRow: Int, mappings: List<C
     var errorCount = 0
     var skipped = 0
     val now = System.currentTimeMillis()
-    val prefix = UUID.randomUUID().toString()
+    require(firstRow <= lastRow && firstRow >= 1) { "Choose a valid data-row range." }
+    val prefix = idPrefix ?: "import-${UUID.randomUUID()}"
     for (row in sheet.rows.drop(headerRow + 1)) {
+        if (row.number !in firstRow..lastRow) continue
         checkCancelled()
         fun value(field: ImportField) = mappings.firstOrNull { it.field == field }?.let { row.cells.getOrElse(it.column) { "" }.trim() } ?: ""
         if (value(ImportField.NAME).isBlank()) { skipped++; continue }
@@ -148,7 +153,7 @@ fun prepareSpreadsheet(sheet: SpreadsheetSheet, headerRow: Int, mappings: List<C
         }
         try {
             medicines += syncImportedFields(Medicine(
-                id = "import-$prefix-${row.number}", category = "Uncategorized", subcategory = "General",
+                id = "$prefix-${row.number}", category = "Uncategorized", subcategory = "General",
                 name = value(ImportField.NAME), note = value(ImportField.NOTE), description = value(ImportField.DESCRIPTION),
                 official = 0, discounted = null, createdAt = now, imported = true, importedFields = fields,
             ))

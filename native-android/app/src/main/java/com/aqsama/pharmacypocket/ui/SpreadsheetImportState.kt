@@ -22,6 +22,10 @@ internal data class SpreadsheetImportState(
     val workbook: SpreadsheetWorkbook? = null,
     val sheetIndex: Int = 0,
     val headerRow: Int = 0,
+    val firstRow: Int = 1,
+    val lastRow: Int = Int.MAX_VALUE,
+    val idPrefix: String = "import-${java.util.UUID.randomUUID()}",
+    val originalAvailable: Boolean = true,
     val mappings: List<ColumnMapping> = emptyList(),
     val name: String = "",
     val source: String = "",
@@ -35,6 +39,8 @@ internal class SpreadsheetImportViewModel : ViewModel() {
     val state = mutable.asStateFlow()
     private var preparation: Job? = null
     private var loading: Job? = null
+    private var editingListId: String? = null
+    private var customMappings = false
 
     fun loadFile(context: Context, uri: Uri) = load(context) { file ->
         val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
@@ -69,13 +75,46 @@ internal class SpreadsheetImportViewModel : ViewModel() {
         }
     }
 
+    fun edit(list: ImportedList, load: suspend () -> ImportSource) {
+        if (editingListId == list.id && (mutable.value.workbook != null || loading?.isActive == true)) return
+        editingListId = list.id
+        customMappings = true
+        preparation?.cancel(); loading?.cancel()
+        mutable.value = SpreadsheetImportState(working = true)
+        loading = viewModelScope.launch {
+            try {
+                val saved = load()
+                mutable.value = SpreadsheetImportState(workbook = saved.workbook, name = list.name, source = list.source,
+                    sheetIndex = saved.selection.sheetIndex, headerRow = saved.selection.headerRow,
+                    firstRow = saved.selection.firstRow, lastRow = saved.selection.lastRow, mappings = list.mappings,
+                    idPrefix = saved.idPrefix, originalAvailable = saved.originalAvailable)
+                prepare()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                mutable.update { it.copy(working = false, error = error.message) }
+            }
+        }
+    }
+
+    fun sourceData(): ImportSource {
+        val current = mutable.value
+        return ImportSource(requireNotNull(current.workbook), ImportSelection(current.sheetIndex, current.headerRow, current.firstRow, current.lastRow), current.idPrefix, current.originalAvailable)
+    }
+
     fun selectSheet(index: Int) {
         val sheet = mutable.value.workbook?.sheets?.getOrNull(index) ?: return
-        val header = sheet.rows.take(20).indices.maxByOrNull { row ->
-            sheet.rows[row].cells.count { cell -> cell.isNotBlank() && cell.toDoubleOrNull() == null } - row
+        val header = sheet.rows.take(50).indices.maxByOrNull { row ->
+            val cells = sheet.rows[row].cells
+            suggestMappings(cells).count { it.field !in listOf(ImportField.CUSTOM, ImportField.IGNORE) } * 20 +
+                cells.count { it.isNotBlank() && it.toDoubleOrNull() == null } * 2 - cells.count { it.toDoubleOrNull() != null } * 4 - row
         } ?: 0
-        mutable.update { it.copy(sheetIndex = index, headerRow = header) }
+        customMappings = false
+        mutable.update { it.copy(sheetIndex = index, mappings = emptyList(), firstRow = 1, lastRow = Int.MAX_VALUE, headerRow = header, idPrefix = if (index == it.sheetIndex) it.idPrefix else "import-${java.util.UUID.randomUUID()}") }
         selectHeader(header)
+    }
+
+    fun selectRange(first: Int, last: Int) {
+        mutable.update { it.copy(firstRow = first, lastRow = last) }; prepare()
     }
 
     fun selectHeader(index: Int) {
@@ -84,13 +123,32 @@ internal class SpreadsheetImportViewModel : ViewModel() {
         val header = sheet.rows.getOrNull(index) ?: return
         val width = sheet.rows.maxOfOrNull { it.cells.size } ?: 0
         val labels = List(width) { header.cells.getOrElse(it) { "Column ${it + 1}" } }
-        mutable.update { it.copy(headerRow = index, mappings = suggestMappings(labels), error = null) }
+        val suggestions = suggestMappings(labels)
+        val mapped = if (customMappings) suggestions.map { suggested ->
+            val old = current.mappings.firstOrNull { it.column == suggested.column }
+            val oldHeader = sheet.rows.getOrNull(current.headerRow)?.cells?.getOrElse(suggested.column) { "Column ${suggested.column + 1}" }
+            old?.copy(label = if (old.label == oldHeader) suggested.label else old.label) ?: suggested
+        } else suggestions
+        val first = maxOf(current.firstRow, (header.number + 1).coerceAtLeast(1))
+        val last = current.lastRow.takeIf { it != Int.MAX_VALUE && it >= first } ?: sheet.rows.last().number
+        mutable.update { it.copy(headerRow = index, firstRow = first, lastRow = last, mappings = mapped, error = null) }
         prepare()
     }
 
     fun rename(value: String) { mutable.update { it.copy(name = value.take(100)) } }
+    fun useSuggestedMappings() {
+        customMappings = false
+        selectHeader(mutable.value.headerRow)
+    }
     fun updateMapping(mapping: ColumnMapping) {
-        mutable.update { it.copy(mappings = it.mappings.map { old -> if (old.column == mapping.column) mapping else old }) }
+        customMappings = true
+        mutable.update { it.copy(mappings = it.mappings.map { old ->
+            when {
+                old.column == mapping.column -> mapping.copy(onCard = mapping.onCard && mapping.field !in listOf(ImportField.NAME, ImportField.IGNORE, ImportField.NOTE, ImportField.DESCRIPTION))
+                mapping.field !in listOf(ImportField.CUSTOM, ImportField.IGNORE) && old.field == mapping.field -> old.copy(field = ImportField.CUSTOM)
+                else -> old
+            }
+        }) }
         prepare()
     }
 
@@ -103,7 +161,7 @@ internal class SpreadsheetImportViewModel : ViewModel() {
             try {
                 val prepared = withContext(Dispatchers.Default) {
                     val coroutine = currentCoroutineContext()
-                    prepareSpreadsheet(current.workbook!!.sheets[current.sheetIndex], current.headerRow, current.mappings, coroutine::ensureActive)
+                    prepareSpreadsheet(current.workbook!!.sheets[current.sheetIndex], current.headerRow, current.mappings, coroutine::ensureActive, current.firstRow, current.lastRow, current.idPrefix)
                 }
                 mutable.update { it.copy(prepared = prepared, working = false) }
             } catch (error: Exception) {
@@ -113,5 +171,5 @@ internal class SpreadsheetImportViewModel : ViewModel() {
         }
     }
 
-    fun reset() { loading?.cancel(); preparation?.cancel(); mutable.value = SpreadsheetImportState() }
+    fun reset() { editingListId = null; customMappings = false; loading?.cancel(); preparation?.cancel(); mutable.value = SpreadsheetImportState() }
 }

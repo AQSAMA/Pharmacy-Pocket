@@ -204,7 +204,8 @@ class SpreadsheetImportTest {
             assertEquals("Methyl prednisolone (as sod. Succinate) 125 mg/2 ml ACT-O vial  I.V,I.M use + diluent in the same vial", fields.first { it.field == ImportField.SCIENTIFIC }.value)
             assertEquals("14,500.00", fields.first { it.field == ImportField.PHARMACY_PRICE }.value)
             assertEquals(12, fields.size)
-            return runBlocking { ImportedListStore(context).create("Iraqi syndicate", "products-price.xlsx", mappings, prepared) } to fields
+            return runBlocking { ImportedListStore(context).create("Iraqi syndicate", "products-price.xlsx", mappings, prepared,
+                ImportSource(workbook, ImportSelection(firstRow = sheet.rows[1].number, lastRow = sheet.rows.last().number), prepared.medicines.first().id.substringBeforeLast('-'))) } to fields
         }
         val (imported, fields) = createList()
         runBlocking {
@@ -216,5 +217,22 @@ class SpreadsheetImportTest {
                 assertEquals(fields, restored.medicines.first().importedFields)
             } finally { repository.close() }
         }
+        runBlocking {
+            val store = ImportedListStore(context)
+            val source = store.loadSource(imported)
+            assertEquals(21465, source.workbook.sheets.single().rows.size)
+            val changed = imported.mappings.map { if (it.field == ImportField.SCIENTIFIC) it.copy(label = "Actual ingredient", onCard = false) else it }
+            val selected = source.selection
+            val prepared = prepareSpreadsheet(source.workbook.sheets[0], selected.headerRow, changed, firstRow = selected.firstRow, lastRow = selected.lastRow, idPrefix = source.idPrefix)
+            store.update(imported, imported.name, changed, prepared, source)
+            val repository = PharmacyRepository(context, imported.id)
+            try {
+                val snapshot = repository.loadSnapshot()
+                assertEquals(21464, snapshot.items.size)
+                assertEquals("Actual ingredient", snapshot.items.first().importedFields.first { it.field == ImportField.SCIENTIFIC }.label)
+                assertFalse(snapshot.items.first().importedFields.first { it.field == ImportField.SCIENTIFIC }.onCard)
+            } finally { repository.close() }
+        }
+
     }
 }

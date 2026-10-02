@@ -84,7 +84,7 @@ object BackupCodec {
         put("name", item.name)
         put("note", item.note)
         put("description", item.description)
-        if (item.imported) { put("imported", true); put("importedFields", fieldsToJson(item.importedFields)) }
+        if (item.imported || item.importedFields.isNotEmpty()) { put("imported", item.imported); put("importedFields", fieldsToJson(item.importedFields)) }
         put("official", item.official)
         put("discounted", item.discounted ?: JSONObject.NULL)
         put("revision", item.revision.coerceAtLeast(0))
@@ -285,7 +285,7 @@ object BackupCodec {
         while (reader.hasNext()) {
             require(obj.length() < 256) { "The backup contains too many object fields." }
             val name = reader.nextName()
-            val arrayLimit = when (name) { "importedFields" -> SpreadsheetLimits.maxColumns; "codes" -> 20; "medicineIds" -> SpreadsheetLimits.maxRows; else -> 128 }
+            val arrayLimit = when (name) { "importedFields" -> SpreadsheetLimits.maxFields; "codes" -> 20; "medicineIds" -> SpreadsheetLimits.maxRows; else -> 128 }
             obj.put(name, readValue(reader, depth + 1, arrayLimit))
         }
         reader.endObject()

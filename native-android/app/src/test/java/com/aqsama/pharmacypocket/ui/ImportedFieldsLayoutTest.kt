@@ -79,7 +79,7 @@ class ImportedFieldsLayoutTest {
     }
 
     @Test fun sourceScreenExplainsPrivateSheetsAndEnablesLinkImportAfterInput() {
-        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { SpreadsheetImportScreen(false, {}, { _, _, _, _, _ -> }) } }
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { SpreadsheetImportScreen(false, {}, { _, _, _, _, _, _ -> }) } }
         compose.onNodeWithText("Load Google Sheet").assertIsNotEnabled()
         compose.onNodeWithText("Google Sheets link").performTextInput("https://docs.google.com/spreadsheets/d/example/edit")
         compose.onNodeWithText("Load Google Sheet").assertIsEnabled()

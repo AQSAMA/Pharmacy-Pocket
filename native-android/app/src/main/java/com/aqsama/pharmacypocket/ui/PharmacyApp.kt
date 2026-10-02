@@ -69,6 +69,7 @@ private sealed interface Destination {
     data object Categories : Destination
     data object Trash : Destination
     data object SpreadsheetImport : Destination
+    data object SpreadsheetSettings : Destination
     data class Editor(val medicineId: String?, val category: String?, val initialCapture: String? = null) : Destination
     data class Detail(val medicineId: String) : Destination
 }
@@ -83,6 +84,7 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
                 Destination.Settings -> put("screen", "settings")
                 Destination.Categories -> put("screen", "categories")
                 Destination.Trash -> put("screen", "trash")
+                Destination.SpreadsheetSettings -> put("screen", "spreadsheetSettings")
                 Destination.SpreadsheetImport -> put("screen", "spreadsheetImport")
                 is Destination.Editor -> {
                     put("screen", "editor")
@@ -103,6 +105,7 @@ private val navSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStat
                     "settings" -> Destination.Settings
                     "categories" -> Destination.Categories
                     "trash" -> Destination.Trash
+                    "spreadsheetSettings" -> Destination.SpreadsheetSettings
                     "spreadsheetImport" -> Destination.SpreadsheetImport
                     "editor" -> Destination.Editor(obj.optString("medicineId").takeUnless { it.isEmpty() || it == "null" },
                         obj.optString("category").takeUnless { it.isEmpty() || it == "null" },
@@ -136,6 +139,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
     var selectedListId by rememberSaveable { mutableStateOf<String?>(null) }
     val repositories = remember { mutableMapOf<String?, PharmacyRepository>(null to baseRepository) }
     val repository = remember(selectedListId) { repositories.getOrPut(selectedListId) { baseRepository.forList(selectedListId) } }
+    val homeIndexModel: HomeIndexViewModel = androidx.lifecycle.viewmodel.compose.viewModel(key = "home-index")
     val listStore = remember { ImportedListStore(context.applicationContext) }
     var importedLists by remember { mutableStateOf<List<ImportedList>>(emptyList()) }
     val selectedList = importedLists.firstOrNull { it.id == selectedListId }
@@ -167,6 +171,9 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
     var busy by remember { mutableStateOf(false) }
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
+    var movingMedicine by remember { mutableStateOf<Medicine?>(null) }
+    var mainCurrency by remember { mutableStateOf("IQD") }
+    var mainCategories by remember { mutableStateOf<List<Category>>(emptyList()) }
     var quickCaptureId by remember { mutableStateOf<String?>(null) }
     val photoVersions = remember { mutableStateMapOf<String, Int>() }
     val cameraSaveMutex = remember { Mutex() }
@@ -296,8 +303,10 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
         backStack.clear()
         backStack += NavEntry("home-${id ?: "manual"}", Destination.Home)
         quickCaptureId = null
+        movingMedicine = null
         trashItems = null
         snapshot = null
+        homeIndexModel.clear()
         selectedListId = id
         loadAttempt++
         scope.launch { snackbarHostState.currentSnackbarData?.dismiss(); drawerState.close() }
@@ -333,6 +342,9 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         NavigationDrawerItem(label = { Text("＋ Import a spreadsheet") }, selected = false, onClick = {
                             if (!busy) { scope.launch { drawerState.close() }; push(Destination.SpreadsheetImport) }
                         })
+                        if (selectedList != null) NavigationDrawerItem(label = { Text("Import settings · ${selectedList.name}") }, selected = false, onClick = {
+                            if (!busy) { scope.launch { drawerState.close() }; push(Destination.SpreadsheetSettings) }
+                        })
                         NavigationDrawerItem(label = { Text("Settings · ${selectedList?.name ?: "My medications"}") }, selected = false, onClick = {
                             if (!busy) { scope.launch { drawerState.close() }; push(Destination.Settings) }
                         })
@@ -349,6 +361,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                 when (val destination = entry.destination) {
                     Destination.Home -> HomeScreen(
                         snapshot = current,
+                        indexModel = homeIndexModel,
                         onLists = { scope.launch { drawerState.open() } },
                         listName = selectedList?.name,
                         imported = selectedListId != null,
@@ -381,19 +394,29 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         photoVersions = photoVersions,
                     )
 
-                    Destination.SpreadsheetImport -> SpreadsheetImportScreen(
+                    Destination.SpreadsheetImport, Destination.SpreadsheetSettings -> SpreadsheetImportScreen(
                         busy = busy,
                         onBack = ::pop,
-                        onImport = { name, source, mappings, prepared, onCreated ->
+                        modelKey = "import-${entry.id}",
+                        editList = if (destination == Destination.SpreadsheetSettings) selectedList else null,
+                        loadSource = selectedList?.let { list -> { listStore.loadSource(list) } },
+                        onImport = { name, source, mappings, prepared, sourceData, onCreated ->
                             if (!busy) {
                                 busy = true
                                 scope.launch {
                                     try {
-                                        val list = listStore.create(name, source, mappings, prepared)
-                                        importedLists = importedLists + list
-                                        onCreated()
-                                        busy = false
-                                        selectList(list.id)
+                                        if (destination == Destination.SpreadsheetSettings) {
+                                            val list = listStore.update(requireNotNull(selectedList), name, mappings, prepared, sourceData)
+                                            importedLists = importedLists.map { if (it.id == list.id) list else it }
+                                            snapshot = repository.loadSnapshot()
+                                            onCreated(); pop()
+                                        } else {
+                                            val list = listStore.create(name, source, mappings, prepared, sourceData)
+                                            importedLists = importedLists + list
+                                            onCreated()
+                                            busy = false
+                                            selectList(list.id)
+                                        }
                                     } catch (error: Exception) {
                                         errorMessage = error.message ?: "Could not create the imported list."
                                     } finally { busy = false }
@@ -527,6 +550,12 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         onMoveToTrash = ::moveToTrash,
                         loadPhoto = repository::loadPhoto,
                         photoVersion = photoVersions[destination.medicineId] ?: 0,
+                        onMoveToMain = if (selectedListId != null) { item ->
+                            scope.launch {
+                                try { val main = baseRepository.loadSnapshot(); mainCategories = main.categories; mainCurrency = main.currency; movingMedicine = item }
+                                catch (error: Exception) { errorMessage = error.message ?: "Could not open My medications." }
+                            }
+                        } else null,
                     )
                 }
             }
@@ -579,6 +608,15 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                     },
                 )
             }
+        }
+
+        movingMedicine?.let { item ->
+            MoveToMainSheet(item, mainCategories, mainCurrency, busy, onDismiss = { movingMedicine = null }, onMove = { name, price, category ->
+                runOperation(successMessage = "Moved to My medications", onSuccess = {
+                    movingMedicine = null
+                    removeMedicineDestinations(item.id)
+                }) { repository.moveToMain(item.id, baseRepository, name, price, category) }
+            })
         }
 
         if (busy) {

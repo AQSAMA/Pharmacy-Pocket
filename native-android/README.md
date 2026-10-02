@@ -74,7 +74,8 @@ Private Google Sheets can be exported to XLSX and imported using the file picker
 link imports require “Anyone with the link” viewing access and respect the link's
 `gid` worksheet. These are local copies, not live synchronization.
 
-Choose the worksheet and header row, review suggested mappings, assign display
+Use the Rows, Columns and Preview tabs. Choose the worksheet, any header row by its
+spreadsheet number, and the first/last data rows. Review suggested mappings, assign display
 labels, and select up to six extra fields for cards. Map categories in order from
 level 1 through level 4. Use **Custom field** to retain any other column, or **Skip
 column** to omit it. Decimal prices and original text are preserved. Price mappings
@@ -83,10 +84,29 @@ format, including Arabic numerals/separators; currency symbols should be kept in
 errors before creating the list. Empty Name rows are counted and skipped; duplicate
 names are retained as distinct entries.
 
+Reopen **☰ > Import settings** for the selected list to change its name, row range,
+column roles, labels and card fields. Imports retain a compressed local source table;
+skipped columns remain recoverable. Earlier imports can be configured from their saved
+fields, although previously skipped source columns cannot be recovered. Applying changes
+preserves local field edits, favorites, codes and photos by source row ID. Excluded active
+rows move to Trash; expanding the selection does not silently restore Trash or recreate
+moved/permanently deleted rows. Settings and source tables are local to the installation;
+JSON backups preserve medication fields but do not embed the spreadsheet source table.
+
 Switch between **My medications** and imported lists from the side menu. Imported
 items use the existing cards, favorites, sorting, normalized search, photo/code
 capture, editor, details and Trash. **Tune** exposes deeper category filters.
 The editor's **Imported fields** section contains fields omitted from the card.
+The prepared search index stays in memory while visiting details, so returning to a
+large unchanged list does not prepare it again. Switching lists releases that index.
+
+From an imported medicine's details, choose **Move to My medications**. Set a common
+name, your pharmacy price and a main-list category. Its main card shows the common name,
+original name underneath (scientific name if the names match), and your chosen price.
+All source fields/prices/currency, notes, photo, codes and favorite status remain in the
+medicine's details and JSON backups. Source details stay separate from your editable
+main-list price. Package-code conflicts block the move without changing either list;
+a successful move places the original row in the source list's Trash.
 Settings identify the selected list: categories, currency, JSON backups/imports and
 Trash belong to that list; theme and text size are shared. Custom fields survive
 editing, Trash/restore and JSON backup round trips. Restore an imported-list JSON

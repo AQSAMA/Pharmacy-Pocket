@@ -40,7 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.produceState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -107,7 +107,7 @@ private fun buildRows(items: List<Medicine>): List<HomeRow> = buildList {
 
 /** Displays the searchable medicine list with its sticky filters and category controls. */
 @Composable
-fun HomeScreen(
+internal fun HomeScreen(
     snapshot: AppSnapshot,
     onSettings: () -> Unit,
     onAddMedicine: (String, String?) -> Unit,
@@ -121,6 +121,7 @@ fun HomeScreen(
     onLists: () -> Unit = onSettings,
     listName: String? = null,
     imported: Boolean = false,
+    indexModel: HomeIndexViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
 ) {
     val view = LocalView.current
     val listState = rememberLazyListState()
@@ -134,9 +135,8 @@ fun HomeScreen(
     val addCategory = if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 
-    val sortedIndexState by produceState<List<com.aqsama.pharmacypocket.data.MedicineSearchEntry>?>(null, snapshot.items, sort) {
-        value = withContext(Dispatchers.Default) { sortSearchIndex(buildSearchIndex(snapshot.items), sort) }
-    }
+    val sortedIndexState by indexModel.index.collectAsStateWithLifecycle()
+    LaunchedEffect(snapshot.items, sort) { indexModel.update(snapshot.items, sort) }
     val sortedIndex = sortedIndexState.orEmpty()
     val subcategories = remember(sortedIndex, category) { listSubcategories(sortedIndex, category) }
 

@@ -23,7 +23,7 @@ private data class ExistingRow(
 )
 
 internal class MedicineDatabase(context: Context, listId: String? = null) {
-    private val dbFile = File(context.filesDir, if (listId == null) "SQLite/pharmacy-pocket.db" else "SQLite/imported-$listId.db")
+    internal val dbFile = File(context.filesDir, if (listId == null) "SQLite/pharmacy-pocket.db" else "SQLite/imported-$listId.db")
     private val lock = Any()
     @Volatile private var database: SQLiteDatabase? = null
 
@@ -90,6 +90,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
                 """.trimIndent(),
             )
 
+            db.execSQL("CREATE TABLE IF NOT EXISTS excluded_import_rows (id TEXT PRIMARY KEY NOT NULL)")
             var columns = tableColumns(db)
             if ("description" !in columns) {
                 db.execSQL("ALTER TABLE medicines ADD COLUMN description TEXT NOT NULL DEFAULT ''")
@@ -340,6 +341,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
         val db = open()
         db.beginTransaction()
         return try {
+            if (id.startsWith("import-")) db.execSQL("INSERT OR IGNORE INTO excluded_import_rows(id) VALUES (?)", arrayOf(id))
             val changed = db.delete(
                 "medicines",
                 "id = ? AND deleted_at IS NOT NULL",
@@ -357,6 +359,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
         val db = open()
         db.beginTransaction()
         return try {
+            db.execSQL("INSERT OR IGNORE INTO excluded_import_rows(id) SELECT id FROM medicines WHERE deleted_at IS NOT NULL AND id LIKE 'import-%'")
             val deleted = db.delete("medicines", "deleted_at IS NOT NULL", null)
             db.execSQL("DELETE FROM medicine_photos WHERE medicine_id NOT IN (SELECT id FROM medicines)")
             db.setTransactionSuccessful()
@@ -442,6 +445,41 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
         } finally {
             db.endTransaction()
         }
+    }
+
+    fun excludedImportRows(): Set<String> = open().rawQuery("SELECT id FROM excluded_import_rows", null).use { c ->
+        buildSet { while (c.moveToNext()) add(c.getString(0)) }
+    }
+
+    fun reconfigureImport(items: List<Medicine>, catalog: File, id: String, name: String, mappings: List<ColumnMapping>, selection: String) {
+        val db = open()
+        db.execSQL("ATTACH DATABASE ? AS import_catalog", arrayOf(catalog.absolutePath))
+        try {
+            db.beginTransaction()
+            try {
+                replaceMedicines(items)
+                db.execSQL("UPDATE import_catalog.lists SET name = ?, mappings = ?, selection = ? WHERE id = ?",
+                    arrayOf(name, mappingsToJson(mappings).toString(), selection, id))
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+        } finally { db.execSQL("DETACH DATABASE import_catalog") }
+    }
+
+    /** Copy all data and retire the source in one attached-database transaction. */
+    fun transferFrom(source: MedicineDatabase, sourceId: String, item: Medicine, photo: ByteArray?) {
+        val db = open()
+        db.execSQL("ATTACH DATABASE ? AS transfer_source", arrayOf(source.dbFile.absolutePath))
+        try {
+            db.beginTransaction()
+            try {
+                require(db.rawQuery("SELECT 1 FROM transfer_source.medicines WHERE id = ? AND deleted_at IS NULL", arrayOf(sourceId)).use { it.moveToFirst() }) { "This medicine has already been moved or removed." }
+                check(writeMedicine(db, item, maxSortOrder(db) + 1))
+                photo?.let { writePhoto(db, item.id, it) }
+                db.execSQL("UPDATE transfer_source.medicines SET deleted_at = ? WHERE id = ?", arrayOf<Any>(System.currentTimeMillis(), sourceId))
+                db.execSQL("INSERT OR IGNORE INTO transfer_source.excluded_import_rows(id) VALUES (?)", arrayOf(sourceId))
+                db.setTransactionSuccessful()
+            } finally { db.endTransaction() }
+        } finally { db.execSQL("DETACH DATABASE transfer_source") }
     }
 
     private fun writePhoto(db: SQLiteDatabase, id: String, jpeg: ByteArray) {
@@ -676,6 +714,51 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             database.saveMedicine(item.copy(codes = codes), photo, removePhoto)
             snapshotUnsafe()
         }
+    }
+
+    internal suspend fun reconfigureImport(incoming: List<Medicine>, oldMappings: List<ColumnMapping>, mappings: List<ColumnMapping>, prefix: String, catalog: File, name: String, selection: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val old = database.loadMedicines()
+            val byId = old.associateBy { it.id }
+            require(incoming.all { it.id.startsWith("$prefix-") })
+            val excluded = (database.excludedImportRows() - byId.keys) + database.loadTrash().map { it.medicine.id }
+            val next = incoming.filterNot { it.id in excluded }.map { fresh ->
+                val prior = byId[fresh.id] ?: return@map fresh
+                fun saved(column: Int): String? = when (oldMappings.firstOrNull { it.column == column }?.field) {
+                    ImportField.NAME -> prior.name; ImportField.NOTE -> prior.note; ImportField.DESCRIPTION -> prior.description
+                    else -> prior.importedFields.firstOrNull { it.key == "column-$column" }?.value
+                }
+                fun mapped(role: ImportField, fallback: String): String = mappings.firstOrNull { it.field == role }?.let { saved(it.column) } ?: fallback
+                syncImportedFields(prior.copy(name = mapped(ImportField.NAME, fresh.name), note = mapped(ImportField.NOTE, fresh.note),
+                    description = mapped(ImportField.DESCRIPTION, fresh.description), revision = prior.revision + 1,
+                    importedFields = fresh.importedFields.map { field -> field.copy(value = field.key.removePrefix("column-").toIntOrNull()?.let(::saved) ?: field.value) }))
+            } + old.filterNot { it.id.startsWith("import-") }
+            database.reconfigureImport(next, catalog, requireNotNull(listId), name, mappings, selection)
+        }
+    }
+
+    suspend fun moveToMain(id: String, main: PharmacyRepository, commonName: String, price: Long, category: String): AppSnapshot = withContext(Dispatchers.IO) {
+        require(listId != null && main.listId == null) { "Only imported lists can move items into My medications." }
+        require(commonName.trim().isNotEmpty() && commonName.length <= SpreadsheetLimits.maxCellLength)
+        require(price in 0..9_007_199_254_740_991L)
+        mutex.withLock { main.mutex.withLock {
+            val item = database.loadMedicines().firstOrNull { it.id == id } ?: error("This medicine is no longer available.")
+            val conflicts = main.database.loadMedicines().flatMap { it.codes }.mapTo(mutableSetOf()) { it.value }
+            require(item.codes.none { it.value in conflicts }) { "A package code already belongs to a medicine in My medications. Resolve the code conflict before moving." }
+            val fields = buildList {
+                add(ImportedField("source-name", "Original name", item.name, ImportField.CUSTOM, false))
+                add(ImportedField("source-currency", "Source price currency", preferences.currency(), ImportField.CUSTOM, false))
+                if (item.importedFields.none { it.field == ImportField.PHARMACY_PRICE })
+                    add(ImportedField("source-price", "Source pharmacy price", item.official.toString(), ImportField.CUSTOM, false))
+                if (item.discounted != null && item.importedFields.none { it.field == ImportField.WHOLESALE_PRICE })
+                    add(ImportedField("source-alternative-price", "Source alternative price", item.discounted.toString(), ImportField.CUSTOM, false))
+                addAll(item.importedFields.map { it.copy(onCard = false) })
+            }
+            val moved = item.copy(id = "manual-${java.util.UUID.randomUUID()}", name = commonName.trim(), category = category,
+                subcategory = "General", official = price, discounted = null, imported = false, importedFields = fields)
+            main.database.transferFrom(database, id, moved, database.loadPhoto(id))
+            snapshotUnsafe()
+        } }
     }
 
     suspend fun loadPhoto(id: String): ByteArray? = withContext(Dispatchers.IO) {

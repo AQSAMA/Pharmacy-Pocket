@@ -264,6 +264,10 @@ internal fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
+                    if (!imported && importedFields.isNotEmpty()) {
+                        EditorSectionButton("≡", "Source details", "Original names, prices and custom fields", importedExpanded, { importedExpanded = !importedExpanded })
+                        if (importedExpanded) ImportedFields(importedFields, compact = false)
+                    }
 
                     if (imported) {
                         importedFields.filter { it.onCard }.forEach { field ->
@@ -743,6 +747,7 @@ fun MedicineDetailScreen(
     onMoveToTrash: (Medicine) -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
+    onMoveToMain: ((Medicine) -> Unit)? = null,
 ) {
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
@@ -858,7 +863,7 @@ fun MedicineDetailScreen(
                                             verticalArrangement = Arrangement.spacedBy(4.dp),
                                         ) {
                                             Text(
-                                                "OFFICIAL PRICE · ${snapshot.currency}",
+                                                "${if (item.importedFields.any { it.key == "source-name" }) "YOUR PRICE" else "OFFICIAL PRICE"} · ${snapshot.currency}",
                                                 modifier = Modifier.fillMaxWidth(),
                                                 color = Color(0xFFA3CFB9),
                                                 fontSize = 12.sp,
@@ -900,8 +905,9 @@ fun MedicineDetailScreen(
                                 }
                             }
                         }
-                        if (item.imported) {
-                            Text("Imported details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (onMoveToMain != null) OutlinedButton(onClick = { onMoveToMain(item) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Move to My medications") }
+                        if (item.importedFields.isNotEmpty()) {
+                            Text(if (item.imported) "Imported details" else "Source details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             ImportedFields(item.importedFields, compact = false, large = snapshot.largeText)
                         }
 
