@@ -61,8 +61,11 @@ internal fun CategoryBrowser(browser: LibraryBrowser, path: List<String>, view: 
                     }
                 }
                 CategoryView.TREE -> tree(Modifier.heightIn(max = 180.dp))
-                CategoryView.COLUMNS -> Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for (depth in 0..path.size) {
+                CategoryView.COLUMNS -> {
+                    val scroll = rememberScrollState()
+                    LaunchedEffect(path, scroll.maxValue) { if (path.isNotEmpty()) scroll.animateScrollTo(scroll.maxValue) }
+                    Row(Modifier.horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    for (depth in (path.size - 2).coerceAtLeast(0)..path.size) {
                         val prefix = path.take(depth)
                         val nodes = browser.children(prefix)
                         if (nodes.isNotEmpty()) Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
@@ -71,6 +74,7 @@ internal fun CategoryBrowser(browser: LibraryBrowser, path: List<String>, view: 
                             }
                         }
                     }
+                }
                 }
                 CategoryView.FLOATING -> FilledTonalButton(onClick = { explorer = true }, modifier = Modifier.fillMaxWidth()) { Text("Browse folders · ${children.size}") }
             }

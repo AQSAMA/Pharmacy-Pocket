@@ -1,7 +1,10 @@
 package com.aqsama.pharmacypocket.ui
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,15 +14,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,10 +39,12 @@ import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<ImportedField>) -> Unit) {
-    var open by remember { mutableStateOf(false) }
+internal fun CustomFieldsDesigner(fields: List<ImportedField>, previewName: String = "Medication", previewPrice: String? = null, onChange: (List<ImportedField>) -> Unit) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    var preview by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ImportedField?>(null) }
     val view = LocalView.current
+    val edgePixels = with(LocalDensity.current) { 48.dp.toPx() }
     OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
         Text("Custom fields & card layout · ${fields.size}")
     }
@@ -60,7 +68,9 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
                 val zone = FieldPlacement.entries.firstOrNull { target == "zone:${it.name}" }
                 val targetField = next.firstOrNull { it.key == target }
                 val placement = zone ?: targetField?.placement ?: field.placement
-                val index = targetField?.let { next.indexOf(it) } ?: (next.indexOfLast { it.placement == placement } + 1)
+                val index = targetField?.let {
+                    next.indexOf(it) + if (pointer.y > (bounds[target]?.center?.y ?: Float.MAX_VALUE)) 1 else 0
+                } ?: (next.indexOfLast { it.placement == placement } + 1)
                 next.add(index.coerceIn(0, next.size), field.copy(placement = placement, onCard = true))
                 latestChange(next)
                 Haptics.selection(view)
@@ -69,7 +79,7 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
         }
         LaunchedEffect(dragKey) {
             while (dragKey != null) {
-                val edge = 70f
+                val edge = edgePixels
                 val amount = when {
                     pointer.y < listBounds.top + edge -> -18f
                     pointer.y > listBounds.bottom - edge -> 18f
@@ -91,19 +101,40 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
                 }
                 Box(Modifier.fillMaxWidth().onGloballyPositioned { listBounds = it.boundsInRoot() }) {
                 LazyColumn(state = state, modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).pointerInput(Unit) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { offset ->
-                            pointer = listBounds.topLeft + offset
-                            val row = bounds.entries.firstOrNull { !it.key.startsWith("zone:") && pointer in it.value }
-                            if (row != null) {
-                                origin = pointer; grabOffset = pointer - row.value.topLeft
-                                dragKey = row.key; Haptics.selection(view)
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val downPosition = listBounds.topLeft + down.position
+                        val row = bounds.entries.firstOrNull { !it.key.startsWith("zone:") && downPosition in it.value }
+                        val longPress = if (row != null) awaitLongPressOrCancellation(down.id) else null
+                        if (longPress != null && row != null) {
+                            pointer = listBounds.topLeft + longPress.position
+                            origin = downPosition; grabOffset = downPosition - row.value.topLeft
+                            dragKey = row.key; Haptics.selection(view)
+                            val released = drag(longPress.id) { change ->
+                                pointer = listBounds.topLeft + change.position
+                                change.consume()
                             }
-                        },
-                        onDrag = { change, delta -> if (dragKey != null) { change.consume(); pointer += delta } },
-                        onDragEnd = { drop() }, onDragCancel = { dragKey = null },
-                    )
+                            if (released) {
+                                currentEvent.changes.forEach { change -> if (change.changedToUp()) change.consume() }
+                                drop()
+                            } else dragKey = null
+                        }
+                    }
                 }, contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item(key = "preview") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { preview = !preview }) { Text(if (preview) "Hide card preview" else "Preview your card") }
+                            if (preview) Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, tonalElevation = 2.dp) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    ImportedFields(fields.filter { it.placement == FieldPlacement.TOP }, compact = true)
+                                    Text(previewName.ifBlank { "Medication" }, style = MaterialTheme.typography.titleLarge)
+                                    previewPrice?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium) }
+                                    ImportedFields(fields.filter { it.placement == FieldPlacement.BODY }, compact = true)
+                                    ImportedFields(fields.filter { it.placement == FieldPlacement.FOOTER }, compact = true)
+                                }
+                            }
+                        }
+                    }
                     FieldPlacement.entries.forEach { placement ->
                         item(key = "zone:${placement.name}") {
                             Surface(Modifier.fillMaxWidth().testTag("card-zone:${placement.name}").onGloballyPositioned { bounds["zone:${placement.name}"] = it.boundsInRoot() }, shape = MaterialTheme.shapes.medium,

@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.*
@@ -95,12 +96,12 @@ class LibraryFeaturesLayoutTest {
         var fields by mutableStateOf(listOf(ImportedField("custom-drag", "Dose", "Once daily", ImportField.CUSTOM, true)))
         compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { CustomFieldsDesigner(fields) { fields = it } } }
         compose.onNodeWithText("Custom fields & card layout · 1").performClick()
-        val from = compose.onNodeWithTag("card-field:custom-drag").fetchSemanticsNode().boundsInRoot.center
+        val from = compose.onNodeWithTag("card-field:custom-drag").fetchSemanticsNode().boundsInRoot.topLeft + Offset(20f, 20f)
         val to = compose.onNodeWithTag("card-zone:TOP").fetchSemanticsNode().boundsInRoot.center
         compose.onNodeWithTag("card-field:custom-drag").performTouchInput {
-            down(center)
+            down(Offset(20f, 20f))
             advanceEventTime(700)
-            moveTo(center + (to - from), delayMillis = 300)
+            moveTo(Offset(20f, 20f) + (to - from), delayMillis = 300)
             up()
         }
         compose.waitUntil(3000) { fields.single().placement == FieldPlacement.TOP }
@@ -111,7 +112,7 @@ class LibraryFeaturesLayoutTest {
     private fun capture(name: String) {
         System.getenv("PHARMACY_SCREENSHOTS_DIR")?.let { dir ->
             java.io.File(dir, "$name.png").apply { parentFile?.mkdirs() }.outputStream().use {
-                compose.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                compose.onAllNodes(isRoot()).let { roots -> roots[roots.fetchSemanticsNodes().lastIndex] }.captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
             }
         }
     }

@@ -263,7 +263,7 @@ internal fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
-                    CustomFieldsDesigner(importedFields) { fields -> fieldsJson = fieldsToJson(fields).toString() }
+                    CustomFieldsDesigner(importedFields, previewName = name, previewPrice = if (imported) null else official.toLongOrNull()?.let { "${formatPrice(it)} ${snapshot.currency}" }) { fields -> fieldsJson = fieldsToJson(fields).toString() }
 
                     if (!imported) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

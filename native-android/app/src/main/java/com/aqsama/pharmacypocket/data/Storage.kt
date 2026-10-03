@@ -738,11 +738,19 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
                     else -> prior.importedFields.firstOrNull { it.key == "column-$column" }?.value
                 }
                 fun mapped(role: ImportField, fallback: String): String = mappings.firstOrNull { it.field == role }?.let { saved(it.column) } ?: fallback
+                fun styled(field: ImportedField): ImportedField {
+                    val column = field.key.removePrefix("column-").toIntOrNull()
+                    val previous = prior.importedFields.firstOrNull { it.key == field.key }
+                    val oldMapping = oldMappings.firstOrNull { it.column == column }
+                    val newMapping = mappings.firstOrNull { it.column == column }
+                    return field.copy(value = column?.let(::saved) ?: field.value,
+                        label = if (oldMapping?.label == newMapping?.label) previous?.label ?: field.label else field.label,
+                        onCard = if (oldMapping?.onCard == newMapping?.onCard) previous?.onCard ?: field.onCard else field.onCard,
+                        color = previous?.color, placement = previous?.placement ?: FieldPlacement.BODY)
+                }
                 syncImportedFields(prior.copy(name = mapped(ImportField.NAME, fresh.name), note = mapped(ImportField.NOTE, fresh.note),
                     description = mapped(ImportField.DESCRIPTION, fresh.description), revision = prior.revision + 1,
-                    importedFields = (fresh.importedFields.map { field -> field.copy(value = field.key.removePrefix("column-").toIntOrNull()?.let(::saved) ?: field.value,
-                        color = prior.importedFields.firstOrNull { it.key == field.key }?.color,
-                        placement = prior.importedFields.firstOrNull { it.key == field.key }?.placement ?: FieldPlacement.BODY) } + prior.importedFields.filter { it.key.startsWith("custom-") }).sortedBy { field ->
+                    importedFields = (fresh.importedFields.map(::styled) + prior.importedFields.filter { it.key.startsWith("custom-") }).sortedBy { field ->
                         prior.importedFields.indexOfFirst { it.key == field.key }.takeIf { it >= 0 } ?: Int.MAX_VALUE
                     }))
             } + old.filterNot { it.id.startsWith("import-") }

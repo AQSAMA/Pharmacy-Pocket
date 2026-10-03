@@ -133,7 +133,7 @@ or off. Hold a field to drag it between **Above name**, **Below price**, and
 **Card bottom**, or reorder it among the other fields. The editor lifts the dragged
 field, highlights its target, and scrolls near the list edges. Arrow buttons and
 position chips provide alternatives to dragging. Save the medicine to persist the
-layout. Source fields can also be edited and styled here; source price fields stay
+layout. **Preview your card** shows the current arrangement while editing. Source fields can also be edited and styled here; source price fields stay
 separate from your own main-list price. Colors apply to cards; details use the theme
 colors for long-form reading. Field order, color, and placement survive JSON backups,
 Trash/restore, and import-settings updates for retained fields.

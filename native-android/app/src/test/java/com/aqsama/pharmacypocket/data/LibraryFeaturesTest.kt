@@ -1,6 +1,8 @@
 package com.aqsama.pharmacypocket.data
 
 import android.content.Context
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -71,10 +73,14 @@ class LibraryFeaturesTest {
             val fields = listOf(ImportedField("column-1", "Scientific", "Amoxicillin", ImportField.SCIENTIFIC, true))
             val original = medicine("source", "Imported brand").copy(imported = true, note = "Imported note", importedFields = fields,
                 codes = listOf(MedicineCode(CodeKind.BARCODE, "123456789")))
-            source.saveMedicine(original)
+            val jpeg = ByteArrayOutputStream().also { output ->
+                Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { compress(Bitmap.CompressFormat.JPEG, 80, output); recycle() }
+            }.toByteArray()
+            source.saveMedicine(original, jpeg)
             source.transferMedication(original.id, other, false)
             assertEquals(1, source.loadSnapshot().items.size)
             assertEquals(fields, other.loadSnapshot().items.single().importedFields)
+            assertArrayEquals(jpeg, other.loadPhoto(other.loadSnapshot().items.single().id))
             val own = medicine("own", "My common name").copy(favorite = true, importedFields = listOf(ImportedField("custom-note", "Shelf", "A4", ImportField.CUSTOM, true)))
             main.saveMedicine(own)
             source.transferMedication(original.id, main, false, mergeTargetId = own.id)
@@ -82,6 +88,7 @@ class LibraryFeaturesTest {
             assertEquals(own.name, merged.name); assertEquals(own.official, merged.official); assertEquals(own.discounted, merged.discounted)
             assertEquals(own.category, merged.category); assertEquals(own.createdAt, merged.createdAt); assertTrue(merged.favorite)
             assertEquals("Imported note", merged.note)
+            assertArrayEquals(jpeg, main.loadPhoto(own.id))
             assertEquals("Amoxicillin", merged.importedFields.first { it.field == ImportField.SCIENTIFIC }.value)
             assertEquals("A4", merged.importedFields.first { it.key == "custom-note" }.value)
             assertEquals(1, source.loadSnapshot().items.size)
