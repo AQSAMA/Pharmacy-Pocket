@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -69,6 +71,7 @@ fun SettingsScreen(
     onImport: (ParsedBackup, ImportMode) -> Unit,
     exportBackup: suspend () -> String,
     listName: String? = null,
+    onSetCategoryView: (com.aqsama.pharmacypocket.data.CategoryView) -> Unit = {},
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -192,6 +195,20 @@ fun SettingsScreen(
                                     onSetLargeText(it)
                                 },
                             )
+                        }
+                    }
+
+                    SectionLabel("CATEGORY NAVIGATION")
+                    SettingsCard {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            com.aqsama.pharmacypocket.data.CategoryView.entries.forEach { option ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = snapshot.categoryView == option, onClick = { onSetCategoryView(option) })
+                                    TextButton(onClick = { onSetCategoryView(option) }) {
+                                        Column { Text(option.label); Text(option.description, style = MaterialTheme.typography.bodySmall) }
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -505,7 +522,7 @@ fun CategoryManagerScreen(
                 return
             }
             snapshot.categories.any {
-                it.id != current.id && it.label.trim().equals(label, ignoreCase = true)
+                it.id != current.id && it.parentId == current.parentId && it.label.trim().equals(label, ignoreCase = true)
             } -> {
                 Haptics.reject(view)
                 validationError = "A category with that name already exists."
@@ -604,7 +621,7 @@ fun CategoryManagerScreen(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(category.label, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                                    Text(com.aqsama.pharmacypocket.data.categoryAncestors(category.id, snapshot.categories).joinToString(" › ") { it.label }, color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
                                     Text(category.arabic, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1)
                                 }
                                 Surface(shape = RoundedCornerShape(11.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)) {
@@ -660,7 +677,7 @@ fun CategoryManagerScreen(
                 Text(if (snapshot.categories.any { it.id == current.id }) "Edit category" else "New category")
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(17.dp),
@@ -701,6 +718,17 @@ fun CategoryManagerScreen(
                         placeholder = { Text("Arabic or English") },
                         singleLine = true,
                     )
+                    Text("Parent folder", style = MaterialTheme.typography.labelLarge)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        SoftChip("Top level", selected = current.parentId == null) { draft = current.copy(parentId = null) }
+                        snapshot.categories.filter { candidate -> candidate.id != "all" && candidate.id != current.id &&
+                            com.aqsama.pharmacypocket.data.categoryAncestors(candidate.id, snapshot.categories).none { it.id == current.id }
+                        }.forEach { parent ->
+                            SoftChip(com.aqsama.pharmacypocket.data.categoryAncestors(parent.id, snapshot.categories).joinToString(" › ") { it.label }, selected = current.parentId == parent.id) {
+                                draft = current.copy(parentId = parent.id)
+                            }
+                        }
+                    }
                     Text("Color", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),

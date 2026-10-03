@@ -232,6 +232,7 @@ fun MedicineCard(
                                 .padding(horizontal = 12.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.TOP }, compact = true, large = large)
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.Top,
@@ -308,9 +309,9 @@ fun MedicineCard(
                                 if (price > item.official) verifyPriceColor else normalDiscountColor
                             }
 
-                            if (item.imported) {
-                                ImportedFields(item.importedFields, compact = true, large = large)
-                            } else MedicineCardPrices(item, currency, large, discountColor)
+                            if (!item.imported) MedicineCardPrices(item, currency, large, discountColor)
+                            ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.BODY }, compact = true, large = large)
+                            ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.FOOTER }, compact = true, large = large)
                             Row(
                                 Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,

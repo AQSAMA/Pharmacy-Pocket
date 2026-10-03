@@ -130,9 +130,12 @@ internal fun HomeScreen(
     var sortName by rememberSaveable { mutableStateOf(MedicineSort.DEFAULT.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-    var categoryPath by rememberSaveable { mutableStateOf(listOf<String>()) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
-    val addCategory = if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
+    var browsePath by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val browser = remember(snapshot.items, snapshot.categories) { com.aqsama.pharmacypocket.data.buildLibraryBrowser(snapshot) }
+    LaunchedEffect(browser) { if (browsePath.isNotEmpty() && browser.folders.none { it.path == browsePath }) browsePath = emptyList() }
+    val browseCategory = browsePath.asReversed().firstNotNullOfOrNull { key -> browser.folders.firstOrNull { it.key == key }?.categoryId }
+    val addCategory = browseCategory ?: if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 
     val sortedIndexState by indexModel.index.collectAsStateWithLifecycle()
@@ -155,32 +158,20 @@ internal fun HomeScreen(
     val filters = remember(category, selectedSubcategory, favoritesOnly) {
         MedicineFilters(category, selectedSubcategory, favoritesOnly)
     }
-    val visible = remember(sortedIndex, filters, query, categoryPath) {
+    val visible = remember(sortedIndex, filters, query, browsePath, browser) {
         filterSortedMedicines(sortedIndex, filters, query).filter { item ->
-            categoryPath.mapIndexed { index, value ->
-                item.importedFields.firstOrNull { it.field.categoryLevel == index + 2 }?.value?.trim()?.ifBlank { "Uncategorized" } == value
-            }.all { it }
+            browser.medicinePaths[item.id]?.take(browsePath.size) == browsePath
         }
     }
-    val hierarchyLevels = remember(snapshot.items) { snapshot.items.flatMap { it.importedFields }.maxOfOrNull { it.field.categoryLevel } ?: 0 }
-
     val rows = remember(visible) { buildRows(visible) }
-    val categoryCounts = remember(snapshot.items) {
-        buildMap {
-            put("all", snapshot.items.size)
-            snapshot.items.forEach { item ->
-                if (item.category != "all") put(item.category, (get(item.category) ?: 0) + 1)
-            }
-        }
-    }
     val favoriteCount = remember(snapshot.items) { snapshot.items.count { it.favorite } }
     val activeCount = (if (favoritesOnly) 1 else 0) +
         (if (sort != MedicineSort.DEFAULT) 1 else 0) +
         (if (category != "all") 1 else 0) +
-        (if (selectedSubcategory != null) 1 else 0) + categoryPath.size +
+        (if (selectedSubcategory != null) 1 else 0) + browsePath.size +
         (if (query.isNotBlank()) 1 else 0)
 
-    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly|$categoryPath"
+    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly|$browsePath"
     var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
     LaunchedEffect(filterKey) {
         if (filterKey != lastFilterKey) {
@@ -189,17 +180,7 @@ internal fun HomeScreen(
         }
     }
 
-    /** Selects a category and clears any subcategory from the previous selection. */
-    fun selectCategory(next: String) {
-        Haptics.selection(view)
-        category = next
-        selectedSubcategory = null
-        categoryPath = emptyList()
-    }
-
-
-
-    Scaffold(
+        Scaffold(
         modifier = Modifier.fillMaxSize(),
         contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -307,47 +288,24 @@ internal fun HomeScreen(
                                     query = ""
                                     category = "all"
                                     selectedSubcategory = null
-                                    categoryPath = emptyList()
+                                    browsePath = emptyList()
                                     favoritesOnly = false
                                     sortName = MedicineSort.DEFAULT.name
                                 }
                             }
                         }
-                        if (imported && hierarchyLevels > 1) {
-                            for (level in 2..hierarchyLevels) {
-                                val options = snapshot.items.asSequence().filter { item ->
-                                    (category == "all" || item.category == category) && categoryPath.take(level - 2).mapIndexed { index, value ->
-                                        item.importedFields.firstOrNull { it.field.categoryLevel == index + 2 }?.value?.trim()?.ifBlank { "Uncategorized" } == value
-                                    }.all { it }
-                                }.mapNotNull { item -> item.importedFields.firstOrNull { it.field.categoryLevel == level }?.value?.trim()?.ifBlank { "Uncategorized" } }.distinct().sorted().toList()
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                    item { SoftChip("Level $level · All", selected = categoryPath.size < level - 1) { categoryPath = categoryPath.take(level - 2) } }
-                                    items(options) { value ->
-                                        SoftChip(value, selected = categoryPath.getOrNull(level - 2) == value) {
-                                            if (categoryPath.size >= level - 2) categoryPath = categoryPath.take(level - 2) + value
-                                        }
-                                    }
-                                }
-                                if (categoryPath.size < level - 1) break
-                            }
-                        }
+
                     }
                 }
             }
         },
         bottomBar = {
-            HomeBottomBar(
-                snapshot = snapshot,
-                category = category,
-                categoryCounts = categoryCounts,
-                subcategories = if (imported) emptyList() else subcategories.map { it.key to it.label },
-                selectedSubcategory = selectedSubcategory,
-                onSelectCategory = ::selectCategory,
-                onSelectSubcategory = {
-                    Haptics.selection(view)
-                    selectedSubcategory = it
-                },
-            )
+            CategoryBrowser(browser, browsePath, snapshot.categoryView) { path ->
+                Haptics.selection(view)
+                browsePath = path
+                category = "all"
+                selectedSubcategory = null
+            }
         },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -555,91 +513,6 @@ private fun BreadcrumbChip(
     ) {
         Box(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), contentAlignment = Alignment.CenterStart) {
             Text(text, color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-    }
-}
-
-/** Keeps category controls scrollable while staying clear of gesture navigation. */
-@Composable
-private fun HomeBottomBar(
-    snapshot: AppSnapshot,
-    category: String,
-    categoryCounts: Map<String, Int>,
-    subcategories: List<Pair<String, String>>,
-    selectedSubcategory: String?,
-    onSelectCategory: (String) -> Unit,
-    onSelectSubcategory: (String?) -> Unit,
-) {
-    var subcategoriesOpen by rememberSaveable { mutableStateOf(false) }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(start = 8.dp, end = 8.dp, bottom = 10.dp),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 10.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    LazyRow(
-                        Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        items(snapshot.categories, key = { it.id }) { item ->
-                            SoftChip(
-                                label = "${item.arabic}  ${categoryCounts[item.id] ?: 0}",
-                                selected = category == item.id,
-                                accent = if (item.id == "all") null else colorFromHex(item.color),
-                                onClick = { onSelectCategory(item.id) },
-                            )
-                        }
-                    }
-                    if (subcategories.isNotEmpty()) {
-                        SoftChip(
-                            label = when {
-                                selectedSubcategory != null -> "Sub ✓"
-                                subcategoriesOpen -> "Sub ⌃"
-                                else -> "Sub ⌄"
-                            },
-                            selected = subcategoriesOpen || selectedSubcategory != null,
-                            onClick = { subcategoriesOpen = !subcategoriesOpen },
-                        )
-                    }
-                }
-                if (subcategories.isNotEmpty() && subcategoriesOpen) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        SoftChip(
-                            label = "All",
-                            selected = selectedSubcategory == null,
-                            onClick = { onSelectSubcategory(null) },
-                        )
-                        subcategories.forEach { (key, label) ->
-                            SoftChip(
-                                label = label,
-                                selected = selectedSubcategory == key,
-                                onClick = { onSelectSubcategory(key) },
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

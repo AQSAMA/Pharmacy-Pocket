@@ -51,6 +51,7 @@ data class Category(
     val label: String,
     val arabic: String,
     val color: String,
+    val parentId: String? = null,
 )
 
 enum class ThemePreference(val label: String) {
@@ -66,6 +67,7 @@ data class AppSnapshot(
     val currency: String,
     val themePreference: ThemePreference,
     val trashCount: Int = 0,
+    val categoryView: CategoryView = CategoryView.BREADCRUMBS,
 )
 
 data class TrashedMedicine(
@@ -216,6 +218,7 @@ fun resolveCategoryImport(
     require(count <= PharmacyDefaults.maxCategories) {
         "Pharmacy Pocket supports up to ${PharmacyDefaults.maxCategories} categories."
     }
+    validateCategoryTree(complete)
     return complete
 }
 

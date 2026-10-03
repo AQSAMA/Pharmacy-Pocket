@@ -124,3 +124,54 @@ To run the supplied workbook integration test without committing the source file
 ```sh
 PHARMACY_SPREADSHEET_FIXTURE=/path/to/products-price.xlsx gradle testDebugUnitTest
 ```
+
+## Custom fields, nested folders, and imported actions
+
+In any medicine editor, open **Custom fields & card layout**. Add a label and value,
+choose a color (or leave it empty for the theme color), and turn **Show on card** on
+or off. Hold a field to drag it between **Above name**, **Below price**, and
+**Card bottom**, or reorder it among the other fields. The editor lifts the dragged
+field, highlights its target, and scrolls near the list edges. Arrow buttons and
+position chips provide alternatives to dragging. Save the medicine to persist the
+layout. Source fields can also be edited and styled here; source price fields stay
+separate from your own main-list price. Colors apply to cards; details use the theme
+colors for long-form reading. Field order, color, and placement survive JSON backups,
+Trash/restore, and import-settings updates for retained fields.
+
+In **Settings > Categories**, create or edit a category and choose its **Parent
+folder**. Folders can contain further folders without a fixed depth limit (up to
+256 category definitions per list). A medicine belongs to its selected folder;
+browsing a parent includes medicines from all descendants. Existing subcategories
+and mapped spreadsheet category levels appear as children without rewriting existing
+records. Repeated folder names in different branches remain separate. Cyclic or
+missing parents are rejected.
+
+Choose a navigation style in **Settings > Category navigation**:
+
+- **Breadcrumbs**: a compact path and horizontally scrolling children; the default.
+- **Folders**: two-column folder tiles and medicine counts.
+- **Tree**: expand/collapse branches and select a folder.
+- **Columns**: adjacent independently scrolling folder levels.
+- **Floating explorer**: a compact path with a bottom sheet for browsing the tree.
+
+All five views share the same hierarchy and selection behavior. The choice is saved
+per list. The breadcrumb path lets you return to any ancestor or All.
+
+In an imported medication’s details, open **Copy, move or merge**:
+
+- **Copy** to My medications or another imported list. The source stays available.
+- **Move** to either destination. The source goes to its list’s Trash and is not
+  silently recreated when import settings change.
+- **Merge** into an explicitly selected existing medication in My medications.
+  Review the common name and both prices that will be retained. Original/scientific
+  names, source prices, notes, description, extra fields, photo and package codes are
+  brought in. The destination’s ID, category, favorite and date added stay unchanged.
+  Existing personal custom fields are retained. An imported photo replaces the
+  destination photo when available; otherwise the existing photo stays. Source notes
+  and description replace those destination fields, including empty values. The source
+  stays in place by default; optionally move it to Trash after merging.
+
+Code conflicts or more than 20 combined codes block the operation without modifying
+records. Transfers use the existing attached-database transaction for medication,
+photo and source-Trash writes. Original source price text and currency remain in
+fields rather than becoming your editable main-list price.

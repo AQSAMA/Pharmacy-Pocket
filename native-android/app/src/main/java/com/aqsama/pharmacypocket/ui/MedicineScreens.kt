@@ -105,7 +105,6 @@ internal fun MedicineEditorScreen(
     val imported = existing?.imported == true || importedTemplate != null
     var fieldsJson by rememberSaveable(medicineId) { mutableStateOf(fieldsToJson(existing?.importedFields ?: importedTemplate.orEmpty()).toString()) }
     val importedFields = remember(fieldsJson) { fieldsFromJson(JSONArray(fieldsJson)) }
-    var importedExpanded by rememberSaveable(medicineId) { mutableStateOf(false) }
     val fallbackCategory = initialCategory
         ?.takeIf { candidate -> candidate != "all" && snapshot.categories.any { it.id == candidate } }
         ?: snapshot.categories.firstOrNull { it.id != "all" }?.id
@@ -264,20 +263,9 @@ internal fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
-                    if (!imported && importedFields.isNotEmpty()) {
-                        EditorSectionButton("≡", "Source details", "Original names, prices and custom fields", importedExpanded, { importedExpanded = !importedExpanded })
-                        if (importedExpanded) ImportedFields(importedFields, compact = false)
-                    }
+                    CustomFieldsDesigner(importedFields) { fields -> fieldsJson = fieldsToJson(fields).toString() }
 
-                    if (imported) {
-                        importedFields.filter { it.onCard }.forEach { field ->
-                            Field(field.label, field.value, { value -> fieldsJson = fieldsToJson(importedFields.map { if (it.key == field.key) it.copy(value = value.take(com.aqsama.pharmacypocket.data.SpreadsheetLimits.maxCellLength)) else it }).toString() })
-                        }
-                        EditorSectionButton("≡", "Imported fields", "${importedFields.size} mapped fields · categories & details", importedExpanded, { importedExpanded = !importedExpanded })
-                        if (importedExpanded) importedFields.filterNot { it.onCard }.forEach { field ->
-                            Field(field.label, field.value, { value -> fieldsJson = fieldsToJson(importedFields.map { if (it.key == field.key) it.copy(value = value.take(com.aqsama.pharmacypocket.data.SpreadsheetLimits.maxCellLength)) else it }).toString() })
-                        }
-                    } else {
+                    if (!imported) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Category", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
@@ -292,7 +280,7 @@ internal fun MedicineEditorScreen(
                             ) {
                                 snapshot.categories.filter { it.id != "all" }.forEach { item ->
                                     SoftChip(
-                                        label = item.arabic,
+                                        label = com.aqsama.pharmacypocket.data.categoryAncestors(item.id, snapshot.categories).joinToString(" › ") { it.arabic },
                                         selected = category == item.id,
                                         accent = colorFromHex(item.color),
                                         onClick = {
@@ -905,7 +893,7 @@ fun MedicineDetailScreen(
                                 }
                             }
                         }
-                        if (onMoveToMain != null) OutlinedButton(onClick = { onMoveToMain(item) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Move to My medications") }
+                        if (onMoveToMain != null) OutlinedButton(onClick = { onMoveToMain(item) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Copy, move or merge") }
                         if (item.importedFields.isNotEmpty()) {
                             Text(if (item.imported) "Imported details" else "Source details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             ImportedFields(item.importedFields, compact = false, large = snapshot.largeText)

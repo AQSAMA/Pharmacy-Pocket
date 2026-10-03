@@ -18,7 +18,7 @@ enum class ImportField(val label: String, val categoryLevel: Int = 0) {
 enum class PriceFormat(val label: String) { DOT_DECIMAL("1,234.56"), COMMA_DECIMAL("1.234,56") }
 
 data class ColumnMapping(val column: Int, val label: String, val field: ImportField, val onCard: Boolean = false, val priceFormat: PriceFormat = PriceFormat.DOT_DECIMAL)
-data class ImportedField(val key: String, val label: String, val value: String, val field: ImportField, val onCard: Boolean, val priceFormat: PriceFormat = PriceFormat.DOT_DECIMAL)
+data class ImportedField(val key: String, val label: String, val value: String, val field: ImportField, val onCard: Boolean, val priceFormat: PriceFormat = PriceFormat.DOT_DECIMAL, val color: String? = null, val placement: FieldPlacement = FieldPlacement.BODY)
 data class SpreadsheetRow(val number: Int, val cells: List<String>)
 data class SpreadsheetSheet(val name: String, val rows: List<SpreadsheetRow>)
 data class SpreadsheetWorkbook(val sheets: List<SpreadsheetSheet>)
@@ -39,7 +39,7 @@ object SpreadsheetLimits {
 
 fun fieldsToJson(fields: List<ImportedField>): JSONArray = JSONArray().apply {
     fields.forEach { put(JSONObject().put("key", it.key).put("label", it.label).put("value", it.value)
-        .put("field", it.field.name).put("onCard", it.onCard).put("priceFormat", it.priceFormat.name)) }
+        .put("field", it.field.name).put("onCard", it.onCard).put("priceFormat", it.priceFormat.name).put("color", it.color).put("placement", it.placement.name)) }
 }
 
 fun fieldsFromJson(array: JSONArray?): List<ImportedField> {
@@ -50,7 +50,9 @@ fun fieldsFromJson(array: JSONArray?): List<ImportedField> {
         val value = obj.getString("value")
         val label = obj.getString("label")
         require(value.length <= SpreadsheetLimits.maxCellLength && label.length in 1..200) { "A custom field is too long." }
-        ImportedField(obj.getString("key"), label, value, ImportField.valueOf(obj.getString("field")), obj.optBoolean("onCard"), PriceFormat.valueOf(obj.optString("priceFormat", PriceFormat.DOT_DECIMAL.name)))
+        ImportedField(obj.getString("key"), label, value, ImportField.valueOf(obj.getString("field")), obj.optBoolean("onCard"), PriceFormat.valueOf(obj.optString("priceFormat", PriceFormat.DOT_DECIMAL.name)),
+            obj.optString("color").takeIf { it.isNotEmpty() && it != "null" }?.also { require(Regex("^#[0-9a-fA-F]{6}$").matches(it)) { "Invalid field color." } },
+            FieldPlacement.valueOf(obj.optString("placement", FieldPlacement.BODY.name)))
     }.also { require(it.map { field -> field.key }.distinct().size == it.size) { "Duplicate custom field keys." } }
 }
 

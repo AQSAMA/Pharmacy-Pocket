@@ -21,10 +21,10 @@ internal fun ImportedFields(fields: List<ImportedField>, compact: Boolean, large
             visible.forEach { field ->
                 val wide = !twoColumns || field.value.length > 55
                 Column(Modifier.width(if (wide) availableWidth else (availableWidth - 12.dp) / 2), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(field.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(field.label, style = MaterialTheme.typography.labelMedium, color = if (compact) field.color?.let(::colorFromHex) ?: MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(field.value, style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
                         fontWeight = if (field.field.isPrice) FontWeight.Bold else FontWeight.Normal,
-                        color = if (field.field.isPrice) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        color = if (compact && field.color != null) colorFromHex(field.color) else if (field.field.isPrice) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         maxLines = if (compact && !field.field.isPrice) 2 else Int.MAX_VALUE, overflow = TextOverflow.Ellipsis)
                 }
             }
