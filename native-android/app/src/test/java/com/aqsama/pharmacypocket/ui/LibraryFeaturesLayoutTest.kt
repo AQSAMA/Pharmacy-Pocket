@@ -83,11 +83,11 @@ class LibraryFeaturesLayoutTest {
         }
         compose.onNodeWithText("1,000,000").assertExists()
         compose.onNodeWithText("Hidden value").assertDoesNotExist()
-        val top = compose.onNodeWithText("Top value").fetchSemanticsNode().boundsInRoot.top
-        val name = compose.onNodeWithText("My medicine").fetchSemanticsNode().boundsInRoot.top
-        val body = compose.onNodeWithText("Body value").fetchSemanticsNode().boundsInRoot.top
-        val bottom = compose.onNodeWithText("Bottom value").fetchSemanticsNode().boundsInRoot.top
-        assertTrue(top < name && name < body && body < bottom)
+        val top = compose.onNodeWithText("Top value", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+        val name = compose.onNodeWithText("My medicine", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+        val body = compose.onNodeWithText("Body value", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+        val bottom = compose.onNodeWithText("Bottom value", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Expected top < name < body < bottom; got $top, $name, $body, $bottom", top < name && name < body && body < bottom)
         capture("custom-fields-rtl")
     }
 

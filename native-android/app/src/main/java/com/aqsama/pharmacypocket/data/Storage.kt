@@ -740,9 +740,11 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
                 fun mapped(role: ImportField, fallback: String): String = mappings.firstOrNull { it.field == role }?.let { saved(it.column) } ?: fallback
                 syncImportedFields(prior.copy(name = mapped(ImportField.NAME, fresh.name), note = mapped(ImportField.NOTE, fresh.note),
                     description = mapped(ImportField.DESCRIPTION, fresh.description), revision = prior.revision + 1,
-                    importedFields = fresh.importedFields.map { field -> field.copy(value = field.key.removePrefix("column-").toIntOrNull()?.let(::saved) ?: field.value,
+                    importedFields = (fresh.importedFields.map { field -> field.copy(value = field.key.removePrefix("column-").toIntOrNull()?.let(::saved) ?: field.value,
                         color = prior.importedFields.firstOrNull { it.key == field.key }?.color,
-                        placement = prior.importedFields.firstOrNull { it.key == field.key }?.placement ?: FieldPlacement.BODY) } + prior.importedFields.filter { it.key.startsWith("custom-") }))
+                        placement = prior.importedFields.firstOrNull { it.key == field.key }?.placement ?: FieldPlacement.BODY) } + prior.importedFields.filter { it.key.startsWith("custom-") }).sortedBy { field ->
+                        prior.importedFields.indexOfFirst { it.key == field.key }.takeIf { it >= 0 } ?: Int.MAX_VALUE
+                    }))
             } + old.filterNot { it.id.startsWith("import-") }
             database.reconfigureImport(next, catalog, requireNotNull(listId), name, mappings, selection)
         }
@@ -764,9 +766,9 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
                 targets.firstOrNull { it.id == targetId } ?: error("The merge target is no longer available.")
             }
             val item = if (target != null) mergeMedicationDetails(target, source, preferences.currency()) else {
-                val name = commonName?.trim() ?: source.name
+                val name = if (destination.listId == null) commonName?.trim() ?: source.name else source.name
                 require(name.isNotEmpty() && name.length <= SpreadsheetLimits.maxCellLength)
-                val chosenPrice = price ?: source.official
+                val chosenPrice = if (destination.listId == null) price ?: source.official else source.official
                 require(chosenPrice in 0..9_007_199_254_740_991L)
                 source.copy(id = "manual-${java.util.UUID.randomUUID()}", name = name,
                     category = if (destination.listId == null) category ?: "tablets" else source.category,

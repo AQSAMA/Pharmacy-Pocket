@@ -37,8 +37,11 @@ fun validateCategoryTree(categories: List<Category>) {
 
 data class BrowseFolder(val key: String, val label: String, val path: List<String>, val count: Int, val categoryId: String?)
 data class LibraryBrowser(val folders: List<BrowseFolder>, val medicinePaths: Map<String, List<String>>) {
-    fun children(path: List<String>) = folders.filter { it.path.size == path.size + 1 && it.path.take(path.size) == path }
-    fun label(key: String) = folders.firstOrNull { it.key == key }?.label ?: key
+    private val byParent = folders.groupBy { it.path.dropLast(1) }
+    private val byKey = folders.associateBy { it.key }
+    fun children(path: List<String>) = byParent[path].orEmpty()
+    fun label(key: String) = byKey[key]?.label ?: key
+    fun folder(key: String) = byKey[key]
 }
 
 /** Stable, ancestry-qualified keys keep identically named subfolders separate. */
@@ -47,12 +50,15 @@ fun buildLibraryBrowser(snapshot: AppSnapshot): LibraryBrowser {
     fun add(path: List<String>, label: String, categoryId: String?) {
         folders.putIfAbsent(path.last(), BrowseFolder(path.last(), label, path, 0, categoryId))
     }
+    val categoryPaths = snapshot.categories.filter { it.id != "all" }.associate { category ->
+        category.id to categoryAncestors(category.id, snapshot.categories).map { "category:${it.id}" }
+    }
     snapshot.categories.filter { it.id != "all" }.forEach { category ->
-        val path = categoryAncestors(category.id, snapshot.categories).map { "category:${it.id}" }
+        val path = categoryPaths.getValue(category.id)
         add(path, category.label, category.id)
     }
     val paths = snapshot.items.associate { item ->
-        val path = categoryAncestors(item.category, snapshot.categories).map { "category:${it.id}" }.toMutableList()
+        val path = categoryPaths[item.category].orEmpty().toMutableList()
         val deeper = if (item.imported) item.importedFields.filter { it.field.categoryLevel > 1 }.sortedBy { it.field.categoryLevel }.map { it.value.trim().ifBlank { "Uncategorized" } }
             else listOf(subcategoryLabel(item.subcategory)).filter { it != PharmacyDefaults.generalSubcategory }
         deeper.forEach { label ->

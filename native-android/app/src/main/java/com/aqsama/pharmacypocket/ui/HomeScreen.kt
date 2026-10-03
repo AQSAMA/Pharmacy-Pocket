@@ -134,7 +134,7 @@ internal fun HomeScreen(
     var browsePath by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val browser = remember(snapshot.items, snapshot.categories) { com.aqsama.pharmacypocket.data.buildLibraryBrowser(snapshot) }
     LaunchedEffect(browser) { if (browsePath.isNotEmpty() && browser.folders.none { it.path == browsePath }) browsePath = emptyList() }
-    val browseCategory = browsePath.asReversed().firstNotNullOfOrNull { key -> browser.folders.firstOrNull { it.key == key }?.categoryId }
+    val browseCategory = browsePath.asReversed().firstNotNullOfOrNull { key -> browser.folder(key)?.categoryId }
     val addCategory = browseCategory ?: if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
 

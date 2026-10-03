@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.zIndex
 import com.aqsama.pharmacypocket.data.*
 import kotlinx.coroutines.delay
@@ -45,6 +47,7 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
         var dragKey by remember { mutableStateOf<String?>(null) }
         var origin by remember { mutableStateOf(Offset.Zero) }
         var pointer by remember { mutableStateOf(Offset.Zero) }
+        var grabOffset by remember { mutableStateOf(Offset.Zero) }
         val latestFields by rememberUpdatedState(fields)
         val latestChange by rememberUpdatedState(onChange)
         val dropKey = bounds.entries.lastOrNull { pointer in it.value }?.key
@@ -86,7 +89,21 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
                     }, enabled = fields.size < SpreadsheetLimits.maxFields) { Text("+ Add field") }
                     TextButton(onClick = { open = false }) { Text("Done") }
                 }
-                LazyColumn(state = state, modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).onGloballyPositioned { listBounds = it.boundsInRoot() }, contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.fillMaxWidth().onGloballyPositioned { listBounds = it.boundsInRoot() }) {
+                LazyColumn(state = state, modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).pointerInput(Unit) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { offset ->
+                            pointer = listBounds.topLeft + offset
+                            val row = bounds.entries.firstOrNull { !it.key.startsWith("zone:") && pointer in it.value }
+                            if (row != null) {
+                                origin = pointer; grabOffset = pointer - row.value.topLeft
+                                dragKey = row.key; Haptics.selection(view)
+                            }
+                        },
+                        onDrag = { change, delta -> if (dragKey != null) { change.consume(); pointer += delta } },
+                        onDragEnd = { drop() }, onDragCancel = { dragKey = null },
+                    )
+                }, contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FieldPlacement.entries.forEach { placement ->
                         item(key = "zone:${placement.name}") {
                             Surface(Modifier.fillMaxWidth().testTag("card-zone:${placement.name}").onGloballyPositioned { bounds["zone:${placement.name}"] = it.boundsInRoot() }, shape = MaterialTheme.shapes.medium,
@@ -100,20 +117,8 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
                             val lift by animateFloatAsState(if (dragging) 1.025f else 1f)
                             Surface(
                                 modifier = Modifier.fillMaxWidth().testTag("card-field:${field.key}").animateItem().zIndex(if (dragging) 2f else 0f)
-                                    .onGloballyPositioned { if (!dragging) bounds[field.key] = it.boundsInRoot() }
-                                    .graphicsLayer {
-                                        scaleX = lift; scaleY = lift
-                                        if (dragging) { translationX = pointer.x - origin.x; translationY = pointer.y - origin.y }
-                                    }.pointerInput(field.key) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = { offset ->
-                                                origin = (bounds[field.key]?.topLeft ?: Offset.Zero) + offset
-                                                pointer = origin; dragKey = field.key; Haptics.selection(view)
-                                            },
-                                            onDrag = { change, delta -> change.consume(); pointer += delta },
-                                            onDragEnd = { drop() }, onDragCancel = { dragKey = null },
-                                        )
-                                    },
+                                    .onGloballyPositioned { bounds[field.key] = it.boundsInRoot() }
+                                    .graphicsLayer { alpha = if (dragging) 0.35f else 1f; scaleX = lift; scaleY = lift },
                                 shape = MaterialTheme.shapes.medium,
                                 color = if (dropKey == field.key && dragKey != null && !dragging) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
                                 shadowElevation = if (dragging) 10.dp else 0.dp,
@@ -140,6 +145,16 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, onChange: (List<I
                             }
                         }
                     }
+                }
+                fields.firstOrNull { it.key == dragKey }?.let { field ->
+                    Surface(Modifier.fillMaxWidth().offset { IntOffset((pointer.x - origin.x).roundToInt(), (pointer.y - listBounds.top - grabOffset.y).roundToInt()) }.zIndex(3f),
+                        shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, shadowElevation = 12.dp) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(field.label, style = MaterialTheme.typography.titleMedium)
+                            Text(field.value.ifBlank { "Empty" }, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
                 }
             }
         }
