@@ -1,6 +1,8 @@
 package com.aqsama.pharmacypocket.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -56,10 +58,10 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
             } else {
                 Text("Choose a medication in My medications", style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(search, { search = it }, label = { Text("Search your common name") }, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-                val results = remember(search, main.items) { main.items.filter { normalizeSearch(it.name).contains(normalizeSearch(search.trim())) } }
+                val results = remember(search, main.items) { val needle = normalizeSearch(search.trim()); main.items.filter { normalizeSearch(it.name).contains(needle) } }
                 if (results.isEmpty()) Text("No medications match.")
-                Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
-                    results.forEach { medicine ->
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                    items(results, key = { it.id }) { medicine ->
                         FilterChip(selected = targetId == medicine.id, onClick = { targetId = medicine.id }, enabled = !busy, label = { Text("${medicine.name} · ${formatPrice(medicine.official)} ${main.currency}") })
                     }
                 }

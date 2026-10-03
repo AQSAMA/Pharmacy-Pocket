@@ -31,7 +31,7 @@ internal fun CategoryBrowser(browser: LibraryBrowser, path: List<String>, view: 
         OutlinedButton(onClick = { onSelect(node.path) }, modifier = modifier, shape = MaterialTheme.shapes.medium, contentPadding = PaddingValues(12.dp)) {
             Column {
                 Text(node.label, style = MaterialTheme.typography.labelLarge)
-                Text("${node.count} medicines", style = MaterialTheme.typography.bodySmall)
+                Text(if (node.count == 1) "1 medicine" else "${node.count} medicines", style = MaterialTheme.typography.bodySmall)
             }
         }
     }

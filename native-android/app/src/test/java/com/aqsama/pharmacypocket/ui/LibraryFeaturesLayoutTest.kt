@@ -1,5 +1,8 @@
 package com.aqsama.pharmacypocket.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import org.robolectric.shadows.ShadowDialog
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.foundation.layout.Box
@@ -111,8 +114,13 @@ class LibraryFeaturesLayoutTest {
 
     private fun capture(name: String) {
         System.getenv("PHARMACY_SCREENSHOTS_DIR")?.let { dir ->
+            val dialog = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }
+            val decor = dialog?.window?.decorView
+            val bitmap = if (decor != null && decor.width > 0 && decor.height > 0) {
+                Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888).also { decor.draw(Canvas(it)) }
+            } else compose.onRoot().captureToImage().asAndroidBitmap()
             java.io.File(dir, "$name.png").apply { parentFile?.mkdirs() }.outputStream().use {
-                compose.onAllNodes(isRoot()).let { roots -> roots[roots.fetchSemanticsNodes().lastIndex] }.captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
         }
     }

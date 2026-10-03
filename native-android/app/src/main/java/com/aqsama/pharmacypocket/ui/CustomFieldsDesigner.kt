@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
-import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,7 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
@@ -110,14 +109,16 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, previewName: Stri
                             pointer = listBounds.topLeft + longPress.position
                             origin = downPosition; grabOffset = downPosition - row.value.topLeft
                             dragKey = row.key; Haptics.selection(view)
-                            val released = drag(longPress.id) { change ->
-                                pointer = listBounds.topLeft + change.position
-                                change.consume()
-                            }
-                            if (released) {
-                                currentEvent.changes.forEach { change -> if (change.changedToUp()) change.consume() }
-                                drop()
-                            } else dragKey = null
+                            try {
+                                while (true) {
+                                    // Consume before LazyColumn and the sheet can start their own scroll drag.
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == longPress.id } ?: break
+                                    pointer = listBounds.topLeft + change.position
+                                    change.consume()
+                                    if (!change.pressed) { drop(); break }
+                                }
+                            } finally { dragKey = null }
                         }
                     }
                 }, contentPadding = PaddingValues(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -137,6 +138,7 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, previewName: Stri
                     }
                     FieldPlacement.entries.forEach { placement ->
                         item(key = "zone:${placement.name}") {
+                            DisposableEffect(placement) { onDispose { bounds.remove("zone:${placement.name}") } }
                             Surface(Modifier.fillMaxWidth().testTag("card-zone:${placement.name}").onGloballyPositioned { bounds["zone:${placement.name}"] = it.boundsInRoot() }, shape = MaterialTheme.shapes.medium,
                                 color = if (dragKey != null && dropKey == "zone:${placement.name}") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh) {
                                 Text(placement.label, Modifier.padding(16.dp), style = MaterialTheme.typography.labelLarge)

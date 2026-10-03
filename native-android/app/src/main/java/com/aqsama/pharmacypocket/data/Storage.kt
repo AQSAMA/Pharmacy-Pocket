@@ -790,7 +790,7 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             item.codes.forEach { require(it.value !in conflicts) { "A package code already belongs to ${conflicts[it.value]}. Resolve the code conflict first." } }
             val destinationCategories = if (destination.listId != null) {
                 val current = destination.preferences.categories()
-                mergeCategoryDefinitions(current, preferences.categories().filter { candidate -> current.none { it.id == candidate.id } })
+                mergeCategoryDefinitions(current, categoryAncestors(source.category, preferences.categories()).filter { candidate -> current.none { it.id == candidate.id } })
             } else destination.preferences.categories()
             validateCategoryTree(destinationCategories)
             require(destinationCategories.count { it.id != "all" } <= PharmacyDefaults.maxCategories) { "Too many categories in the destination list." }

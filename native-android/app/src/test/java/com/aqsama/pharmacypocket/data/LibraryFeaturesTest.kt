@@ -71,7 +71,10 @@ class LibraryFeaturesTest {
         val main = PharmacyRepository(context)
         try {
             val fields = listOf(ImportedField("column-1", "Scientific", "Amoxicillin", ImportField.SCIENTIFIC, true))
-            val original = medicine("source", "Imported brand").copy(imported = true, note = "Imported note", importedFields = fields,
+            source.saveCategory(Category("parent", "Parent", "Parent", "#2f856d"))
+            source.saveCategory(Category("leaf", "Leaf", "Leaf", "#596aab", "parent"))
+            source.saveCategory(Category("unrelated", "Unrelated", "Unrelated", "#596aab"))
+            val original = medicine("source", "Imported brand").copy(category = "leaf", imported = true, note = "Imported note", importedFields = fields,
                 codes = listOf(MedicineCode(CodeKind.BARCODE, "123456789")))
             val jpeg = ByteArrayOutputStream().also { output ->
                 Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { compress(Bitmap.CompressFormat.JPEG, 80, output); recycle() }
@@ -80,6 +83,8 @@ class LibraryFeaturesTest {
             source.transferMedication(original.id, other, false)
             assertEquals(1, source.loadSnapshot().items.size)
             assertEquals(fields, other.loadSnapshot().items.single().importedFields)
+            assertEquals("parent", other.loadSnapshot().categories.first { it.id == "leaf" }.parentId)
+            assertFalse(other.loadSnapshot().categories.any { it.id == "unrelated" })
             assertArrayEquals(jpeg, other.loadPhoto(other.loadSnapshot().items.single().id))
             val own = medicine("own", "My common name").copy(favorite = true, importedFields = listOf(ImportedField("custom-note", "Shelf", "A4", ImportField.CUSTOM, true)))
             main.saveMedicine(own)
