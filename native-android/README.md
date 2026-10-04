@@ -95,12 +95,12 @@ JSON backups preserve medication fields but do not embed the spreadsheet source 
 
 Switch between **My medications** and imported lists from the side menu. Imported
 items use the existing cards, favorites, sorting, normalized search, photo/code
-capture, editor, details and Trash. **Tune** exposes deeper category filters.
-The editor's **Imported fields** section contains fields omitted from the card.
+capture, editor, details and Trash. The category browser exposes deeper folders; **Tune** controls sorting and reading options.
+The editor’s **Custom fields & card layout** sheet contains fields omitted from the card.
 The prepared search index stays in memory while visiting details, so returning to a
 large unchanged list does not prepare it again. Switching lists releases that index.
 
-From an imported medicine's details, choose **Move to My medications**. Set a common
+From an imported medicine’s details, choose **Copy, move or merge**, select **Move**, then **My medications**. Set a common
 name, your pharmacy price and a main-list category. Its main card shows the common name,
 original name underneath (scientific name if the names match), and your chosen price.
 All source fields/prices/currency, notes, photo, codes and favorite status remain in the

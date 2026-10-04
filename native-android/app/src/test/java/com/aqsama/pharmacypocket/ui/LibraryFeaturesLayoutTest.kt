@@ -71,7 +71,7 @@ class LibraryFeaturesLayoutTest {
 
     @Test fun manualCardHasFieldsInEachPositionAndKeepsFullPrice() {
         val fields = listOf(
-            ImportedField("custom-top", "Top label", "Top value", ImportField.CUSTOM, true, color = "#2f856d", placement = FieldPlacement.TOP),
+            ImportedField("source-name", "Top label", "Top value", ImportField.CUSTOM, true, color = "#2f856d", placement = FieldPlacement.TOP),
             ImportedField("custom-body", "Body label", "Body value", ImportField.CUSTOM, true),
             ImportedField("custom-bottom", "Bottom label", "Bottom value", ImportField.CUSTOM, true, placement = FieldPlacement.FOOTER),
             ImportedField("custom-hidden", "Hidden label", "Hidden value", ImportField.CUSTOM, false),
@@ -87,6 +87,7 @@ class LibraryFeaturesLayoutTest {
         }
         compose.onNodeWithText("1,000,000").assertExists()
         compose.onNodeWithText("Hidden value").assertDoesNotExist()
+        compose.onAllNodesWithText("Top value", useUnmergedTree = true).assertCountEquals(1)
         val top = compose.onNodeWithText("Top value", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
         val name = compose.onNodeWithText("My medicine", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top
         val body = compose.onNodeWithText("Body value", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top

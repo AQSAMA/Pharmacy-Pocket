@@ -254,9 +254,9 @@ fun MedicineCard(
                                         textAlign = TextAlign.Start,
                                         style = TextStyle(textDirection = TextDirection.Content),
                                     )
-                                    if (!item.imported && item.importedFields.any { it.key == "source-name" }) {
+                                    if (!item.imported && item.importedFields.any { it.key == "source-name" && !it.onCard }) {
                                         val subtitle = item.importedFields.firstOrNull { it.key == "source-name" }?.value?.takeIf { it.isNotBlank() && it != item.name }
-                                            ?: item.importedFields.firstOrNull { it.field == com.aqsama.pharmacypocket.data.ImportField.SCIENTIFIC }?.value?.takeIf { it.isNotBlank() && it != item.name }
+                                            ?: item.importedFields.firstOrNull { it.field == com.aqsama.pharmacypocket.data.ImportField.SCIENTIFIC && !it.onCard }?.value?.takeIf { it.isNotBlank() && it != item.name }
                                         subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                                     }
                                     if (!large && item.note.isNotBlank() && item.importedFields.none { it.key == "source-name" }) {
