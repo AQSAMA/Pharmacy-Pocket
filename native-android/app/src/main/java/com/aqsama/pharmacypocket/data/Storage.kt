@@ -569,10 +569,6 @@ private class PreferenceStore(private val context: Context, private val listId: 
         prefs.edit().putString("currency-name", value.trim().ifEmpty { "IQD" }.take(24)).apply()
     }
 
-    fun categoryView(): CategoryView = runCatching { CategoryView.valueOf(prefs.getString("category-view", CategoryView.BREADCRUMBS.name)!!) }.getOrDefault(CategoryView.BREADCRUMBS)
-
-    fun setCategoryView(view: CategoryView) { prefs.edit().putString("category-view", view.name).apply() }
-
     fun categories(): List<Category> {
         val defaults = if (listId == null) PharmacyDefaults.categories else listOf(PharmacyDefaults.categories.first())
         val raw = prefs.getString("category-definitions-v1", null) ?: return defaults
@@ -594,7 +590,6 @@ private class PreferenceStore(private val context: Context, private val listId: 
                     obj.getString("label"),
                     obj.getString("arabic"),
                     obj.getString("color"),
-                    obj.optString("parentId").takeUnless { it.isEmpty() || it == "null" },
                 )
                 if (isValidCategory(category)) add(category)
             }
@@ -609,7 +604,7 @@ private class PreferenceStore(private val context: Context, private val listId: 
                     .put("id", category.id)
                     .put("label", category.label)
                     .put("arabic", category.arabic)
-                    .put("color", category.color.lowercase(Locale.ROOT)).put("parentId", category.parentId),
+                    .put("color", category.color.lowercase(Locale.ROOT)),
             )
         }
         return array.toString()
@@ -647,7 +642,6 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             currency = preferences.currency(),
             themePreference = globalPreferences.themePreference(),
             trashCount = database.trashCount(),
-            categoryView = preferences.categoryView(),
         )
     }
 
@@ -790,9 +784,8 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             item.codes.forEach { require(it.value !in conflicts) { "A package code already belongs to ${conflicts[it.value]}. Resolve the code conflict first." } }
             val destinationCategories = if (destination.listId != null) {
                 val current = destination.preferences.categories()
-                mergeCategoryDefinitions(current, categoryAncestors(source.category, preferences.categories()).filter { candidate -> current.none { it.id == candidate.id } })
+                mergeCategoryDefinitions(current, preferences.categories().filter { it.id == source.category }.filter { candidate -> current.none { it.id == candidate.id } })
             } else destination.preferences.categories()
-            validateCategoryTree(destinationCategories)
             require(destinationCategories.count { it.id != "all" } <= PharmacyDefaults.maxCategories) { "Too many categories in the destination list." }
             require(item.category != "all") { "Choose a medication category." }
             val photo = database.loadPhoto(id) ?: target?.let { destination.database.loadPhoto(it.id) }
@@ -818,10 +811,6 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
 
     suspend fun toggleFavorite(id: String): Boolean? = withContext(Dispatchers.IO) {
         mutex.withLock { database.toggleFavorite(id) }
-    }
-
-    suspend fun setCategoryView(value: CategoryView): AppSnapshot = withContext(Dispatchers.IO) {
-        mutex.withLock { preferences.setCategoryView(value); snapshotUnsafe() }
     }
 
     suspend fun setLargeText(value: Boolean): AppSnapshot = withContext(Dispatchers.IO) {
@@ -855,7 +844,6 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
                 "You can store up to ${PharmacyDefaults.maxCategories} categories."
             }
             val next = mergeCategoryDefinitions(current, listOf(category))
-            validateCategoryTree(next)
             preferences.setCategories(next)
             snapshotUnsafe()
         }
@@ -892,7 +880,6 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
                 mode,
                 data.medicines.map { it.category },
             )
-            validateCategoryTree(nextCategories)
             when (mode) {
                 ImportMode.MERGE -> database.mergeMedicines(data.medicines, data.photos)
                 ImportMode.REPLACE -> database.replaceMedicines(data.medicines, data.photos, data.sourceVersion >= 3)

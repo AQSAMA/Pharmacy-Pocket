@@ -44,30 +44,9 @@ class LibraryFeaturesLayoutTest {
     @get:Rule val compose = createComposeRule()
     @Before fun bindMain() { Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher()) }
     @After fun resetMain() { Dispatchers.resetMain() }
-    private val categories = listOf(Category("all", "All", "All", "#2f856d"), Category("root", "Medicines", "أدوية", "#2f856d"), Category("child", "Pain", "ألم", "#596aab", "root"))
+    private val categories = listOf(Category("all", "All", "All", "#2f856d"), Category("root", "Medicines", "أدوية", "#2f856d"), Category("child", "Pain", "ألم", "#596aab"))
     private val item = Medicine("m", "child", "General", "My medicine", "", official = 1_000_000, discounted = null)
     private val snapshot = AppSnapshot(listOf(item), categories, false, "IQD", ThemePreference.SYSTEM)
-
-    private fun browser(view: CategoryView) {
-        var path by mutableStateOf(emptyList<String>())
-        compose.setContent {
-            PharmacyPocketTheme(ThemePreference.LIGHT) {
-                Box(Modifier.width(320.dp)) { CategoryBrowser(buildLibraryBrowser(snapshot), path, view) { path = it } }
-            }
-        }
-        if (view == CategoryView.FLOATING) compose.onNodeWithText("Browse folders · 1").performClick()
-        when (view) {
-            CategoryView.BREADCRUMBS, CategoryView.TREE, CategoryView.COLUMNS, CategoryView.FLOATING -> compose.onNodeWithText("Medicines · 1").performClick()
-            CategoryView.FOLDERS -> compose.onNodeWithText("Medicines").performClick()
-        }
-        compose.runOnIdle { assertEquals(listOf("category:root"), path) }
-        capture("category-${view.name.lowercase()}")
-    }
-    @Test fun breadcrumbsSelectFolder() = browser(CategoryView.BREADCRUMBS)
-    @Test fun folderTilesSelectFolder() = browser(CategoryView.FOLDERS)
-    @Test fun treeSelectsFolder() = browser(CategoryView.TREE)
-    @Test fun columnsSelectFolder() = browser(CategoryView.COLUMNS)
-    @Test fun floatingExplorerSelectsFolder() = browser(CategoryView.FLOATING)
 
     @Test fun manualCardHasFieldsInEachPositionAndKeepsFullPrice() {
         val fields = listOf(
@@ -99,7 +78,8 @@ class LibraryFeaturesLayoutTest {
     @Test fun draggingFieldAcrossZonesChangesItsPersistedPlacement() {
         var fields by mutableStateOf(listOf(ImportedField("custom-drag", "Dose", "Once daily", ImportField.CUSTOM, true)))
         compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { CustomFieldsDesigner(fields) { fields = it } } }
-        compose.onNodeWithText("Custom fields & card layout · 1").performClick()
+        compose.onNodeWithText("Card fields").performClick()
+        compose.onNodeWithText("Preview").performClick()
         val from = compose.onNodeWithTag("card-field:custom-drag").fetchSemanticsNode().boundsInRoot.topLeft + Offset(20f, 20f)
         val to = compose.onNodeWithTag("card-zone:TOP").fetchSemanticsNode().boundsInRoot.center
         compose.onNodeWithTag("card-field:custom-drag").performTouchInput {
@@ -111,6 +91,73 @@ class LibraryFeaturesLayoutTest {
         compose.waitUntil(3000) { fields.single().placement == FieldPlacement.TOP }
         compose.runOnIdle { assertTrue(fields.single().onCard) }
         capture("card-field-drag")
+    }
+
+
+    @Test fun addFieldColorAndVisibilityAreDirectlyEditable() {
+        var fields by mutableStateOf(emptyList<ImportedField>())
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { CustomFieldsDesigner(fields) { fields = it } } }
+        compose.onNodeWithText("Card fields").performClick()
+        compose.onNodeWithText("Add field").performClick()
+        compose.onNodeWithText("Label").performTextInput("Dose")
+        compose.onNodeWithText("Value").performTextInput("Once daily")
+        compose.onNodeWithContentDescription("Color #2f856d").performClick()
+        compose.onNodeWithText("Apply").performClick()
+        compose.runOnIdle { assertEquals("Dose", fields.single().label); assertEquals("#2f856d", fields.single().color) }
+        compose.onNodeWithContentDescription("Show Dose on card").performClick()
+        compose.runOnIdle { assertFalse(fields.single().onCard) }
+        capture("field-designer")
+    }
+
+    @Test fun copyToAnotherListUsesTheChosenDestination() {
+        var selected: String? = null
+        var remove = true
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) {
+            MoveToMainSheet(item.copy(imported = true), snapshot, listOf(ImportedList("other", "Second list", "CSV", emptyList())), false, {},
+                onTransfer = { destination, delete, _, _, _, merge -> selected = destination; remove = delete; assertNull(merge) })
+        } }
+        compose.onNodeWithTag("transfer-destination").performClick()
+        compose.onNodeWithText("Second list").performClick()
+        compose.onNodeWithTag("transfer-confirm").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals("other", selected); assertFalse(remove) }
+        capture("copy-medication")
+    }
+
+    @Test fun mergeShowsPreservedNameAndPricesAndNeedsATarget() {
+        var mergeId: String? = null
+        var remove = false
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl,
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f, 1.5f)) {
+                MoveToMainSheet(item.copy(id = "source", name = "Imported brand", imported = true), snapshot.copy(items = listOf(item.copy(discounted = 900_000))), emptyList(), false, {},
+                    onTransfer = { _, delete, _, _, _, merge -> mergeId = merge; remove = delete })
+            }
+        } }
+        compose.onNodeWithText("Merge").performClick()
+        compose.onNodeWithTag("transfer-confirm").assertIsNotEnabled()
+        compose.onNodeWithTag("transfer-target").performClick()
+        compose.onNodeWithText("Search").performTextInput("My medicine")
+        compose.onNodeWithTag("picker-medication:m").performClick()
+        compose.onNodeWithText("Name & prices kept").assertExists()
+        compose.onNodeWithText("1,000,000 IQD").assertExists()
+        compose.onNodeWithText("Move source to Trash").performScrollTo().performClick()
+        compose.onNodeWithTag("transfer-confirm").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(item.id, mergeId); assertTrue(remove) }
+        capture("merge-medication-rtl-large")
+    }
+
+    @Test fun transferCannotSubmitTwiceWhileSaving() {
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { MoveToMainSheet(item.copy(imported = true), snapshot, emptyList(), true, {}, { _, _, _, _, _, _ -> fail("Busy transfer submitted") }) } }
+        compose.onNodeWithTag("transfer-confirm").assertIsNotEnabled().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close transfer").assertIsNotEnabled()
+    }
+
+    @Test fun sortAndDisplayChoicesUseNativeControls() {
+        var sort: MedicineSort? = null
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { HomeDisplaySheet(MedicineSort.DEFAULT, false, true, { sort = it }, {}, {}, {}) } }
+        compose.onNodeWithText(MedicineSort.PRICE_ASC.label).performClick()
+        compose.runOnIdle { assertEquals(MedicineSort.PRICE_ASC, sort) }
+        capture("sort-display")
     }
 
     private fun capture(name: String) {

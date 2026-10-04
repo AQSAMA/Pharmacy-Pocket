@@ -3,8 +3,12 @@ package com.aqsama.pharmacypocket.ui
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,14 +87,13 @@ fun tintCategoryColor(hex: String, strength: Float = 0.08f): Color {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScreenTopBar(title: String, onBack: () -> Unit) {
+fun ScreenTopBar(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     TopAppBar(
         title = { Text(title, fontWeight = FontWeight.Bold) },
         navigationIcon = {
-            TextButton(onClick = onBack, modifier = Modifier.size(56.dp)) {
-                Text("‹", fontSize = 30.sp, color = MaterialTheme.colorScheme.secondary)
-            }
+            IconButton(onClick = onBack) { AppIcon(AppSymbol.BACK, "Back") }
         },
+        actions = actions,
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
     )
 }
@@ -102,13 +106,13 @@ fun SoftChip(
     accent: Color? = null,
     onClick: () -> Unit,
 ) {
-    val background = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val background by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, label = "chip selection")
     val foreground = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         modifier = Modifier
             .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(13.dp))
-            .clickable(onClick = onClick),
+            .selectable(selected, role = Role.Button, onClick = onClick),
         shape = RoundedCornerShape(13.dp),
         color = background,
         border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),

@@ -95,12 +95,12 @@ JSON backups preserve medication fields but do not embed the spreadsheet source 
 
 Switch between **My medications** and imported lists from the side menu. Imported
 items use the existing cards, favorites, sorting, normalized search, photo/code
-capture, editor, details and Trash. The category browser exposes deeper folders; **Tune** controls sorting and reading options.
-The editor’s **Custom fields & card layout** sheet contains fields omitted from the card.
+capture, editor, details and Trash. The bottom bar filters categories and traditional subcategories. The sliders button opens sorting and text size.
+The editor’s **Card fields** sheet contains fields omitted from the card.
 The prepared search index stays in memory while visiting details, so returning to a
 large unchanged list does not prepare it again. Switching lists releases that index.
 
-From an imported medicine’s details, choose **Copy, move or merge**, select **Move**, then **My medications**. Set a common
+From an imported medicine’s details, choose **Transfer**, select **Move**, then **My medications**. Set a common
 name, your pharmacy price and a main-list category. Its main card shows the common name,
 original name underneath (scientific name if the names match), and your chosen price.
 All source fields/prices/currency, notes, photo, codes and favorite status remain in the
@@ -125,39 +125,29 @@ To run the supplied workbook integration test without committing the source file
 PHARMACY_SPREADSHEET_FIXTURE=/path/to/products-price.xlsx gradle testDebugUnitTest
 ```
 
-## Custom fields, nested folders, and imported actions
+## Custom card fields and imported actions
 
-In any medicine editor, open **Custom fields & card layout**. Add a label and value,
+In any medicine editor, open **Card fields**. Add a label and value,
 choose a color (or leave it empty for the theme color), and turn **Show on card** on
 or off. Hold a field to drag it between **Above name**, **Below price**, and
 **Card bottom**, or reorder it among the other fields. The editor lifts the dragged
-field, highlights its target, and scrolls near the list edges. Arrow buttons and
-position chips provide alternatives to dragging. Save the medicine to persist the
-layout. **Preview your card** shows the current arrangement while editing. Source fields can also be edited and styled here; source price fields stay
+field, highlights its target, and scrolls near the list edges. The field’s options menu and position chips provide alternatives to dragging. Save the medicine to persist the
+layout. A live **Preview** shows the current arrangement while editing. Use the eye button to show or hide a field, tap its name/value to edit, and use the options menu for placement and accessible reordering. Source fields can also be edited and styled here; source price fields stay
 separate from your own main-list price. Colors apply to cards; details use the theme
 colors for long-form reading. Field order, color, and placement survive JSON backups,
 Trash/restore, and import-settings updates for retained fields.
 
-In **Settings > Categories**, create or edit a category and choose its **Parent
-folder**. Folders can contain further folders without a fixed depth limit (up to
-256 category definitions per list). A medicine belongs to its selected folder;
-browsing a parent includes medicines from all descendants. Existing subcategories
-and mapped spreadsheet category levels appear as children without rewriting existing
-records. Repeated folder names in different branches remain separate. Cyclic or
-missing parents are rejected.
+Categories use the traditional flat category/subcategory controls. Nested folders,
+parent selection, and the five alternative browsers have been removed. Category
+IDs, medicine assignments, and spreadsheet category fields remain intact; backups
+from the earlier trial are read with the category definitions treated as flat.
 
-Choose a navigation style in **Settings > Category navigation**:
+The medicine editor starts with the name and price; add the optional discounted
+price when needed. Save stays pinned, as does Edit on the detail screen. Photo/codes
+and notes retain their existing expandable sections. Settings omit promotional and
+implementation text while preserving backup/import confirmations.
 
-- **Breadcrumbs**: a compact path and horizontally scrolling children; the default.
-- **Folders**: two-column folder tiles and medicine counts.
-- **Tree**: expand/collapse branches and select a folder.
-- **Columns**: adjacent independently scrolling folder levels.
-- **Floating explorer**: a compact path with a bottom sheet for browsing the tree.
-
-All five views share the same hierarchy and selection behavior. The choice is saved
-per list. The breadcrumb path lets you return to any ancestor or All.
-
-In an imported medication’s details, open **Copy, move or merge**:
+In an imported medication’s details, open **Transfer**:
 
 - **Copy** to My medications or another imported list. The source stays available.
 - **Move** to either destination. The source goes to its list’s Trash and is not

@@ -18,50 +18,41 @@ class LibraryFeaturesTest {
     private fun medicine(id: String = "m", name: String = "Mine") = Medicine(id, "tablets", "General", name, "", official = 1500, discounted = 1200, createdAt = 42)
     private fun snapshot(items: List<Medicine>, categories: List<Category>) = AppSnapshot(items, categories, false, "IQD", ThemePreference.SYSTEM)
 
-    @Test fun fieldsAndParentFoldersSurviveDatabaseTrashAndBackup() = runBlocking {
+    @Test fun fieldsAndFlatCategoriesSurviveDatabaseTrashAndBackup() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repo = PharmacyRepository(context)
         try {
-            repo.saveCategory(Category("child", "Pain", "ألم", "#2f856d", "tablets"))
-            repo.saveCategory(Category("leaf", "Adult", "بالغ", "#596aab", "child"))
+            repo.saveCategory(Category("leaf", "Adult", "بالغ", "#596aab"))
             val fields = listOf(
                 ImportedField("custom-dose", "جرعة", "Twice daily", ImportField.CUSTOM, true, color = "#2f856d", placement = FieldPlacement.TOP),
                 ImportedField("custom-company", "Company", "Maker", ImportField.CUSTOM, false, placement = FieldPlacement.FOOTER),
             )
             repo.saveMedicine(medicine().copy(category = "leaf", importedFields = fields))
-            repo.setCategoryView(CategoryView.TREE)
             repo.moveMedicineToTrash("m")
             assertEquals(fields, repo.loadTrash().single().medicine.importedFields)
             repo.restoreMedicine("m")
             val backup = BackupCodec.parse(repo.exportBackup())
             assertEquals(fields, backup.medicines.single().importedFields)
-            assertEquals("child", backup.categories.first { it.id == "leaf" }.parentId)
             repo.importBackup(backup, ImportMode.REPLACE)
             val reloaded = repo.loadSnapshot()
-            assertEquals(listOf("tablets", "child", "leaf"), categoryAncestors("leaf", reloaded.categories).map { it.id })
-            assertEquals(CategoryView.TREE, reloaded.categoryView)
+            assertEquals("leaf", reloaded.items.single().category)
+            assertTrue(reloaded.categories.any { it.id == "leaf" })
         } finally { repo.close() }
     }
 
-    @Test fun cyclesAndMissingParentsAreRejectedBeforeSaving() = runBlocking {
+    @Test fun earlierNestedTrialBackupsKeepCategoriesAndMedicineAssignments() = runBlocking {
+        val categories = listOf(Category("tablets", "Tablets", "حبوب", "#2f856d"), Category("leaf", "Pain", "ألم", "#596aab"))
+        val raw = org.json.JSONObject(BackupCodec.encode(listOf(medicine().copy(category = "leaf")), "IQD", categories))
+        raw.getJSONArray("categories").getJSONObject(1).put("parentId", "tablets")
+        val backup = BackupCodec.parse(raw.toString())
         val repo = PharmacyRepository(ApplicationProvider.getApplicationContext())
         try {
-            repo.saveCategory(Category("child", "Child", "Child", "#2f856d", "tablets"))
-            assertThrows(IllegalArgumentException::class.java) { runBlocking { repo.saveCategory(Category("tablets", "Tablets", "Tablets", "#596aab", "child")) } }
-            assertThrows(IllegalStateException::class.java) { runBlocking { repo.saveCategory(Category("orphan", "Orphan", "Orphan", "#596aab", "missing")) } }
-            assertNull(repo.loadSnapshot().categories.first { it.id == "tablets" }.parentId)
+            repo.importBackup(backup, ImportMode.REPLACE)
+            assertEquals("leaf", repo.loadSnapshot().items.single().category)
+            assertTrue(repo.loadSnapshot().categories.any { it.id == "leaf" })
+            val exported = org.json.JSONObject(repo.exportBackup()).getJSONArray("categories")
+            for (i in 0 until exported.length()) assertFalse(exported.getJSONObject(i).has("parentId"))
         } finally { repo.close() }
-    }
-
-    @Test fun parentBrowsingIncludesDescendantsAndKeepsRepeatedSubfolderNamesSeparate() {
-        val cats = listOf(Category("all", "All", "All", "#2f856d"), Category("tablets", "Tablets", "حبوب", "#2f856d"),
-            Category("child", "Pain", "ألم", "#596aab", "tablets"), Category("other", "Other", "Other", "#596aab"))
-        val browser = buildLibraryBrowser(snapshot(listOf(medicine().copy(category = "child", subcategory = "Adult"), medicine("other").copy(category = "other", subcategory = "Adult")), cats))
-        assertEquals(1, browser.folders.first { it.categoryId == "tablets" }.count)
-        assertEquals(2, browser.folders.count { it.label == "Adult" })
-        assertNotEquals(browser.medicinePaths["m"]!!.last(), browser.medicinePaths["other"]!!.last())
-        assertEquals(listOf("category:tablets", "category:child"), browser.medicinePaths["m"]!!.take(2))
-        assertEquals("Pain", browser.children(listOf("category:tablets")).single().label)
     }
 
     @Test fun copyMoveAndMergePreservePricesIdentityAndSourceUntilRequested() = runBlocking {
@@ -71,8 +62,7 @@ class LibraryFeaturesTest {
         val main = PharmacyRepository(context)
         try {
             val fields = listOf(ImportedField("column-1", "Scientific", "Amoxicillin", ImportField.SCIENTIFIC, true))
-            source.saveCategory(Category("parent", "Parent", "Parent", "#2f856d"))
-            source.saveCategory(Category("leaf", "Leaf", "Leaf", "#596aab", "parent"))
+            source.saveCategory(Category("leaf", "Leaf", "Leaf", "#596aab"))
             source.saveCategory(Category("unrelated", "Unrelated", "Unrelated", "#596aab"))
             val original = medicine("source", "Imported brand").copy(category = "leaf", imported = true, note = "Imported note", importedFields = fields,
                 codes = listOf(MedicineCode(CodeKind.BARCODE, "123456789")))
@@ -83,7 +73,7 @@ class LibraryFeaturesTest {
             source.transferMedication(original.id, other, false)
             assertEquals(1, source.loadSnapshot().items.size)
             assertEquals(fields, other.loadSnapshot().items.single().importedFields)
-            assertEquals("parent", other.loadSnapshot().categories.first { it.id == "leaf" }.parentId)
+            assertEquals("Leaf", other.loadSnapshot().categories.first { it.id == "leaf" }.label)
             assertFalse(other.loadSnapshot().categories.any { it.id == "unrelated" })
             assertArrayEquals(jpeg, other.loadPhoto(other.loadSnapshot().items.single().id))
             val own = medicine("own", "My common name").copy(favorite = true, importedFields = listOf(ImportedField("custom-note", "Shelf", "A4", ImportField.CUSTOM, true)))

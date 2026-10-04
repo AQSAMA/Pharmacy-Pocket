@@ -399,7 +399,6 @@ object BackupCodec {
             label = requiredString(obj, "label"),
             arabic = requiredString(obj, "arabic"),
             color = requiredString(obj, "color").lowercase(Locale.ROOT),
-            parentId = obj.optString("parentId").takeUnless { it.isEmpty() || it == "null" },
         )
         require(isValidCategory(category)) { "The categories in this file are invalid." }
         return category
@@ -439,7 +438,7 @@ object BackupCodec {
         .put("id", category.id)
         .put("label", category.label)
         .put("arabic", category.arabic)
-        .put("color", category.color.lowercase(Locale.ROOT)).put("parentId", category.parentId)
+        .put("color", category.color.lowercase(Locale.ROOT))
 
     private fun categoriesFromSections(sections: List<BackupSection>): List<Category> {
         val builtInIds = PharmacyDefaults.categories.mapTo(mutableSetOf()) { it.id }

@@ -28,6 +28,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -117,6 +120,7 @@ internal fun MedicineEditorScreen(
     var subcategory by rememberSaveable(medicineId) { mutableStateOf(subcategoryLabel(existing?.subcategory)) }
     var official by rememberSaveable(medicineId) { mutableStateOf(existing?.official?.toString() ?: "") }
     var discounted by rememberSaveable(medicineId) { mutableStateOf(existing?.discounted?.toString() ?: "") }
+    var discountExpanded by rememberSaveable(medicineId) { mutableStateOf(existing?.discounted != null) }
     var note by rememberSaveable(medicineId) { mutableStateOf(existing?.note ?: "") }
     var description by rememberSaveable(medicineId) { mutableStateOf(existing?.description ?: "") }
     val codes = media.codes
@@ -263,16 +267,30 @@ internal fun MedicineEditorScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Field("Medicine / brand", name, { name = it })
-                    CustomFieldsDesigner(importedFields, previewName = name, previewPrice = if (imported) null else official.toLongOrNull()?.let { "${formatPrice(it)} ${snapshot.currency}" }) { fields -> fieldsJson = fieldsToJson(fields).toString() }
+
+                    if (!imported) {
+                        OutlinedTextField(official, { official = it }, label = { Text("Official price") }, suffix = { Text(snapshot.currency) },
+                            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                        if (discountExpanded) {
+                            OutlinedTextField(discounted, { discounted = it }, label = { Text("Discounted") }, placeholder = { Text("Optional") },
+                                suffix = { Text(snapshot.currency) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                        } else {
+                            TextButton(onClick = { discountExpanded = true }) { AppIcon(AppSymbol.ADD); androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp)); Text("Add discount") }
+                        }
+
+                        Text(
+                            "${snapshot.currency} · Discount optional",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+
+                    }
 
                     if (!imported) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Category", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
-                                TextButton(onClick = {
-                                    Haptics.action(view)
-                                    onManageCategories()
-                                }) { Text("Manage categories") }
+                                IconButton(onClick = { Haptics.action(view); onManageCategories() }) { AppIcon(AppSymbol.SETTINGS, "Manage categories") }
                             }
                             Row(
                                 Modifier.horizontalScroll(rememberScrollState()),
@@ -280,7 +298,7 @@ internal fun MedicineEditorScreen(
                             ) {
                                 snapshot.categories.filter { it.id != "all" }.forEach { item ->
                                     SoftChip(
-                                        label = com.aqsama.pharmacypocket.data.categoryAncestors(item.id, snapshot.categories).joinToString(" › ") { it.arabic },
+                                        label = item.arabic,
                                         selected = category == item.id,
                                         accent = colorFromHex(item.color),
                                         onClick = {
@@ -295,7 +313,6 @@ internal fun MedicineEditorScreen(
                         Field("Subcategory", subcategory, { subcategory = it })
                         if (existingSubcategories.isNotEmpty()) {
                             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Text("Or select an existing subcategory", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                                 Row(
                                     Modifier.horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -314,35 +331,13 @@ internal fun MedicineEditorScreen(
                             }
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                            OutlinedTextField(
-                                value = official,
-                                onValueChange = { official = it },
-                                modifier = Modifier.weight(1f),
-                                label = { Text("Official price") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            )
-                            OutlinedTextField(
-                                value = discounted,
-                                onValueChange = { discounted = it },
-                                modifier = Modifier.weight(1f),
-                                label = { Text("Discounted") },
-                                placeholder = { Text("Optional") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            )
-                        }
-                        Text(
-                            "${snapshot.currency} · Leave Discounted blank if there is no second price.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
 
                     }
 
+                    CustomFieldsDesigner(importedFields, previewName = name, previewPrice = if (imported) null else official.toLongOrNull()?.let { "${formatPrice(it)} ${snapshot.currency}" }) { fields -> fieldsJson = fieldsToJson(fields).toString() }
+
                     EditorSectionButton(
-                        icon = "▣",
+                        icon = AppSymbol.CAMERA,
                         title = "Photo & codes",
                         summary = buildString {
                             append("${codes.size} code")
@@ -373,7 +368,7 @@ internal fun MedicineEditorScreen(
                                         onClick = ::openCamera,
                                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                                         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                                    ) { Text("Camera", fontWeight = FontWeight.Bold) }
+                                    ) { AppIcon(AppSymbol.CAMERA); androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp)); Text("Camera", fontWeight = FontWeight.Bold) }
 
                                     OutlinedButton(
                                         enabled = !busy && !photoProcessing,
@@ -517,9 +512,9 @@ internal fun MedicineEditorScreen(
                     }
 
                     EditorSectionButton(
-                        icon = "≡",
-                        title = "More details",
-                        summary = if (note.isNotBlank() || description.isNotBlank()) "Notes added" else "Notes & description",
+                        icon = AppSymbol.NOTES,
+                        title = "Notes & description",
+                        summary = if (note.isNotBlank() || description.isNotBlank()) "Notes added" else "Optional",
                         expanded = detailsExpanded,
                         onClick = { detailsExpanded = !detailsExpanded },
                     )
@@ -655,7 +650,7 @@ internal fun MedicineEditorScreen(
 
 @Composable
 private fun EditorSectionButton(
-    icon: String,
+    icon: AppSymbol,
     title: String,
     summary: String,
     expanded: Boolean,
@@ -681,7 +676,7 @@ private fun EditorSectionButton(
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(icon, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    AppIcon(icon)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -694,12 +689,7 @@ private fun EditorSectionButton(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                if (expanded) "⌃" else "⌄",
-                color = MaterialTheme.colorScheme.secondary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            AppIcon(if (expanded) AppSymbol.COLLAPSE else AppSymbol.EXPAND, tint = MaterialTheme.colorScheme.secondary)
         }
     }
 }
@@ -740,6 +730,7 @@ fun MedicineDetailScreen(
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
     var confirmTrash by remember { mutableStateOf(false) }
+    var actionsOpen by remember { mutableStateOf(false) }
     var photo by remember(medicineId) { mutableStateOf<ByteArray?>(null) }
     var photoViewerOpen by rememberSaveable(medicineId) { mutableStateOf(false) }
     LaunchedEffect(medicineId, item?.hasPhoto, photoVersion) {
@@ -753,7 +744,22 @@ fun MedicineDetailScreen(
     }
 
     Scaffold(
-        topBar = { ScreenTopBar("Medicine", onBack) },
+        topBar = { ScreenTopBar("Medicine", onBack) {
+            if (item != null) Box {
+                IconButton(onClick = { actionsOpen = true }, enabled = !busy) { AppIcon(AppSymbol.MORE, "Medicine actions") }
+                DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                    DropdownMenuItem(text = { Text("Move to Trash") }, leadingIcon = { AppIcon(AppSymbol.TRASH) }, onClick = { actionsOpen = false; confirmTrash = true }, enabled = !busy)
+                }
+            }
+        } },
+        bottomBar = {
+            if (item != null) Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Button(onClick = { Haptics.action(view); onEdit() }, enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp).heightIn(min = 52.dp)) {
+                    AppIcon(AppSymbol.EDIT); androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp)); Text("Edit medicine")
+                }
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (item == null) {
@@ -893,7 +899,7 @@ fun MedicineDetailScreen(
                                 }
                             }
                         }
-                        if (onMoveToMain != null) OutlinedButton(onClick = { onMoveToMain(item) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Copy, move or merge") }
+                        if (onMoveToMain != null) ActionRow(AppSymbol.MOVE, "Transfer", "Copy, move or merge", !busy) { onMoveToMain(item) }
                         if (item.importedFields.isNotEmpty()) {
                             Text(if (item.imported) "Imported details" else "Source details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             ImportedFields(item.importedFields, compact = false, large = snapshot.largeText)
@@ -904,11 +910,7 @@ fun MedicineDetailScreen(
                             InfoValue("CATEGORY", category.label, snapshot.largeText)
                             InfoValue("SUBCATEGORY", subcategoryLabel(item.subcategory), snapshot.largeText)
                             InfoValue("DATE ADDED", formatAddedDate(item.createdAt), snapshot.largeText)
-                            Text(
-                                "Older records may show the date they were imported or migrated.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
-                            )
+
                         }
 
                         if (item.codes.isNotEmpty()) InfoCard("Package codes") {
@@ -931,43 +933,7 @@ fun MedicineDetailScreen(
                             }
                         }
 
-                        Button(
-                            onClick = {
-                                Haptics.action(view)
-                                onEdit()
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            ),
-                        ) {
-                            Text("✎ Edit medicine", fontWeight = FontWeight.ExtraBold)
-                        }
-                        Button(
-                            enabled = !busy,
-                            onClick = {
-                                Haptics.action(view)
-                                confirmTrash = true
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            ),
-                        ) {
-                            Text("Move to Trash", fontWeight = FontWeight.ExtraBold)
-                        }
-                        TextButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 50.dp),
-                        ) { Text("Done", fontWeight = FontWeight.Bold) }
+
                     }
                 }
             }

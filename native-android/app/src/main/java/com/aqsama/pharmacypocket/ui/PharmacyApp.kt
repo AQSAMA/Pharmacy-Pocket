@@ -446,7 +446,6 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         },
                         exportBackup = repository::exportBackup,
                         listName = selectedList?.name,
-                        onSetCategoryView = { value -> runOperation { repository.setCategoryView(value) } },
                     )
 
                     Destination.Categories -> CategoryManagerScreen(
