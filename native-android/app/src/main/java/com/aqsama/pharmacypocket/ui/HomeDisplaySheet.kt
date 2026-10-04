@@ -16,7 +16,7 @@ import com.aqsama.pharmacypocket.data.MedicineSort
 @Composable
 internal fun HomeDisplaySheet(sort: MedicineSort, large: Boolean, canReset: Boolean, onSort: (MedicineSort) -> Unit,
     onLargeText: (Boolean) -> Unit, onReset: () -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Sort & display", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 8.dp))
             MedicineSort.entries.forEach { option ->

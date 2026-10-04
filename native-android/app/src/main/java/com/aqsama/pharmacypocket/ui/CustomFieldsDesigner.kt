@@ -48,11 +48,18 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, previewName: Stri
     var open by rememberSaveable { mutableStateOf(false) }
     var preview by rememberSaveable { mutableStateOf(true) }
     var editing by remember { mutableStateOf<ImportedField?>(null) }
+    var revealFieldKey by remember { mutableStateOf<String?>(null) }
     val view = LocalView.current
     val edgePixels = with(LocalDensity.current) { 48.dp.toPx() }
     ActionRow(AppSymbol.FIELDS, "Card fields", "${fields.count { it.onCard }} shown · ${fields.size} total") { open = true; Haptics.action(view) }
     if (open) {
         val state = rememberLazyListState()
+        LaunchedEffect(revealFieldKey, fields) {
+            val key = revealFieldKey ?: return@LaunchedEffect
+            val keys = listOf("preview") + FieldPlacement.entries.flatMap { place -> listOf("zone:${place.name}") + fields.filter { it.placement == place }.map { it.key } }
+            val index = keys.indexOf(key)
+            if (index >= 0) { state.animateScrollToItem(index); revealFieldKey = null }
+        }
         val bounds = remember { mutableStateMapOf<String, Rect>() }
         var listBounds by remember { mutableStateOf(Rect.Zero) }
         var dragKey by remember { mutableStateOf<String?>(null) }
@@ -267,7 +274,7 @@ internal fun CustomFieldsDesigner(fields: List<ImportedField>, previewName: Stri
             TextButton(enabled = label.isNotBlank() && validColor, onClick = {
                 val field = initial.copy(label = label.trim(), value = value, color = color.takeIf { it.isNotBlank() }, placement = placement)
                 onChange(if (fields.any { it.key == field.key }) fields.map { if (it.key == field.key) field else it } else fields + field)
-                editing = null; Haptics.confirm(view)
+                revealFieldKey = field.key; editing = null; Haptics.confirm(view)
             }) { Text("Apply") }
         }, dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } })
     }

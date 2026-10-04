@@ -42,8 +42,8 @@ import org.robolectric.annotation.LooperMode
 @LooperMode(LooperMode.Mode.PAUSED)
 class LibraryFeaturesLayoutTest {
     @get:Rule val compose = createComposeRule()
-    @Before fun bindMain() { Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher()) }
-    @After fun resetMain() { Dispatchers.resetMain() }
+    @Before fun bindMain() { org.robolectric.RuntimeEnvironment.setFontScale(1f); Dispatchers.setMain(Handler(Looper.getMainLooper()).asCoroutineDispatcher()) }
+    @After fun resetMain() { org.robolectric.RuntimeEnvironment.setFontScale(1f); Dispatchers.resetMain() }
     private val categories = listOf(Category("all", "All", "All", "#2f856d"), Category("root", "Medicines", "أدوية", "#2f856d"), Category("child", "Pain", "ألم", "#596aab"))
     private val item = Medicine("m", "child", "General", "My medicine", "", official = 1_000_000, discounted = null)
     private val snapshot = AppSnapshot(listOf(item), categories, false, "IQD", ThemePreference.SYSTEM)
@@ -75,36 +75,45 @@ class LibraryFeaturesLayoutTest {
         capture("custom-fields-rtl")
     }
 
-    @Test fun draggingFieldAcrossZonesChangesItsPersistedPlacement() {
-        var fields by mutableStateOf(listOf(ImportedField("custom-drag", "Dose", "Once daily", ImportField.CUSTOM, true)))
-        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { CustomFieldsDesigner(fields) { fields = it } } }
+    @Test fun draggingFieldAcrossZonesChangesItsPersistedPlacement() = dragField(rtl = false)
+    @Test fun draggingFieldInRtlUsesTheSameDropZones() = dragField(rtl = true)
+
+    private fun dragField(rtl: Boolean) {
+        var fields by mutableStateOf(listOf(ImportedField("custom-drag", "Dose", "Once daily", ImportField.CUSTOM, false)))
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) {
+            CompositionLocalProvider(LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) { CustomFieldsDesigner(fields) { fields = it } }
+        } }
         compose.onNodeWithText("Card fields").performClick()
         compose.onNodeWithText("Preview").performClick()
-        val from = compose.onNodeWithTag("card-field:custom-drag").fetchSemanticsNode().boundsInRoot.topLeft + Offset(20f, 20f)
+        val row = compose.onNodeWithTag("card-field:custom-drag").fetchSemanticsNode().boundsInRoot
+        val from = compose.onNodeWithContentDescription("Drag Dose").fetchSemanticsNode().boundsInRoot.center
+        val local = from - row.topLeft
         val to = compose.onNodeWithTag("card-zone:TOP").fetchSemanticsNode().boundsInRoot.center
         compose.onNodeWithTag("card-field:custom-drag").performTouchInput {
-            down(Offset(20f, 20f))
+            down(local)
             advanceEventTime(700)
-            moveTo(Offset(20f, 20f) + (to - from), delayMillis = 300)
+            moveTo(local + (to - from), delayMillis = 300)
             up()
         }
         compose.waitUntil(3000) { fields.single().placement == FieldPlacement.TOP }
         compose.runOnIdle { assertTrue(fields.single().onCard) }
-        capture("card-field-drag")
+        capture(if (rtl) "card-field-drag-rtl" else "card-field-drag")
     }
 
 
     @Test fun addFieldColorAndVisibilityAreDirectlyEditable() {
         var fields by mutableStateOf(emptyList<ImportedField>())
-        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { CustomFieldsDesigner(fields) { fields = it } } }
+        compose.setContent { PharmacyPocketTheme(ThemePreference.DARK) { CustomFieldsDesigner(fields) { fields = it } } }
         compose.onNodeWithText("Card fields").performClick()
         compose.onNodeWithText("Add field").performClick()
         compose.onNodeWithText("Label").performTextInput("Dose")
         compose.onNodeWithText("Value").performTextInput("Once daily")
         compose.onNodeWithContentDescription("Color #2f856d").performClick()
+        capture("field-edit")
         compose.onNodeWithText("Apply").performClick()
         compose.runOnIdle { assertEquals("Dose", fields.single().label); assertEquals("#2f856d", fields.single().color) }
-        compose.onNodeWithContentDescription("Show Dose on card").performClick()
+        compose.onNodeWithTag("card-fields-list").performScrollToNode(hasContentDescription("Show Dose on card"))
+        compose.onNodeWithContentDescription("Show Dose on card").assertIsDisplayed().performClick()
         compose.runOnIdle { assertFalse(fields.single().onCard) }
         capture("field-designer")
     }
@@ -124,11 +133,11 @@ class LibraryFeaturesLayoutTest {
     }
 
     @Test fun mergeShowsPreservedNameAndPricesAndNeedsATarget() {
+        org.robolectric.RuntimeEnvironment.setFontScale(1.5f)
         var mergeId: String? = null
         var remove = false
         compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl,
-                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(1f, 1.5f)) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 MoveToMainSheet(item.copy(id = "source", name = "Imported brand", imported = true), snapshot.copy(items = listOf(item.copy(discounted = 900_000))), emptyList(), false, {},
                     onTransfer = { _, delete, _, _, _, merge -> mergeId = merge; remove = delete })
             }
@@ -140,7 +149,8 @@ class LibraryFeaturesLayoutTest {
         compose.onNodeWithTag("picker-medication:m").performClick()
         compose.onNodeWithText("Name & prices kept").assertExists()
         compose.onNodeWithText("1,000,000 IQD").assertExists()
-        compose.onNodeWithText("Move source to Trash").performScrollTo().performClick()
+        compose.onNodeWithTag("transfer-form").performScrollToNode(hasText("Move source to Trash"))
+        compose.onNodeWithText("Move source to Trash").assertIsDisplayed().performClick()
         compose.onNodeWithTag("transfer-confirm").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(item.id, mergeId); assertTrue(remove) }
         capture("merge-medication-rtl-large")
@@ -160,7 +170,18 @@ class LibraryFeaturesLayoutTest {
         capture("sort-display")
     }
 
+    @Test fun editActionStaysVisibleOnLongMedicationDetails() {
+        var edited = false
+        compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) {
+            MedicineDetailScreen(snapshot.copy(items = listOf(item.copy(description = "Long reference notes.\n".repeat(80)))), item.id, false, {}, { edited = true }, {}, {}, { null }, 0)
+        } }
+        compose.onNodeWithText("Edit medicine").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertTrue(edited) }
+        capture("medication-details")
+    }
+
     private fun capture(name: String) {
+        compose.waitForIdle()
         System.getenv("PHARMACY_SCREENSHOTS_DIR")?.let { dir ->
             val dialog = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }
             val decor = dialog?.window?.decorView

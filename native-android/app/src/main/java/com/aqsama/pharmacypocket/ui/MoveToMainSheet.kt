@@ -1,5 +1,7 @@
 package com.aqsama.pharmacypocket.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aqsama.pharmacypocket.data.*
 
@@ -47,13 +50,14 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
     val target = main.items.firstOrNull { it.id == targetId }
     val value = price.trim().toLongOrNull()
     val valid = if (merging) target != null else destination != null || (name.isNotBlank() && value != null && value in 0..9_007_199_254_740_991L)
-    val destinationLabel = lists.firstOrNull { it.id == destination }?.name ?: "My medications"
+    val destinationLabel = if (destination == null) "My medications" else lists.firstOrNull { it.id == destination }?.name ?: "Choose list"
     val destinationExists = destination == null || lists.any { it.id == destination }
     fun pick(screen: String) { picker = screen; search = ""; Haptics.action(view) }
     fun closePicker() { picker = ""; keyboard?.hide() }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { !latestBusy })) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f).imePadding().testTag("transfer-sheet")) {
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { value -> value != SheetValue.Hidden || !latestBusy })) {
+        Column(Modifier.fillMaxWidth().animateContentSize().heightIn(max = if (picker.isEmpty() && destination != null && !merging) 380.dp else Dp.Infinity).fillMaxHeight(0.92f).imePadding().testTag("transfer-sheet")) {
+            BackHandler(enabled = picker.isNotEmpty()) { if (!busy) closePicker() }
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(enabled = !busy, onClick = { if (picker.isEmpty()) onDismiss() else closePicker() }) {
                     AppIcon(if (picker.isEmpty()) AppSymbol.CLOSE else AppSymbol.BACK, if (picker.isEmpty()) "Close transfer" else "Back to transfer")
@@ -95,7 +99,7 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                             }
                         }
                     }
-                    else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    else -> LazyColumn(Modifier.fillMaxSize().testTag("transfer-form"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         item {
                             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                                 TransferMode.entries.forEachIndexed { index, option ->
