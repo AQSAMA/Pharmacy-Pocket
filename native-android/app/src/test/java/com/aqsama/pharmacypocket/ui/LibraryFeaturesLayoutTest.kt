@@ -15,6 +15,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.*
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -171,10 +173,14 @@ class LibraryFeaturesLayoutTest {
     }
 
     @Test fun editActionStaysVisibleOnLongMedicationDetails() {
+        org.robolectric.RuntimeEnvironment.setFontScale(1.5f)
         var edited = false
         compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) {
             MedicineDetailScreen(snapshot.copy(items = listOf(item.copy(description = "Long reference notes.\n".repeat(80)))), item.id, false, {}, { edited = true }, {}, {}, { null }, 0)
         } }
+        val priceLayout = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText("1,000,000").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(priceLayout) }
+        assertFalse("Full detail price must fit at large font scale", priceLayout.single().hasVisualOverflow)
         compose.onNodeWithText("Edit medicine").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(edited) }
         capture("medication-details")

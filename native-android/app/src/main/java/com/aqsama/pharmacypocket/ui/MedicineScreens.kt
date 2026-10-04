@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -869,6 +870,8 @@ fun MedicineDetailScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 color = Color(0xFFB8F0CB),
                                                 fontSize = 58.sp,
+                                                autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 58.sp, stepSize = 1.sp),
+                                                style = TextStyle(textDirection = TextDirection.Ltr),
                                                 fontWeight = FontWeight.Black,
                                                 textAlign = TextAlign.Center,
                                                 maxLines = 1,
@@ -892,6 +895,9 @@ fun MedicineDetailScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             color = Color(0xFFFFE2A2),
                                             fontSize = 27.sp,
+                                            autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 27.sp, stepSize = 1.sp),
+                                            maxLines = 1,
+                                            style = TextStyle(textDirection = TextDirection.Ltr),
                                             fontWeight = FontWeight.ExtraBold,
                                             textAlign = TextAlign.Center,
                                         )
