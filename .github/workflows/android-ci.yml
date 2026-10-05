@@ -61,8 +61,32 @@ jobs:
       - name: Unit tests, lint, and debug build
         run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug --stacktrace
 
+      - name: Prepare installable preview version
+        id: preview_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAGS="$(gh release list --limit 1000 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == true) | .tagName')"
+          MAX_PUBLISHED=30000000
+          while IFS= read -r TAG; do
+            if [[ "$TAG" =~ ^native-preview-([0-9]+)- ]]; then
+              CODE=$((10#${BASH_REMATCH[1]}))
+              if (( CODE > MAX_PUBLISHED )); then
+                MAX_PUBLISHED=$CODE
+              fi
+            fi
+          done <<< "$RELEASE_TAGS"
+          VERSION_CODE=$((MAX_PUBLISHED + 1))
+          if (( VERSION_CODE > 2100000000 )); then
+            echo "::error::Preview versionCode is outside Android's supported range."
+            exit 1
+          fi
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+
       - name: Preview release-style build
-        run: gradle --no-daemon lintPreview assemblePreview -PversionCode=30000001 --stacktrace
+        run: gradle --no-daemon lintPreview assemblePreview -PversionCode=${{ steps.preview_version.outputs.version_code }} --stacktrace
 
       - name: Confirm release packaging requires signing
         run: |
@@ -99,14 +123,20 @@ jobs:
           set -euo pipefail
           BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+          PREVIEW_APK="app/build/outputs/apk/preview/app-preview.apk"
           RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
           RELEASE_AAB="app/build/outputs/bundle/release/app-release.aab"
 
           test -f "$DEBUG_APK"
+          test -f "$PREVIEW_APK"
           test -f "$RELEASE_APK"
           test -f "$RELEASE_AAB"
 
           "$BUILD_TOOLS/aapt" dump badging "$DEBUG_APK" | grep -F "package: name='com.aqsama.pharmacypocket.debug'"
+          "$BUILD_TOOLS/aapt" dump badging "$PREVIEW_APK" | grep -F "package: name='com.aqsama.pharmacypocket.native'"
+          "$BUILD_TOOLS/aapt" dump badging "$PREVIEW_APK" | grep -F "versionCode='${{ steps.preview_version.outputs.version_code }}'"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$PREVIEW_APK" >/dev/null
+          "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$PREVIEW_APK" >/dev/null
           "$BUILD_TOOLS/aapt" dump badging "$RELEASE_APK" | grep -F "package: name='com.aqsama.pharmacypocket'"
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK" >/dev/null
           "$BUILD_TOOLS/zipalign" -c -P 16 -v 4 "$RELEASE_APK" >/dev/null
@@ -116,6 +146,9 @@ jobs:
           OUT="dist/Pharmacy-Pocket-debug-${{ github.event.pull_request.number || github.run_number }}.apk"
           cp "$DEBUG_APK" "$OUT"
           echo "debug_apk=native-android/$OUT" >> "$GITHUB_OUTPUT"
+          PREVIEW_OUT="dist/Pharmacy-Pocket-Preview-${{ github.event.pull_request.number || github.run_number }}.apk"
+          cp "$PREVIEW_APK" "$PREVIEW_OUT"
+          echo "preview_apk=native-android/$PREVIEW_OUT" >> "$GITHUB_OUTPUT"
 
       - name: Remove CI-only signing key
         if: always()
@@ -131,6 +164,14 @@ jobs:
             native-android/app/build/test-results/
             native-android/app/build/reports/lint-results-*
           if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload preview test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharmacy-pocket-preview-${{ github.event.pull_request.number || github.run_number }}
+          path: ${{ steps.verify.outputs.preview_apk }}
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload debug test APK
