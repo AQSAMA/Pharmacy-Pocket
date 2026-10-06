@@ -20,7 +20,8 @@ fun mergeMedicationDetails(target: Medicine, source: Medicine, sourceCurrency: S
 }
 
 fun sourceDetailFields(item: Medicine, currency: String): List<ImportedField> {
-    val provenance = listOf(
+    val retainedProvenance = item.importedFields.filter { it.key in sourceProvenanceKeys }
+    val provenance = if (!item.imported && retainedProvenance.isNotEmpty()) retainedProvenance.map { it.copy(onCard = false) } else listOf(
         ImportedField("source-name", "Original name", item.name, ImportField.CUSTOM, false),
         ImportedField("source-currency", "Source price currency", currency, ImportField.CUSTOM, false),
         ImportedField("source-price", "Source pharmacy price", item.official.toString(), ImportField.CUSTOM, false),

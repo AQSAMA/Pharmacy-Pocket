@@ -178,7 +178,7 @@ from this view enters the owning list. Add asks which manual list should receive
 the medicine. Categories and Trash remain scoped to each list.
 
 **Transfer** is available in every medication’s details. Choose Copy, Move or
-Merge, then a different destination list. Merge requires a specific destination
+Merge, then a different destination list. Merge into a manual list requires a specific destination
 medicine and preserves its name, selling prices, category, favorite, ID and date.
 Moves retire the source to its Trash; code conflicts reject the transfer before
 either medicine changes. Manual-to-manual copies retain subcategories, discounts

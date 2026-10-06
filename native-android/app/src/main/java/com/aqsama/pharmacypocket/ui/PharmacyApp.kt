@@ -339,7 +339,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
         scope.launch { snackbarHostState.currentSnackbarData?.dismiss(); drawerState.close() }
     }
 
-    LaunchedEffect(repository, loadAttempt, catalogLoaded, importedLists) {
+    LaunchedEffect(repository, loadAttempt, catalogLoaded, importedLists, mainName) {
         if (!catalogLoaded) return@LaunchedEffect
         if (selectedListId != null && !allManual && allLists.none { it.id == selectedListId }) { selectList(null); return@LaunchedEffect }
         try {
@@ -417,8 +417,11 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                             runOperation { repository.setLargeText(value) }
                         },
                         onQuickCapture = { id ->
-                            if (allManual) { val ref = ListMedicineRef.decode(id); selectList(ref.listKey.takeUnless { it == MAIN_LIST_KEY }, Destination.Editor(ref.medicineId, null, "photo")) }
-                            else quickCaptureId = id
+                            if (allManual) {
+                                val ref = ListMedicineRef.decode(id)
+                                selectList(ref.listKey.takeUnless { it == MAIN_LIST_KEY })
+                                quickCaptureId = ref.medicineId
+                            } else quickCaptureId = id
                         },
                         loadPhoto = { id ->
                             if (allManual) { val ref = ListMedicineRef.decode(id); repositoryFor(ref.listKey.takeUnless { it == MAIN_LIST_KEY }).loadPhoto(ref.medicineId) }
@@ -492,7 +495,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         },
                         exportBackup = { repository.exportBackup() },
                         onBackups = { push(Destination.Backups) },
-                        listName = selectedList?.name,
+                        listName = selectedList?.name ?: mainName,
                     )
 
                     Destination.Categories -> CategoryManagerScreen(

@@ -765,6 +765,7 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             val source = database.loadMedicines().firstOrNull { it.id == id } ?: error("This medicine is no longer available.")
             val targets = destination.database.loadMedicines()
             val target = mergeTargetId?.let { targetId ->
+                require(!destination.isImportedList) { "Merge into a manual list." }
                 targets.firstOrNull { it.id == targetId } ?: error("The merge target is no longer available.")
             }
             val item = if (target != null) mergeMedicationDetails(target, source, preferences.currency()) else {

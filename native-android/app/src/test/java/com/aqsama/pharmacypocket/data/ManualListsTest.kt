@@ -156,4 +156,32 @@ class ManualListsTest {
         } finally { main.close(); stock.close() }
     }
 
+    @Test fun mergeRejectsImportedDestinationWithoutChangingItsMappedPrices() = runBlocking {
+        val source = PharmacyRepository(context)
+        val imported = PharmacyRepository(context, UUID.randomUUID().toString())
+        try {
+            source.saveMedicine(medicine())
+            imported.saveMedicine(medicine("target").copy(imported = true, importedFields = listOf(
+                ImportedField("price", "Mapped price", "900", ImportField.PHARMACY_PRICE, true))))
+            assertThrows(IllegalArgumentException::class.java) { runBlocking { source.transferMedication("same", imported, true, mergeTargetId = "target") } }
+            assertEquals("900", imported.loadSnapshot().items.single().importedFields.single().value)
+            assertEquals(1, source.loadSnapshot().items.size)
+        } finally { source.close(); imported.close() }
+    }
+
+    @Test fun mergingManualMedicineRetainsItsEarlierImportedProvenance() {
+        val fields = listOf(
+            ImportedField("source-name", "Original name", "Supplier brand", ImportField.CUSTOM, false),
+            ImportedField("source-currency", "Source price currency", "USD", ImportField.CUSTOM, false),
+            ImportedField("source-price", "Source pharmacy price", "3.50", ImportField.CUSTOM, false),
+            ImportedField("scientific", "Scientific name", "Amoxicillin", ImportField.SCIENTIFIC, false),
+        )
+        val source = medicine(name = "My source name", price = 2000).copy(importedFields = fields)
+        val merged = mergeMedicationDetails(medicine("target", "My target", 3000), source, "IQD")
+        fields.forEach { field -> assertEquals(field, merged.importedFields.single { it.key == field.key }) }
+        assertFalse(merged.importedFields.any { it.key == "source-alternative-price" })
+        assertEquals("My target", merged.name)
+        assertEquals(3000L, merged.official)
+    }
+
 }

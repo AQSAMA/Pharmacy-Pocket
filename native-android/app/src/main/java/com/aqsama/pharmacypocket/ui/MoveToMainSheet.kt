@@ -71,7 +71,7 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
     val ready = loadDestination == null || loadedKey == (destination ?: MAIN_LIST_KEY)
     val target = if (ready) destinationSnapshot.items.firstOrNull { it.id == targetId } else null
     val value = price.trim().toLongOrNull()
-    val valid = ready && !loading && loadError == null && if (merging) target != null else destinationImported || (name.isNotBlank() && value != null && value in 0..9_007_199_254_740_991L)
+    val valid = ready && !loading && loadError == null && if (merging) !destinationImported && target != null else destinationImported || (name.isNotBlank() && value != null && value in 0..9_007_199_254_740_991L)
     val destinationLabel = if (destination == null && !mainAvailable) "Choose list" else if (destination == null) mainName else lists.firstOrNull { it.id == destination }?.name ?: "Choose list"
     val destinationExists = destination == null && mainAvailable || lists.any { it.id == destination }
     fun pick(screen: String) { picker = screen; search = ""; Haptics.action(view) }
@@ -103,7 +103,7 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                                         if (mainAvailable && normalizeSearch(mainName).contains(needle)) item {
                                             PickerRow(mainName, selected = destination == null, enabled = !busy) { destination = null; closePicker() }
                                         }
-                                        items(lists.filter { normalizeSearch(it.name).contains(needle) }, key = { it.id }) { list ->
+                                        items(lists.filter { (!merging || !it.imported) && normalizeSearch(it.name).contains(needle) }, key = { it.id }) { list ->
                                             PickerRow(list.name, selected = destination == list.id, enabled = !busy) { destination = list.id; closePicker() }
                                         }
                                     }
@@ -126,7 +126,9 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                                 TransferMode.entries.forEachIndexed { index, option ->
                                     SegmentedButton(selected = mode == option, onClick = {
-                                        mode = option; Haptics.selection(view)
+                                        mode = option
+                                        if (option == TransferMode.MERGE && destinationImported) destination = if (mainAvailable) null else lists.firstOrNull { !it.imported }?.id
+                                        Haptics.selection(view)
                                     }, enabled = !busy, shape = SegmentedButtonDefaults.itemShape(index, TransferMode.entries.size)) { Text(option.label) }
                                 }
                             }
