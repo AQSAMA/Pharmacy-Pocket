@@ -50,7 +50,7 @@ data class BackupSelection(val medicineIds: Set<String>? = null, val photos: Boo
     }
 }
 
-data class ListBackup(val list: MedicationList, val backup: ParsedBackup)
+data class ListBackup(val list: MedicationList, val backup: ParsedBackup, val nameSpecified: Boolean = true)
 
 /** A library envelope nests unchanged v3 list backups; legacy single-list files still work. */
 object LibraryBackupCodec {
@@ -74,7 +74,7 @@ object LibraryBackupCodec {
         // Imported-list JSON uses BackupCodec's streaming path; do not build an extra graph.
         if (!Regex("\"schema\"\\s*:\\s*\"$schema\"").containsMatchIn(raw.take(256))) {
             val backup = BackupCodec.parse(raw)
-            return listOf(ListBackup(MedicationList(MAIN_LIST_KEY, if (backup.importedList) "Imported medications" else "My medications", backup.importedList), backup))
+            return listOf(ListBackup(MedicationList(MAIN_LIST_KEY, if (backup.importedList) "Imported medications" else "My medications", backup.importedList), backup, nameSpecified = false))
         }
         val entries = mutableListOf<ListBackup>()
         var foundSchema = ""

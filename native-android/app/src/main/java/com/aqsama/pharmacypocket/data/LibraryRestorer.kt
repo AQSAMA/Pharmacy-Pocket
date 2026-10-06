@@ -2,6 +2,8 @@ package com.aqsama.pharmacypocket.data
 
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Storage work outlives screen recreation; each repository is owned and closed here. */
 class LibraryRestorer(context: Context) {
@@ -24,6 +26,9 @@ class LibraryRestorer(context: Context) {
         try {
             // All predictable failures are checked before touching any destination.
             entries.forEach { entry ->
+                if (destinationKey == null && entry.nameSpecified) require(entry.list.name.trim().length in 1..100) {
+                    "Use a list name of 1–100 characters."
+                }
                 val target = existing(entry)
                 if (target != null) repository(target).checkImportBackup(entry.backup, mode)
                 else {
@@ -37,11 +42,20 @@ class LibraryRestorer(context: Context) {
                 }
             }
             entries.forEach { entry ->
-                val target = existing(entry) ?: catalog.createRestored(
+                val matched = existing(entry)
+                val target = matched ?: catalog.createRestored(
                     if (destinationKey?.startsWith("new:") == true) destinationKey.removePrefix("new:") else entry.list.name,
                     entry.list.imported, if (destinationKey == null) entry.list.id else null,
                 ).let { MedicationList(it.id, it.name, it.imported) }
                 repository(target).importBackup(entry.backup, mode)
+                // Only separate-list restores apply saved names. Legacy files have no name,
+                // and importing into a chosen destination keeps that destination's name.
+                if (destinationKey == null && entry.nameSpecified && matched != null) {
+                    if (target.id == null) withContext(Dispatchers.IO) {
+                        check(appContext.getSharedPreferences("pharmacy-pocket-list-names", Context.MODE_PRIVATE)
+                            .edit().putString(MAIN_LIST_KEY, entry.list.name.trim()).commit()) { "Could not save the main list name." }
+                    } else catalog.rename(target.id!!, entry.list.name)
+                }
                 completed++
             }
         } catch (error: Exception) {

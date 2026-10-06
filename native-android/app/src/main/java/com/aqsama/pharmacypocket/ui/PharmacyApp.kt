@@ -470,6 +470,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         },
                         onDataChanged = {
                             importedLists = listStore.lists()
+                            mainName = namingPrefs.getString("main", "My medications") ?: "My medications"
                             snapshot = selectedSnapshot()
                         },
                     )

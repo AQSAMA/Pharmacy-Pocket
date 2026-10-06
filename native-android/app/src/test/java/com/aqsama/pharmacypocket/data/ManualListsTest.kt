@@ -124,8 +124,10 @@ class ManualListsTest {
         val importedJson = BackupCodec.encode(listOf(medicine().copy(imported = true)), "USD", PharmacyDefaults.categories, importedList = true)
         val entries = LibraryBackupCodec.parse(LibraryBackupCodec.encode(listOf(manual to manualJson, imported to importedJson)))
         assertEquals(listOf(manual, imported), entries.map { it.list })
+        assertTrue(entries.all { it.nameSpecified })
         assertEquals(listOf("IQD", "USD"), entries.map { it.backup.currency })
         assertEquals(1, LibraryBackupCodec.parse(manualJson).size)
+        assertFalse(LibraryBackupCodec.parse(manualJson).single().nameSpecified)
         assertTrue(LibraryBackupCodec.parse(importedJson).single().backup.importedList)
         assertThrows(IllegalArgumentException::class.java) { LibraryBackupCodec.encode(listOf(manual to manualJson, manual to manualJson)) }
     }
@@ -145,15 +147,66 @@ class ManualListsTest {
         val manual = ImportedListStore(context).createManual("Stock")
         val stock = PharmacyRepository(context, manual.id, false)
         val code = MedicineCode(CodeKind.BARCODE, "123456")
+        val names = context.getSharedPreferences("pharmacy-pocket-list-names", Context.MODE_PRIVATE)
+        names.edit().putString(MAIN_LIST_KEY, "Local main").commit()
         try {
             main.saveMedicine(medicine(name = "Original"))
             stock.saveMedicine(medicine("existing").copy(codes = listOf(code)))
             val first = ListBackup(MedicationList(MAIN_LIST_KEY, "Mine", false), BackupCodec.parse(BackupCodec.encode(listOf(medicine(name = "Changed")), "IQD", PharmacyDefaults.categories)))
-            val second = ListBackup(MedicationList(manual.id, manual.name, false), BackupCodec.parse(BackupCodec.encode(listOf(medicine("conflict").copy(codes = listOf(code))), "IQD", PharmacyDefaults.categories)))
+            val second = ListBackup(MedicationList(manual.id, "Saved stock name", false), BackupCodec.parse(BackupCodec.encode(listOf(medicine("conflict").copy(codes = listOf(code))), "IQD", PharmacyDefaults.categories)))
             assertThrows(IllegalStateException::class.java) { runBlocking { LibraryRestorer(context).restore(listOf(first, second), null, ImportMode.MERGE) } }
             assertEquals("Original", main.loadSnapshot().items.single().name)
             assertEquals("existing", stock.loadSnapshot().items.single().id)
+            assertEquals("Local main", names.getString(MAIN_LIST_KEY, null))
+            assertEquals("Stock", ImportedListStore(context).lists().single().name)
         } finally { main.close(); stock.close() }
+    }
+
+    @Test fun separateRestoreAppliesSavedNamesToMainAndMatchingManualAndImportedLists() = runBlocking {
+        val catalog = ImportedListStore(context)
+        val manual = catalog.createManual("Local stock")
+        val imported = catalog.createRestored("Local supplier", imported = true)
+        val names = context.getSharedPreferences("pharmacy-pocket-list-names", Context.MODE_PRIVATE)
+        assertFalse(names.contains(MAIN_LIST_KEY)) // Main matches even on a fresh device.
+        val main = PharmacyRepository(context)
+        try {
+            for (mode in listOf(ImportMode.MERGE, ImportMode.REPLACE)) {
+                val saved = listOf(MedicationList(MAIN_LIST_KEY, "Saved main $mode", false),
+                    MedicationList(manual.id, "Saved stock $mode", false),
+                    MedicationList(imported.id, "Saved supplier $mode", true))
+                val entries = LibraryBackupCodec.parse(LibraryBackupCodec.encode(saved.map { list ->
+                    list to BackupCodec.encode(listOf(medicine().copy(imported = list.imported)), "IQD",
+                        PharmacyDefaults.categories, importedList = list.imported)
+                }))
+                LibraryRestorer(context).restore(entries, null, mode)
+                assertEquals(saved.first().name, names.getString(MAIN_LIST_KEY, null))
+                val restored = medicationLists(ImportedListStore(context).lists(), names.getString(MAIN_LIST_KEY, "")!!)
+                saved.forEach { list -> assertEquals(list, restored.single { it.key == list.key }) }
+                assertEquals(1, main.loadSnapshot().items.size)
+            }
+        } finally { main.close() }
+    }
+
+    @Test fun explicitImportDestinationsRetainTheirLocalNames() = runBlocking {
+        val catalog = ImportedListStore(context)
+        val manual = catalog.createManual("Local stock")
+        val names = context.getSharedPreferences("pharmacy-pocket-list-names", Context.MODE_PRIVATE)
+        names.edit().putString(MAIN_LIST_KEY, "Local main").commit()
+        val entry = ListBackup(MedicationList(UUID.randomUUID().toString(), "Source name", false),
+            BackupCodec.parse(BackupCodec.encode(listOf(medicine()), "IQD", PharmacyDefaults.categories)))
+        for (destination in listOf(MAIN_LIST_KEY, manual.id)) {
+            LibraryRestorer(context).restore(listOf(entry), destination, ImportMode.MERGE)
+            assertEquals("Local main", names.getString(MAIN_LIST_KEY, null))
+            assertEquals("Local stock", ImportedListStore(context).lists().single().name)
+        }
+    }
+
+    @Test fun legacyBackupWithoutListNamesDoesNotResetTheMainName() = runBlocking {
+        val names = context.getSharedPreferences("pharmacy-pocket-list-names", Context.MODE_PRIVATE)
+        names.edit().putString(MAIN_LIST_KEY, "Personal stock").commit()
+        val entries = LibraryBackupCodec.parse(BackupCodec.encode(listOf(medicine()), "IQD", PharmacyDefaults.categories))
+        LibraryRestorer(context).restore(entries, null, ImportMode.REPLACE)
+        assertEquals("Personal stock", names.getString(MAIN_LIST_KEY, null))
     }
 
     @Test fun mergeRejectsImportedDestinationWithoutChangingItsMappedPrices() = runBlocking {
