@@ -79,6 +79,7 @@ class ManualListLayoutTest {
             compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Lists and settings").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Lists and settings").performClick()
             compose.onNodeWithText("Stock").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Add medicine").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Add medicine").performClick()
             compose.onNodeWithText("Medicine / brand").performTextInput("Test stock medicine")
             compose.onNodeWithText("Official price").performTextInput("1500")
