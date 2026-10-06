@@ -705,7 +705,9 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                     allLists.filter { settingsListPicker || !it.imported }.forEach { list ->
                         ActionRow(AppSymbol.NOTES, list.name) {
                             val request = addToList
-                            val destination = if (settingsListPicker) Destination.Settings else Destination.Editor(null, null, request?.second)
+                            val categoryPrefix = "${list.key}::"
+                            val category = request?.first?.takeIf { it.startsWith(categoryPrefix) }?.removePrefix(categoryPrefix)
+                            val destination = if (settingsListPicker) Destination.Settings else Destination.Editor(null, category, request?.second)
                             addToList = null; settingsListPicker = false; selectList(list.id, destination)
                         }
                     }

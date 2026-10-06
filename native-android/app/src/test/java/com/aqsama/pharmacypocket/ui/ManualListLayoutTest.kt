@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.Density
@@ -92,6 +93,49 @@ class ManualListLayoutTest {
             assertEquals(1500L, saved.official)
             assertEquals("950.25", saved.importedFields.single { it.field == ImportField.WHOLESALE_PRICE }.value)
             assertTrue(runBlocking { base.loadSnapshot().items.isEmpty() })
+        } finally { stock.close(); base.close() }
+    }
+
+    @Test fun aggregateAddKeepsTheSelectedCategoryWhenChoosingItsOwningList() {
+        addFromFilteredAggregate(chooseOwner = true)
+    }
+
+    @Test fun aggregateAddDoesNotApplyAnotherListsCategoryEvenWhenLocalIdsMatch() {
+        addFromFilteredAggregate(chooseOwner = false)
+    }
+
+    private fun addFromFilteredAggregate(chooseOwner: Boolean) {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val list = runBlocking { ImportedListStore(context).createManual("Stock") }
+        val base = PharmacyRepository(context)
+        val stock = base.forList(list.id, imported = false)
+        val category = Category("special", "Special stock", "Special stock", "#596aab")
+        try {
+            runBlocking {
+                stock.saveCategory(category)
+                base.saveCategory(category.copy(label = "Unrelated main category", arabic = "Unrelated main category"))
+            }
+            compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { PharmacyApp(base) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Lists and settings").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Lists and settings").performClick()
+            compose.onNodeWithText("All manual lists").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Add medicine").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNode(hasScrollToIndexAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange))
+                .performScrollToNode(hasText("Special stock  0"))
+            compose.onNodeWithText("Special stock  0").performClick().assertIsSelected()
+            compose.onNodeWithContentDescription("Add medicine").performClick()
+            compose.onNodeWithText(if (chooseOwner) "Stock" else "My medications").performClick()
+            compose.waitUntil(10000) { compose.onAllNodesWithText("Medicine / brand").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Medicine / brand").performTextInput("Filtered aggregate medicine")
+            compose.onNodeWithText("Official price").performTextInput("1500")
+            compose.onNodeWithText("Save medicine").performClick()
+            val destination = if (chooseOwner) stock else base
+            compose.waitUntil(10000) { runBlocking { destination.loadSnapshot().items.isNotEmpty() } }
+            val saved = runBlocking { destination.loadSnapshot().items.single() }
+            val expected = if (chooseOwner) category.id else runBlocking { base.loadSnapshot().categories.first { it.id != "all" }.id }
+            assertEquals(expected, saved.category)
+            assertFalse(saved.category.contains("::"))
+            assertTrue(runBlocking { (if (chooseOwner) base else stock).loadSnapshot().items.isEmpty() })
         } finally { stock.close(); base.close() }
     }
 
