@@ -557,7 +557,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                             onBack = { if (!busy) pop() },
                             onManageCategories = { if (!busy && !media.locked) push(Destination.Categories) },
                             loadPhoto = repository::loadPhoto,
-                            importedTemplate = selectedList?.mappings?.filter { it.field !in listOf(ImportField.NAME, ImportField.NOTE, ImportField.DESCRIPTION, ImportField.IGNORE) }?.map {
+                            importedTemplate = selectedList?.takeIf { it.imported }?.mappings?.filter { it.field !in listOf(ImportField.NAME, ImportField.NOTE, ImportField.DESCRIPTION, ImportField.IGNORE) }?.map {
                                 ImportedField("column-${it.column}", it.label, if (it.field.categoryLevel == 1) destination.category.orEmpty() else "", it.field, it.onCard, it.priceFormat)
                             },
                             media = media,

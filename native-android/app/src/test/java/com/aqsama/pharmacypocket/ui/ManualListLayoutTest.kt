@@ -2,6 +2,8 @@ package com.aqsama.pharmacypocket.ui
 
 import android.os.Handler
 import android.os.Looper
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +20,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.aqsama.pharmacypocket.data.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.android.asCoroutineDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -64,6 +67,31 @@ class ManualListLayoutTest {
         compose.onNodeWithContentDescription("Create manual list").performClick()
         compose.runOnIdle { assertTrue(create) }
         capture("manual-list-sidebar")
+    }
+
+    @Test fun namedManualListCreatesOrdinaryMedicineWithSellingAndPurchasePrices() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val list = runBlocking { ImportedListStore(context).createManual("Stock") }
+        val base = PharmacyRepository(context)
+        val stock = base.forList(list.id, imported = false)
+        try {
+            compose.setContent { PharmacyPocketTheme(ThemePreference.LIGHT) { PharmacyApp(base) } }
+            compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("Lists and settings").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Lists and settings").performClick()
+            compose.onNodeWithText("Stock").performClick()
+            compose.onNodeWithContentDescription("Add medicine").performClick()
+            compose.onNodeWithText("Medicine / brand").performTextInput("Test stock medicine")
+            compose.onNodeWithText("Official price").performTextInput("1500")
+            compose.onNodeWithText("Purchase price").performScrollTo().performTextInput("950.25")
+            compose.onNodeWithText("Save medicine").performClick()
+            compose.waitUntil(10000) { runBlocking { stock.loadSnapshot().items.isNotEmpty() } }
+            val saved = runBlocking { stock.loadSnapshot().items.single() }
+            assertEquals("Test stock medicine", saved.name)
+            assertFalse(saved.imported)
+            assertEquals(1500L, saved.official)
+            assertEquals("950.25", saved.importedFields.single { it.field == ImportField.WHOLESALE_PRICE }.value)
+            assertTrue(runBlocking { base.loadSnapshot().items.isEmpty() })
+        } finally { stock.close(); base.close() }
     }
 
     @Test fun mainCanMergeIntoNamedManualListAndDestinationSwitchClearsTarget() {
