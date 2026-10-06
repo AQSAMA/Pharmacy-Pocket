@@ -124,7 +124,7 @@ class ManualListLayoutTest {
                 .performScrollToNode(hasText("Special stock  0"))
             compose.onNodeWithText("Special stock  0").performClick().assertIsSelected()
             compose.onNodeWithContentDescription("Add medicine").performClick()
-            compose.onNodeWithText(if (chooseOwner) "Stock" else "My medications").performClick()
+            compose.onNode(hasText(if (chooseOwner) "Stock" else "My medications") and hasAnyAncestor(isDialog())).performClick()
             compose.waitUntil(10000) { compose.onAllNodesWithText("Medicine / brand").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("Medicine / brand").performTextInput("Filtered aggregate medicine")
             compose.onNodeWithText("Official price").performTextInput("1500")
