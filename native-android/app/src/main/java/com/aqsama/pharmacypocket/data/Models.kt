@@ -23,6 +23,9 @@ data class Medicine(
     val codesSpecified: Boolean = true,
     val imported: Boolean = false,
     val importedFields: List<ImportedField> = emptyList(),
+    // View-only aggregate provenance; never persisted or exported.
+    val listLabel: String? = null,
+    val displayCurrency: String? = null,
 )
 
 enum class CodeKind { BARCODE, QR, PRICE_STICKER_QR }
@@ -108,6 +111,8 @@ data class ParsedBackup(
     val sourceVersion: Int,
     val photos: Map<String, ByteArray> = emptyMap(),
     val importedList: Boolean = false,
+    val photosSpecified: Boolean = true,
+    val categoriesSpecified: Boolean = true,
 )
 
 object PharmacyDefaults {

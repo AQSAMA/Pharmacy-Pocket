@@ -29,6 +29,7 @@ class ImportedListStore(private val context: Context) {
             val columns = rawQuery("PRAGMA table_info(lists)", null).use { cursor ->
                 buildSet { while (cursor.moveToNext()) add(cursor.getString(cursor.getColumnIndexOrThrow("name"))) }
             }
+            if ("kind" !in columns) execSQL("ALTER TABLE lists ADD COLUMN kind TEXT NOT NULL DEFAULT 'IMPORTED'")
             if ("ready" !in columns) execSQL("ALTER TABLE lists ADD COLUMN ready INTEGER NOT NULL DEFAULT 1")
             if ("selection" !in columns) execSQL("ALTER TABLE lists ADD COLUMN selection TEXT NOT NULL DEFAULT ''")
             if ("expected_rows" !in columns) execSQL("ALTER TABLE lists ADD COLUMN expected_rows INTEGER NOT NULL DEFAULT 0")
@@ -39,8 +40,8 @@ class ImportedListStore(private val context: Context) {
         mutex.withLock {
             open().use { db ->
                 reconcilePending(db)
-                db.rawQuery("SELECT id, name, source, mappings FROM lists WHERE ready = 1 ORDER BY rowid", null).use { cursor ->
-                    buildList { while (cursor.moveToNext()) add(ImportedList(cursor.getString(0), cursor.getString(1), cursor.getString(2), mappingsFromJson(JSONArray(cursor.getString(3))))) }
+                db.rawQuery("SELECT id, name, source, mappings, kind FROM lists WHERE ready = 1 ORDER BY rowid", null).use { cursor ->
+                    buildList { while (cursor.moveToNext()) add(ImportedList(cursor.getString(0), cursor.getString(1), cursor.getString(2), mappingsFromJson(JSONArray(cursor.getString(3))), cursor.getString(4) == "IMPORTED")) }
                 }
             }
         }
@@ -98,6 +99,34 @@ class ImportedListStore(private val context: Context) {
             } finally { repository.close() }
         }
     }
+
+    suspend fun createManual(name: String, restoredId: String? = null, imported: Boolean = false): ImportedList = withContext(Dispatchers.IO) {
+        require(name.trim().length in 1..100) { "Use a list name of 1–100 characters." }
+        mutex.withLock {
+            val item = ImportedList(restoredId ?: UUID.randomUUID().toString(), name.trim(), if (imported) "JSON backup" else "", emptyList(), imported = imported)
+            require(Regex("[a-f0-9-]{36}").matches(item.id)) { "Invalid list ID." }
+            open().use { db ->
+                db.insertOrThrow("lists", null, ContentValues().apply {
+                    put("id", item.id); put("name", item.name); put("source", item.source); put("mappings", "[]")
+                    put("kind", if (imported) "IMPORTED" else "MANUAL"); put("ready", 1)
+                })
+            }
+            item
+        }
+    }
+
+    suspend fun rename(id: String, name: String) = withContext(Dispatchers.IO) {
+        require(name.trim().length in 1..100) { "Use a list name of 1–100 characters." }
+        mutex.withLock { open().use { db ->
+            check(db.update("lists", ContentValues().apply { put("name", name.trim()) }, "id = ? AND ready = 1", arrayOf(id)) == 1)
+        } }
+    }
+
+    /** Empty restored spreadsheet lists have no editable source workbook. */
+    suspend fun createRestored(name: String, imported: Boolean, sourceId: String? = null): ImportedList =
+        createManual(name, sourceId, imported)
+
+
     private fun selectionJson(source: ImportSource): String = JSONObject().apply {
         put("sheet", source.selection.sheetIndex); put("header", source.selection.headerRow)
         put("first", source.selection.firstRow); put("last", source.selection.lastRow); put("prefix", source.idPrefix); put("originalAvailable", source.originalAvailable)

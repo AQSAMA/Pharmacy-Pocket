@@ -70,6 +70,7 @@ fun SettingsScreen(
     onImport: (ParsedBackup, ImportMode) -> Unit,
     exportBackup: suspend () -> String,
     listName: String? = null,
+    onBackups: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -235,16 +236,17 @@ fun SettingsScreen(
                         Column {
                             SettingsActionRow(
                                 symbol = "⇧",
-                                title = "Export JSON",
-                                description = "Save a backup",
+                                title = if (onBackups == null) "Export JSON" else "Import & export",
+                                description = if (onBackups == null) "Save a backup" else "Choose lists and medicines",
                                 onClick = {
                                     Haptics.action(view)
-                                    exportLauncher.launch("pharmacy-pocket-${LocalDate.now()}.json")
+                                    if (onBackups != null) onBackups() else exportLauncher.launch("pharmacy-pocket-${LocalDate.now()}.json")
                                 },
                             )
                             Surface(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxWidth()) {
                                 androidx.compose.foundation.layout.Spacer(Modifier.size(1.dp))
                             }
+                            if (onBackups == null) {
                             SettingsActionRow(
                                 symbol = "⇩",
                                 title = "Import JSON",
@@ -256,6 +258,7 @@ fun SettingsScreen(
                             )
                             Surface(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.fillMaxWidth()) {
                                 androidx.compose.foundation.layout.Spacer(Modifier.size(1.dp))
+                            }
                             }
                             SettingsActionRow(
                                 symbol = "♲",
@@ -314,7 +317,7 @@ fun SettingsScreen(
     }
 }
 
-private fun readText(context: Context, uri: Uri): String {
+internal fun readText(context: Context, uri: Uri): String {
     val stream = context.contentResolver.openInputStream(uri)
         ?: throw IllegalStateException("Unable to read the selected file.")
     return stream.use { input ->
@@ -330,7 +333,7 @@ private fun readText(context: Context, uri: Uri): String {
     }
 }
 
-private fun writeText(context: Context, uri: Uri, text: String) {
+internal fun writeText(context: Context, uri: Uri, text: String) {
     val stream = context.contentResolver.openOutputStream(uri, "wt")
         ?: throw IllegalStateException("Unable to create the backup file.")
     stream.bufferedWriter(Charsets.UTF_8).use { it.write(text) }

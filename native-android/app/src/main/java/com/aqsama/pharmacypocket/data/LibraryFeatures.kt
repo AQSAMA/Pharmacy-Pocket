@@ -25,5 +25,5 @@ fun sourceDetailFields(item: Medicine, currency: String): List<ImportedField> {
         ImportedField("source-currency", "Source price currency", currency, ImportField.CUSTOM, false),
         ImportedField("source-price", "Source pharmacy price", item.official.toString(), ImportField.CUSTOM, false),
     ) + if (item.discounted != null) listOf(ImportedField("source-alternative-price", "Source alternative price", item.discounted.toString(), ImportField.CUSTOM, false)) else emptyList()
-    return (provenance + item.importedFields.map { it.copy(onCard = false) }).distinctBy { it.key }
+    return (provenance + item.importedFields.map { it.copy(onCard = it.field == ImportField.WHOLESALE_PRICE) }).distinctBy { it.key }
 }

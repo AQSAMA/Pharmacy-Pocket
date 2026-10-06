@@ -313,7 +313,7 @@ fun MedicineCard(
                                 if (price > item.official) verifyPriceColor else normalDiscountColor
                             }
 
-                            if (!item.imported) MedicineCardPrices(item, currency, large, discountColor)
+                            if (!item.imported) MedicineCardPrices(item, item.displayCurrency ?: currency, large, discountColor)
                             ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.BODY }, compact = true, large = large)
                             ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.FOOTER }, compact = true, large = large)
                             Row(
@@ -322,7 +322,7 @@ fun MedicineCard(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
                                 Text(
-                                    "${category.label}  •  Added ${formatAddedDate(item.createdAt)}",
+                                    "${item.listLabel?.let { "$it · " }.orEmpty()}${category.label.substringBefore(" · ")}  •  Added ${formatAddedDate(item.createdAt)}",
                                     modifier = Modifier.weight(1f),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,

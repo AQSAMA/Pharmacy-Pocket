@@ -23,6 +23,8 @@ object BackupCodec {
         exportedAt: String = Instant.now().toString(),
         photos: Map<String, ByteArray> = emptyMap(),
         importedList: Boolean = false,
+        photosIncluded: Boolean = true,
+        categoriesIncluded: Boolean = true,
     ): String {
         val estimatedPhotoBytes = photos.values.sumOf { ((it.size.toLong() + 2L) / 3L) * 4L }
         require(estimatedPhotoBytes < PharmacyDefaults.maxBackupBytes) {
@@ -30,6 +32,8 @@ object BackupCodec {
         }
         val root = JSONObject()
             .put("importedList", importedList)
+            .put("photosIncluded", photosIncluded)
+            .put("categoriesIncluded", categoriesIncluded)
             .put("schema", schema)
             .put("version", version)
             .put("exportedAt", exportedAt)
@@ -174,6 +178,8 @@ object BackupCodec {
                 sourceVersion = sourceVersion,
                 photos = photos,
                 importedList = root.optBoolean("importedList", false),
+                photosSpecified = root.optBoolean("photosIncluded", true),
+                categoriesSpecified = root.optBoolean("categoriesIncluded", true),
             )
         } catch (error: IllegalArgumentException) {
             throw error
@@ -205,6 +211,15 @@ object BackupCodec {
 
     /** Restores our compact imported-list backups without retaining a full JSON object graph. */
     private fun parseImported(raw: String): ParsedBackup {
+        JsonReader(StringReader(raw)).use { reader ->
+            val backup = readBackup(reader)
+            require(reader.peek() == JsonToken.END_DOCUMENT) { "Unexpected content after the backup." }
+            return backup
+        }
+    }
+
+    /** Stream a list nested in a library envelope without building a duplicate JSON graph. */
+    internal fun readBackup(reader: JsonReader): ParsedBackup {
         val medicines = mutableListOf<Medicine>()
         val photos = mutableMapOf<String, ByteArray>()
         val favorites = mutableSetOf<String>()
@@ -214,11 +229,16 @@ object BackupCodec {
         var currency = "IQD"
         var hasCurrency = false
         var sourceVersion = 1
+        var photosIncluded = true
+        var categoriesIncluded = true
         var hasMedicines = false
-        JsonReader(StringReader(raw)).use { reader ->
+        var importedList = false
+        run {
             reader.beginObject()
             while (reader.hasNext()) when (reader.nextName()) {
-                "importedList" -> require(reader.nextBoolean())
+                "importedList" -> importedList = reader.nextBoolean()
+                "photosIncluded" -> photosIncluded = reader.nextBoolean()
+                "categoriesIncluded" -> categoriesIncluded = reader.nextBoolean()
                 "version" -> sourceVersion = reader.nextInt()
                 "currency" -> {
                     if (reader.peek() == JsonToken.NULL) reader.nextNull() else {
@@ -267,15 +287,15 @@ object BackupCodec {
                 else -> reader.skipValue()
             }
             reader.endObject()
-            require(reader.peek() == JsonToken.END_DOCUMENT) { "Unexpected content after the backup." }
         }
+        require(medicines.size <= if (importedList) SpreadsheetLimits.maxRows else PharmacyDefaults.maxBackupMedicines) { "This file contains too many medicines." }
         require(hasMedicines) { "This file does not contain a valid medicines list." }
         require(sourceVersion in 1..version) { "Backup version $sourceVersion is not supported by this app." }
         val completeSections = sections ?: buildSections(medicines, PharmacyDefaults.categories)
         val completeCategories = categories ?: categoriesFromSections(completeSections)
         val favorited = medicines.map { if (it.id in favorites) it.copy(favorite = true) else it }
         return ParsedBackup(orderBySections(favorited, completeSections), completeSections, completeCategories,
-            currency, hasCurrency, sourceVersion, photos, importedList = true)
+            currency, hasCurrency, sourceVersion, photos, importedList = importedList, photosSpecified = photosIncluded, categoriesSpecified = categoriesIncluded)
     }
 
     private fun readObject(reader: JsonReader, depth: Int = 0): JSONObject {
