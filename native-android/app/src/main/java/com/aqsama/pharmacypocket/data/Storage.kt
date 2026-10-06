@@ -466,17 +466,19 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
     }
 
     /** Copy all data and retire the source in one attached-database transaction. */
-    fun transferFrom(source: MedicineDatabase, sourceId: String, item: Medicine, photo: ByteArray?) {
+    fun transferFrom(source: MedicineDatabase, sourceId: String, item: Medicine, photo: ByteArray?, removeSource: Boolean = true) {
         val db = open()
         db.execSQL("ATTACH DATABASE ? AS transfer_source", arrayOf(source.dbFile.absolutePath))
         try {
             db.beginTransaction()
             try {
                 require(db.rawQuery("SELECT 1 FROM transfer_source.medicines WHERE id = ? AND deleted_at IS NULL", arrayOf(sourceId)).use { it.moveToFirst() }) { "This medicine has already been moved or removed." }
-                check(writeMedicine(db, item, maxSortOrder(db) + 1))
+                writeMedicine(db, item, maxSortOrder(db) + 1)
                 photo?.let { writePhoto(db, item.id, it) }
-                db.execSQL("UPDATE transfer_source.medicines SET deleted_at = ? WHERE id = ?", arrayOf<Any>(System.currentTimeMillis(), sourceId))
-                db.execSQL("INSERT OR IGNORE INTO transfer_source.excluded_import_rows(id) VALUES (?)", arrayOf(sourceId))
+                if (removeSource) {
+                    db.execSQL("UPDATE transfer_source.medicines SET deleted_at = ? WHERE id = ?", arrayOf<Any>(System.currentTimeMillis(), sourceId))
+                    db.execSQL("INSERT OR IGNORE INTO transfer_source.excluded_import_rows(id) VALUES (?)", arrayOf(sourceId))
+                }
                 db.setTransactionSuccessful()
             } finally { db.endTransaction() }
         } finally { db.execSQL("DETACH DATABASE transfer_source") }
@@ -711,6 +713,7 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             val conflicts = database.loadMedicines().filter { it.id != item.id }
                 .flatMap { other -> other.codes.map { it.value to other.name } }.toMap()
             codes.forEach { require(it.value !in conflicts) { "Code already belongs to ${conflicts[it.value]}." } }
+            fieldsFromJson(fieldsToJson(item.importedFields)) // Validate user fields before persisting.
             database.saveMedicine(item.copy(codes = codes), photo, removePhoto)
             snapshotUnsafe()
         }
@@ -729,36 +732,69 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
                     else -> prior.importedFields.firstOrNull { it.key == "column-$column" }?.value
                 }
                 fun mapped(role: ImportField, fallback: String): String = mappings.firstOrNull { it.field == role }?.let { saved(it.column) } ?: fallback
+                fun styled(field: ImportedField): ImportedField {
+                    val column = field.key.removePrefix("column-").toIntOrNull()
+                    val previous = prior.importedFields.firstOrNull { it.key == field.key }
+                    val oldMapping = oldMappings.firstOrNull { it.column == column }
+                    val newMapping = mappings.firstOrNull { it.column == column }
+                    return field.copy(value = column?.let(::saved) ?: field.value,
+                        label = if (oldMapping?.label == newMapping?.label) previous?.label ?: field.label else field.label,
+                        onCard = if (oldMapping?.onCard == newMapping?.onCard) previous?.onCard ?: field.onCard else field.onCard,
+                        color = previous?.color, placement = previous?.placement ?: FieldPlacement.BODY)
+                }
                 syncImportedFields(prior.copy(name = mapped(ImportField.NAME, fresh.name), note = mapped(ImportField.NOTE, fresh.note),
                     description = mapped(ImportField.DESCRIPTION, fresh.description), revision = prior.revision + 1,
-                    importedFields = fresh.importedFields.map { field -> field.copy(value = field.key.removePrefix("column-").toIntOrNull()?.let(::saved) ?: field.value) }))
+                    importedFields = (fresh.importedFields.map(::styled) + prior.importedFields.filter { it.key.startsWith("custom-") }).sortedBy { field ->
+                        prior.importedFields.indexOfFirst { it.key == field.key }.takeIf { it >= 0 } ?: Int.MAX_VALUE
+                    }))
             } + old.filterNot { it.id.startsWith("import-") }
             database.reconfigureImport(next, catalog, requireNotNull(listId), name, mappings, selection)
         }
     }
 
-    suspend fun moveToMain(id: String, main: PharmacyRepository, commonName: String, price: Long, category: String): AppSnapshot = withContext(Dispatchers.IO) {
-        require(listId != null && main.listId == null) { "Only imported lists can move items into My medications." }
-        require(commonName.trim().isNotEmpty() && commonName.length <= SpreadsheetLimits.maxCellLength)
-        require(price in 0..9_007_199_254_740_991L)
-        mutex.withLock { main.mutex.withLock {
-            val item = database.loadMedicines().firstOrNull { it.id == id } ?: error("This medicine is no longer available.")
-            val conflicts = main.database.loadMedicines().flatMap { it.codes }.mapTo(mutableSetOf()) { it.value }
-            require(item.codes.none { it.value in conflicts }) { "A package code already belongs to a medicine in My medications. Resolve the code conflict before moving." }
-            val fields = buildList {
-                add(ImportedField("source-name", "Original name", item.name, ImportField.CUSTOM, false))
-                add(ImportedField("source-currency", "Source price currency", preferences.currency(), ImportField.CUSTOM, false))
-                if (item.importedFields.none { it.field == ImportField.PHARMACY_PRICE })
-                    add(ImportedField("source-price", "Source pharmacy price", item.official.toString(), ImportField.CUSTOM, false))
-                if (item.discounted != null && item.importedFields.none { it.field == ImportField.WHOLESALE_PRICE })
-                    add(ImportedField("source-alternative-price", "Source alternative price", item.discounted.toString(), ImportField.CUSTOM, false))
-                addAll(item.importedFields.map { it.copy(onCard = false) })
+    suspend fun moveToMain(id: String, main: PharmacyRepository, commonName: String, price: Long, category: String): AppSnapshot =
+        transferMedication(id, main, true, commonName, price, category)
+
+    private companion object { val transferMutex = Mutex() }
+
+    suspend fun transferMedication(id: String, destination: PharmacyRepository, removeSource: Boolean,
+        commonName: String? = null, price: Long? = null, category: String? = null, mergeTargetId: String? = null): AppSnapshot = withContext(Dispatchers.IO) {
+        require(listId != null && listId != destination.listId) { "Choose a different destination list." }
+        transferMutex.withLock { mutex.withLock { destination.mutex.withLock {
+            val source = database.loadMedicines().firstOrNull { it.id == id } ?: error("This medicine is no longer available.")
+            val targets = destination.database.loadMedicines()
+            val target = mergeTargetId?.let { targetId ->
+                require(destination.listId == null) { "Merge into My medications." }
+                targets.firstOrNull { it.id == targetId } ?: error("The merge target is no longer available.")
             }
-            val moved = item.copy(id = "manual-${java.util.UUID.randomUUID()}", name = commonName.trim(), category = category,
-                subcategory = "General", official = price, discounted = null, imported = false, importedFields = fields)
-            main.database.transferFrom(database, id, moved, database.loadPhoto(id))
+            val item = if (target != null) mergeMedicationDetails(target, source, preferences.currency()) else {
+                val name = if (destination.listId == null) commonName?.trim() ?: source.name else source.name
+                require(name.isNotEmpty() && name.length <= SpreadsheetLimits.maxCellLength)
+                val chosenPrice = if (destination.listId == null) price ?: source.official else source.official
+                require(chosenPrice in 0..9_007_199_254_740_991L)
+                source.copy(id = "manual-${java.util.UUID.randomUUID()}", name = name,
+                    category = if (destination.listId == null) category ?: "tablets" else source.category,
+                    subcategory = if (destination.listId == null) "General" else source.subcategory,
+                    official = chosenPrice, discounted = if (destination.listId == null) null else source.discounted,
+                    imported = destination.listId != null,
+                    importedFields = if (destination.listId == null) sourceDetailFields(source, preferences.currency()) else source.importedFields)
+            }
+            fieldsFromJson(fieldsToJson(item.importedFields))
+            val conflicts = targets.filter { it.id != item.id }.flatMap { other -> other.codes.map { it.value to other.name } }.toMap()
+            item.codes.forEach { require(it.value !in conflicts) { "A package code already belongs to ${conflicts[it.value]}. Resolve the code conflict first." } }
+            val destinationCategories = if (destination.listId != null) {
+                val current = destination.preferences.categories()
+                mergeCategoryDefinitions(current, preferences.categories().filter { it.id == source.category }.filter { candidate -> current.none { it.id == candidate.id } })
+            } else destination.preferences.categories()
+            require(destinationCategories.count { it.id != "all" } <= PharmacyDefaults.maxCategories) { "Too many categories in the destination list." }
+            require(item.category != "all") { "Choose a medication category." }
+            val photo = database.loadPhoto(id) ?: target?.let { destination.database.loadPhoto(it.id) }
+            destination.database.transferFrom(database, id, item, photo, removeSource)
+            if (destination.listId != null) {
+                destination.preferences.setCategories(destinationCategories)
+            }
             snapshotUnsafe()
-        } }
+        } } }
     }
 
     suspend fun loadPhoto(id: String): ByteArray? = withContext(Dispatchers.IO) {
@@ -807,7 +843,8 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             require(exists || editableCount < PharmacyDefaults.maxCategories) {
                 "You can store up to ${PharmacyDefaults.maxCategories} categories."
             }
-            preferences.setCategories(mergeCategoryDefinitions(current, listOf(category)))
+            val next = mergeCategoryDefinitions(current, listOf(category))
+            preferences.setCategories(next)
             snapshotUnsafe()
         }
     }

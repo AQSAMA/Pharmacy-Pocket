@@ -157,4 +157,24 @@ class ImportedListSettingsTest {
         } finally { imported.close(); main.close() }
     }
 
+    @Test fun customFieldsAndDraggedStylesSurviveImportSettingsUpdates() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = ImportedListStore(context)
+        val list = store.create("Prices", "Prices.xlsx", mappings, prepared(), source())
+        val repository = PharmacyRepository(context, list.id)
+        try {
+            val original = repository.loadSnapshot().items.first()
+            val custom = ImportedField("custom-shelf", "Shelf", "A4", ImportField.CUSTOM, true, color = "#596aab", placement = FieldPlacement.TOP)
+            val fields = original.importedFields.asReversed().map { it.copy(label = "My ${it.label}", onCard = !it.onCard, color = "#2f856d", placement = FieldPlacement.FOOTER) } + custom
+            repository.saveMedicine(original.copy(importedFields = fields))
+            store.update(list, "Changed", mappings, prepared(), source())
+            val retained = repository.loadSnapshot().items.first { it.id == original.id }.importedFields
+            assertEquals(fields.map { it.key }, retained.map { it.key })
+            assertEquals(fields.map { it.onCard }, retained.map { it.onCard })
+            assertEquals(fields.map { it.label }, retained.map { it.label })
+            assertEquals(custom, retained.last())
+            assertTrue(retained.dropLast(1).all { it.color == "#2f856d" && it.placement == FieldPlacement.FOOTER })
+        } finally { repository.close() }
+    }
+
 }

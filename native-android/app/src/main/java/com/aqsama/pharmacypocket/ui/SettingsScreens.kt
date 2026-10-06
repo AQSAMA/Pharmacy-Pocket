@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -126,48 +127,12 @@ fun SettingsScreen(
                     Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (listName != null) {
-                        Text(listName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Backup, import, categories, currency and Trash apply to this list. Theme and text size apply across the app.", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.tertiary,
-                    ) {
-                        Column(
-                            Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(5.dp),
-                        ) {
-                            Text(
-                                snapshot.items.size.toString(),
-                                color = MaterialTheme.colorScheme.onTertiary,
-                                fontSize = 34.sp,
-                                fontWeight = FontWeight.Black,
-                            )
-                            Text(
-                                "medicines stored locally",
-                                color = MaterialTheme.colorScheme.onTertiary,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                            )
-                            Text(
-                                "Fast, offline-first, and fully exportable.",
-                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.78f),
-                                fontSize = 13.sp,
-                            )
-                            Surface(
-                                modifier = Modifier.padding(top = 7.dp),
-                                shape = RoundedCornerShape(11.dp),
-                                color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.08f),
-                            ) {
-                                Text(
-                                    "● Offline ready",
-                                    color = MaterialTheme.colorScheme.onTertiary.copy(alpha = 0.88f),
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
+                    Surface(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AppIcon(AppSymbol.FIELDS)
+                            Column {
+                                Text("${snapshot.items.size} medicines", style = MaterialTheme.typography.titleMedium)
+                                Text(listName ?: "My medications", style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }
@@ -183,7 +148,6 @@ fun SettingsScreen(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text("Large text", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                                Text("Increase medicine names and key prices.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                             }
                             Switch(
                                 checked = snapshot.largeText,
@@ -206,11 +170,6 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                            )
-                            Text(
-                                "Follow Android automatically, or keep Pharmacy Pocket light or dark.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp,
                             )
                             Row(
                                 Modifier.horizontalScroll(rememberScrollState()),
@@ -264,7 +223,7 @@ fun SettingsScreen(
                     SettingsAction(
                         symbol = "◈",
                         title = "Manage categories",
-                        description = "${(snapshot.categories.size - 1).coerceAtLeast(0)} categories · rename, add, and customize colors.",
+                        description = "${(snapshot.categories.size - 1).coerceAtLeast(0)} categories",
                         onClick = {
                             Haptics.action(view)
                             onManageCategories()
@@ -277,7 +236,7 @@ fun SettingsScreen(
                             SettingsActionRow(
                                 symbol = "⇧",
                                 title = "Export JSON",
-                                description = "Create one portable backup file.",
+                                description = "Save a backup",
                                 onClick = {
                                     Haptics.action(view)
                                     exportLauncher.launch("pharmacy-pocket-${LocalDate.now()}.json")
@@ -289,7 +248,7 @@ fun SettingsScreen(
                             SettingsActionRow(
                                 symbol = "⇩",
                                 title = "Import JSON",
-                                description = "Merge with this phone or replace the active collection safely.",
+                                description = "Restore a backup",
                                 onClick = {
                                     Haptics.action(view)
                                     importLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
@@ -310,30 +269,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        Column(
-                            Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text("About your data", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold)
-                            Text(
-                                "One JSON file contains medicines, category sections, custom category names/colors, order, favorites, descriptions, and currency. Files exported by the original web and Expo apps remain supported.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                            )
-                            Text(
-                                "Descriptions are reference notes and are not verified clinical guidance.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                            )
-                        }
-                    }
+
                 }
             }
         }
@@ -627,25 +563,7 @@ fun CategoryManagerScreen(
                 }
             }
 
-            item {
-                Surface(
-                    modifier = Modifier
-                        .padding(horizontal = 18.dp, vertical = 4.dp)
-                        .fillMaxWidth(),
-                    shape = RoundedCornerShape(17.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Why there is no delete button", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.ExtraBold)
-                        Text(
-                            "Category IDs stay stable when you rename or recolor them, so medicines never lose their category. A safe delete/move flow can be added separately.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            lineHeight = 19.sp,
-                        )
-                    }
-                }
-            }
+
         }
     }
 
@@ -660,7 +578,7 @@ fun CategoryManagerScreen(
                 Text(if (snapshot.categories.any { it.id == current.id }) "Edit category" else "New category")
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+                Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(13.dp)) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(17.dp),

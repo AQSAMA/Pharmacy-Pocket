@@ -86,7 +86,9 @@ The preview APK:
 - uses the stable preview-only signing key, so future previews can update it;
 - is for testing and daily use before a production release, not a production signing identity.
 
-Pull requests still run Android CI and may upload a `Pharmacy Pocket Dev` debug artifact. That debug artifact is separate from the preview channel.
+Pull requests run **Android CI** and upload both `pharmacy-pocket-preview-<PR number>` and `pharmacy-pocket-debug-<PR number>` artifacts. Open the pull request's successful Android CI run and download the preview artifact for the optimized **Pharmacy Pocket Preview** APK, or the debug artifact for **Pharmacy Pocket Dev**. Both artifacts are retained for 14 days.
+
+CI previews use the same preview package and signing key, with a version code above the latest published preview at build time. They can update that published preview in place; Dev is a separate app with separate data. CI artifacts do not create GitHub pre-releases. A newer installed CI preview may require downloading a newer build to avoid a version-code downgrade.
 
 ## 6. Publish a production release
 

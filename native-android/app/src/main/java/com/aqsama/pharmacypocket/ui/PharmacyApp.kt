@@ -172,8 +172,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
     var loadAttempt by remember { mutableStateOf(0) }
     var trashItems by remember { mutableStateOf<List<TrashedMedicine>?>(null) }
     var movingMedicine by remember { mutableStateOf<Medicine?>(null) }
-    var mainCurrency by remember { mutableStateOf("IQD") }
-    var mainCategories by remember { mutableStateOf<List<Category>>(emptyList()) }
+    var mainSnapshot by remember { mutableStateOf<AppSnapshot?>(null) }
     var quickCaptureId by remember { mutableStateOf<String?>(null) }
     val photoVersions = remember { mutableStateMapOf<String, Int>() }
     val cameraSaveMutex = remember { Mutex() }
@@ -552,7 +551,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         photoVersion = photoVersions[destination.medicineId] ?: 0,
                         onMoveToMain = if (selectedListId != null) { item ->
                             scope.launch {
-                                try { val main = baseRepository.loadSnapshot(); mainCategories = main.categories; mainCurrency = main.currency; movingMedicine = item }
+                                try { val main = baseRepository.loadSnapshot(); mainSnapshot = main; movingMedicine = item }
                                 catch (error: Exception) { errorMessage = error.message ?: "Could not open My medications." }
                             }
                         } else null,
@@ -611,12 +610,17 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
         }
 
         movingMedicine?.let { item ->
-            MoveToMainSheet(item, mainCategories, mainCurrency, busy, onDismiss = { movingMedicine = null }, onMove = { name, price, category ->
-                runOperation(successMessage = "Moved to My medications", onSuccess = {
-                    movingMedicine = null
-                    removeMedicineDestinations(item.id)
-                }) { repository.moveToMain(item.id, baseRepository, name, price, category) }
-            })
+            mainSnapshot?.let { main ->
+                MoveToMainSheet(item, main, importedLists.filter { it.id != selectedListId }, busy, onDismiss = { movingMedicine = null },
+                    onTransfer = { destinationId, removeSource, name, price, category, mergeId ->
+                        val destinationRepository = repositories.getOrPut(destinationId) { baseRepository.forList(destinationId) }
+                        runOperation(successMessage = if (mergeId != null) "Medication merged" else if (removeSource) "Medication moved" else "Medication copied", onSuccess = {
+                            movingMedicine = null
+                            if (removeSource) removeMedicineDestinations(item.id)
+                            if (mergeId != null) bumpPhotoVersion(photoVersions, mergeId)
+                        }) { repository.transferMedication(item.id, destinationRepository, removeSource, name, price, category, mergeId) }
+                    })
+            }
         }
 
         if (busy) {

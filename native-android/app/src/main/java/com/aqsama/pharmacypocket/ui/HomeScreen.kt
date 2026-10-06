@@ -130,7 +130,6 @@ internal fun HomeScreen(
     var sortName by rememberSaveable { mutableStateOf(MedicineSort.DEFAULT.name) }
     var query by rememberSaveable { mutableStateOf("") }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-    var categoryPath by rememberSaveable { mutableStateOf(listOf<String>()) }
     var controlsOpen by rememberSaveable { mutableStateOf(false) }
     val addCategory = if (category == "all") snapshot.categories.firstOrNull { it.id != "all" }?.id ?: "syrups" else category
     val sort = runCatching { MedicineSort.valueOf(sortName) }.getOrDefault(MedicineSort.DEFAULT)
@@ -155,14 +154,7 @@ internal fun HomeScreen(
     val filters = remember(category, selectedSubcategory, favoritesOnly) {
         MedicineFilters(category, selectedSubcategory, favoritesOnly)
     }
-    val visible = remember(sortedIndex, filters, query, categoryPath) {
-        filterSortedMedicines(sortedIndex, filters, query).filter { item ->
-            categoryPath.mapIndexed { index, value ->
-                item.importedFields.firstOrNull { it.field.categoryLevel == index + 2 }?.value?.trim()?.ifBlank { "Uncategorized" } == value
-            }.all { it }
-        }
-    }
-    val hierarchyLevels = remember(snapshot.items) { snapshot.items.flatMap { it.importedFields }.maxOfOrNull { it.field.categoryLevel } ?: 0 }
+    val visible = remember(sortedIndex, filters, query) { filterSortedMedicines(sortedIndex, filters, query) }
 
     val rows = remember(visible) { buildRows(visible) }
     val categoryCounts = remember(snapshot.items) {
@@ -177,10 +169,10 @@ internal fun HomeScreen(
     val activeCount = (if (favoritesOnly) 1 else 0) +
         (if (sort != MedicineSort.DEFAULT) 1 else 0) +
         (if (category != "all") 1 else 0) +
-        (if (selectedSubcategory != null) 1 else 0) + categoryPath.size +
+        (if (selectedSubcategory != null) 1 else 0) +
         (if (query.isNotBlank()) 1 else 0)
 
-    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly|$categoryPath"
+    val filterKey = "$category|$selectedSubcategory|${sort.name}|$query|$favoritesOnly"
     var lastFilterKey by rememberSaveable { mutableStateOf(filterKey) }
     LaunchedEffect(filterKey) {
         if (filterKey != lastFilterKey) {
@@ -194,7 +186,6 @@ internal fun HomeScreen(
         Haptics.selection(view)
         category = next
         selectedSubcategory = null
-        categoryPath = emptyList()
     }
 
 
@@ -215,7 +206,7 @@ internal fun HomeScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         HeaderControl(
-                            label = "☰",
+                            symbol = AppSymbol.MENU,
                             contentDescription = "Lists and settings",
                             onClick = {
                                 Haptics.action(view)
@@ -227,15 +218,15 @@ internal fun HomeScreen(
                             onValueChange = { query = it },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(ToolbarControlHeight),
+                                .heightIn(min = ToolbarControlHeight),
                             placeholder = { Text("Search medicines…", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            leadingIcon = { Text("⌕", fontSize = 22.sp) },
+                            leadingIcon = { AppIcon(AppSymbol.SEARCH) },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
                                     TextButton(onClick = {
                                         Haptics.action(view)
                                         query = ""
-                                    }) { Text("×", fontSize = 22.sp) }
+                                    }) { AppIcon(AppSymbol.CLOSE, "Clear search") }
                                 }
                             },
                             singleLine = true,
@@ -250,7 +241,7 @@ internal fun HomeScreen(
                             ),
                         )
                         HeaderControl(
-                            label = if (favoritesOnly) "★" else "☆",
+                            symbol = AppSymbol.STAR,
                             contentDescription = if (favoritesOnly) {
                                 "Favorites filter on, $favoriteCount favorite medicines"
                             } else {
@@ -264,7 +255,7 @@ internal fun HomeScreen(
                             },
                         )
                         HeaderControl(
-                            label = "Tune",
+                            symbol = AppSymbol.SETTINGS,
                             contentDescription = if (activeCount > 0) {
                                 "Tune filters, $activeCount active"
                             } else {
@@ -278,60 +269,7 @@ internal fun HomeScreen(
                             },
                         )
                     }
-                    if (controlsOpen) {
-                        Row(
-                            Modifier.horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        ) {
-                            SoftChip(
-                                label = if (snapshot.largeText) "T Large ✓" else "T Large",
-                                selected = snapshot.largeText,
-                                onClick = {
-                                    Haptics.selection(view)
-                                    onSetLargeText(!snapshot.largeText)
-                                },
-                            )
-                            MedicineSort.entries.forEach { option ->
-                                SoftChip(
-                                    label = option.label,
-                                    selected = sort == option,
-                                    onClick = {
-                                        Haptics.selection(view)
-                                        sortName = option.name
-                                    },
-                                )
-                            }
-                            if (activeCount > 0) {
-                                SoftChip("Clear view") {
-                                    Haptics.action(view)
-                                    query = ""
-                                    category = "all"
-                                    selectedSubcategory = null
-                                    categoryPath = emptyList()
-                                    favoritesOnly = false
-                                    sortName = MedicineSort.DEFAULT.name
-                                }
-                            }
-                        }
-                        if (imported && hierarchyLevels > 1) {
-                            for (level in 2..hierarchyLevels) {
-                                val options = snapshot.items.asSequence().filter { item ->
-                                    (category == "all" || item.category == category) && categoryPath.take(level - 2).mapIndexed { index, value ->
-                                        item.importedFields.firstOrNull { it.field.categoryLevel == index + 2 }?.value?.trim()?.ifBlank { "Uncategorized" } == value
-                                    }.all { it }
-                                }.mapNotNull { item -> item.importedFields.firstOrNull { it.field.categoryLevel == level }?.value?.trim()?.ifBlank { "Uncategorized" } }.distinct().sorted().toList()
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                    item { SoftChip("Level $level · All", selected = categoryPath.size < level - 1) { categoryPath = categoryPath.take(level - 2) } }
-                                    items(options) { value ->
-                                        SoftChip(value, selected = categoryPath.getOrNull(level - 2) == value) {
-                                            if (categoryPath.size >= level - 2) categoryPath = categoryPath.take(level - 2) + value
-                                        }
-                                    }
-                                }
-                                if (categoryPath.size < level - 1) break
-                            }
-                        }
-                    }
+
                 }
             }
         },
@@ -359,14 +297,14 @@ internal fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.semantics { contentDescription = "Scan code or photograph new medicine" },
-                ) { Text("📷", fontSize = 20.sp) }
+                ) { AppIcon(AppSymbol.CAMERA) }
                 FloatingActionButton(
                     onClick = {
                         Haptics.action(view)
                         onAddMedicine(addCategory, null)
                     },
                     modifier = Modifier.semantics { contentDescription = "Add medicine" },
-                ) { Text("+", fontSize = 30.sp) }
+                ) { AppIcon(AppSymbol.ADD) }
             }
         },
     ) { padding ->
@@ -389,12 +327,7 @@ internal fun HomeScreen(
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 15.sp,
                     )
-                    Text(
-                        if (category == "all") "All categories" else categoryById(category, snapshot.categories).label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                    )
+
                 }
             }
 
@@ -409,7 +342,7 @@ internal fun HomeScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text(if (snapshot.items.isEmpty()) "＋" else "⌕", fontSize = 30.sp)
+                        AppIcon(if (snapshot.items.isEmpty()) AppSymbol.ADD else AppSymbol.SEARCH)
                         Text(
                             if (snapshot.items.isEmpty()) "Your pocket is empty" else "No medicines found",
                             fontSize = 18.sp,
@@ -417,8 +350,8 @@ internal fun HomeScreen(
                             color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
-                            if (snapshot.items.isEmpty()) "Import your JSON from Settings, or add your first medicine."
-                            else "Try a shorter name or another category.",
+                            if (snapshot.items.isEmpty()) "Add a medicine or import a list."
+                            else "Try another name or category.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -459,12 +392,18 @@ internal fun HomeScreen(
         }
     }
 
+    if (controlsOpen) HomeDisplaySheet(sort, snapshot.largeText, activeCount > 0,
+        onSort = { sortName = it.name; controlsOpen = false; Haptics.selection(view) },
+        onLargeText = onSetLargeText,
+        onReset = { query = ""; category = "all"; selectedSubcategory = null; favoritesOnly = false; sortName = MedicineSort.DEFAULT.name; controlsOpen = false },
+        onDismiss = { controlsOpen = false })
+
 }
 
 /** Renders a header action with its accessibility label and optional count badge. */
 @Composable
 private fun HeaderControl(
-    label: String,
+    symbol: AppSymbol,
     contentDescription: String,
     badge: Int? = null,
     selected: Boolean = false,
@@ -485,11 +424,7 @@ private fun HeaderControl(
         shadowElevation = 1.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(
-                label,
-                fontSize = if (label == "Tune") 10.sp else 20.sp,
-                fontWeight = if (label == "Tune") FontWeight.ExtraBold else FontWeight.Bold,
-            )
+            AppIcon(symbol)
             if (badge != null && badge > 0) {
                 Surface(
                     modifier = Modifier
@@ -607,15 +542,11 @@ private fun HomeBottomBar(
                         }
                     }
                     if (subcategories.isNotEmpty()) {
-                        SoftChip(
-                            label = when {
-                                selectedSubcategory != null -> "Sub ✓"
-                                subcategoriesOpen -> "Sub ⌃"
-                                else -> "Sub ⌄"
-                            },
-                            selected = subcategoriesOpen || selectedSubcategory != null,
-                            onClick = { subcategoriesOpen = !subcategoriesOpen },
-                        )
+                        androidx.compose.material3.FilledTonalIconToggleButton(
+                            checked = subcategoriesOpen || selectedSubcategory != null,
+                            onCheckedChange = { subcategoriesOpen = !subcategoriesOpen },
+                        ) { AppIcon(if (subcategoriesOpen) AppSymbol.COLLAPSE else AppSymbol.EXPAND, "Subcategories") }
+
                     }
                 }
                 if (subcategories.isNotEmpty() && subcategoriesOpen) {
