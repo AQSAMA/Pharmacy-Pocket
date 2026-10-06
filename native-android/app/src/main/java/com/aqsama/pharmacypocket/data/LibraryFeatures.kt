@@ -1,11 +1,15 @@
 package com.aqsama.pharmacypocket.data
 
 enum class FieldPlacement(val label: String) { TOP("Above name"), BODY("Below price"), FOOTER("Card bottom") }
+
+private val sourceProvenanceKeys = setOf("source-name", "source-currency", "source-price", "source-alternative-price")
+
 /** The pharmacist's identity, placement, and prices survive an enrichment merge. */
 fun mergeMedicationDetails(target: Medicine, source: Medicine, sourceCurrency: String): Medicine {
     val sourceFields = sourceDetailFields(source, sourceCurrency)
     val incomingKeys = sourceFields.mapTo(mutableSetOf()) { it.key }
-    val fields = target.importedFields.filterNot { it.key in incomingKeys } + sourceFields.map { field ->
+    // Replace provenance as a group: an absent source discount must clear the old one.
+    val fields = target.importedFields.filterNot { it.key in sourceProvenanceKeys || it.key in incomingKeys } + sourceFields.map { field ->
         val existing = target.importedFields.firstOrNull { it.key == field.key }
         field.copy(onCard = existing?.onCard ?: field.onCard, color = existing?.color ?: field.color,
             placement = existing?.placement ?: field.placement)

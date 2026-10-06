@@ -18,6 +18,33 @@ class LibraryFeaturesTest {
     private fun medicine(id: String = "m", name: String = "Mine") = Medicine(id, "tablets", "General", name, "", official = 1500, discounted = 1200, createdAt = 42)
     private fun snapshot(items: List<Medicine>, categories: List<Category>) = AppSnapshot(items, categories, false, "IQD", ThemePreference.SYSTEM)
 
+    @Test fun repeatedMergesReplaceSourceProvenanceAndClearAbsentDiscount() {
+        val personal = ImportedField("source-shelf", "Shelf", "A4", ImportField.CUSTOM, true,
+            color = "#2f856d", placement = FieldPlacement.FOOTER)
+        val own = medicine().copy(favorite = true, importedFields = listOf(personal))
+        val first = mergeMedicationDetails(own, medicine("first", "First source"), "IQD")
+        assertEquals("1200", first.importedFields.single { it.key == "source-alternative-price" }.value)
+        val styled = first.copy(importedFields = first.importedFields.map {
+            if (it.key == "source-price") it.copy(onCard = true, color = "#596aab", placement = FieldPlacement.TOP) else it
+        })
+        val secondSource = medicine("second", "Second source").copy(official = 2500, discounted = null)
+        val second = mergeMedicationDetails(styled, secondSource, "USD")
+        assertFalse(second.importedFields.any { it.key == "source-alternative-price" })
+        assertEquals("Second source", second.importedFields.single { it.key == "source-name" }.value)
+        assertEquals("USD", second.importedFields.single { it.key == "source-currency" }.value)
+        val price = second.importedFields.single { it.key == "source-price" }
+        assertEquals("2500", price.value)
+        assertTrue(price.onCard)
+        assertEquals("#596aab", price.color)
+        assertEquals(FieldPlacement.TOP, price.placement)
+        assertEquals(personal, second.importedFields.single { it.key == personal.key })
+        assertEquals(own.copy(importedFields = second.importedFields, revision = 2), second)
+
+        val third = mergeMedicationDetails(second, secondSource.copy(discounted = 2000), "USD")
+        assertEquals("2000", third.importedFields.single { it.key == "source-alternative-price" }.value)
+        assertEquals(third.importedFields.size, third.importedFields.map { it.key }.distinct().size)
+    }
+
     @Test fun fieldsAndFlatCategoriesSurviveDatabaseTrashAndBackup() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repo = PharmacyRepository(context)
@@ -88,9 +115,12 @@ class LibraryFeaturesTest {
             assertEquals("A4", merged.importedFields.first { it.key == "custom-note" }.value)
             assertEquals(1, source.loadSnapshot().items.size)
             // Merging again updates the same record and never duplicates codes or fields.
+            source.saveMedicine(original.copy(discounted = null))
             source.transferMedication(original.id, main, true, mergeTargetId = own.id)
             assertEquals(1, main.loadSnapshot().items.size)
             assertEquals(1, main.loadSnapshot().items.single().codes.size)
+            assertFalse(main.loadSnapshot().items.single().importedFields.any { it.key == "source-alternative-price" })
+            assertEquals(own.discounted, main.loadSnapshot().items.single().discounted)
             assertTrue(source.loadSnapshot().items.isEmpty())
             assertEquals(original.id, source.loadTrash().single().medicine.id)
         } finally { source.close(); other.close(); main.close() }
