@@ -157,7 +157,7 @@ fun prepareSpreadsheet(sheet: SpreadsheetSheet, headerRow: Int, mappings: List<C
             medicines += syncImportedFields(Medicine(
                 id = "$prefix-${row.number}", category = "Uncategorized", subcategory = "General",
                 name = value(ImportField.NAME), note = value(ImportField.NOTE), description = value(ImportField.DESCRIPTION),
-                official = 0, discounted = null, createdAt = now, imported = true, importedFields = fields,
+                official = null, discounted = null, createdAt = now, imported = true, importedFields = fields,
             ))
         } catch (error: IllegalArgumentException) {
             errorCount++
