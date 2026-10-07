@@ -24,7 +24,7 @@ data class SpreadsheetSheet(val name: String, val rows: List<SpreadsheetRow>)
 data class SpreadsheetWorkbook(val sheets: List<SpreadsheetSheet>)
 data class ImportSelection(val sheetIndex: Int = 0, val headerRow: Int = 0, val firstRow: Int = 1, val lastRow: Int = Int.MAX_VALUE)
 data class ImportSource(val workbook: SpreadsheetWorkbook, val selection: ImportSelection, val idPrefix: String, val originalAvailable: Boolean = true)
-data class ImportedList(val id: String, val name: String, val source: String, val mappings: List<ColumnMapping>)
+data class ImportedList(val id: String, val name: String, val source: String, val mappings: List<ColumnMapping>, val imported: Boolean = true)
 data class PreparedImport(val medicines: List<Medicine>, val skippedRows: Int, val errors: List<String>, val errorCount: Int)
 
 object SpreadsheetLimits {

@@ -165,3 +165,44 @@ Code conflicts or more than 20 combined codes block the operation without modify
 records. Transfers use the existing attached-database transaction for medication,
 photo and source-Trash writes. Original source price text and currency remain in
 fields rather than becoming your editable main-list price.
+
+## Manual lists and selective backups
+
+The redesigned sidebar separates **Manual lists** from **Imported lists**. Use the
+plus button beside Manual lists to create an empty named collection, and the
+list’s options button to rename it. Existing medicines stay in My medications;
+its database and production upgrade path are preserved. **All manual lists**
+combines their medicines for searching, favorites and sorting. Cards identify
+the originating list and use its currency. Opening, editing or capturing media
+from this view enters the owning list. Add asks which manual list should receive
+the medicine. Categories and Trash remain scoped to each list.
+
+**Transfer** is available in every medication’s details. Choose Copy, Move or
+Merge, then a different destination list. Merge into a manual list requires a specific destination
+medicine and preserves its name, selling prices, category, favorite, ID and date.
+Moves retire the source to its Trash; code conflicts reject the transfer before
+either medicine changes. Manual-to-manual copies retain subcategories, discounts
+and custom fields. Purchase price is an optional decimal field in the manual
+editor and has its own label on cards; it is independent of the selling discount.
+
+Open **Import & export** from the sidebar or Settings. Select any combination
+of lists, then use each row’s field icon to choose individual medicines. Search,
+All matches and Clear affect the visible search results. **Full library** includes
+all active collections, medicines, photos and category definitions. Android’s
+document picker chooses the export filename and local or cloud storage location.
+
+For import, open a JSON file, choose its lists and medicines, then choose where to
+restore them: matching separate lists, a compatible existing list, or a new named
+list. Merge updates matching IDs and leaves other medicines available. Replace
+moves active medicines absent from the selection to Trash. A review dialog shows
+the count, destination and replacement warning before applying changes. Omitted
+photos/category definitions preserve existing data. List kinds remain distinct.
+Multi-list imports validate existing destinations before writing; each list has
+its own transaction. An unexpected storage failure reports how many lists finished.
+
+The new JSON library envelope preserves list IDs, names, types, currency, fields,
+photos, codes, categories and favorites. Earlier single-list JSON backups remain
+importable. Trash, appearance preferences and original spreadsheet workbooks are
+not part of the JSON backup. Restored imported lists remain separate and editable
+as medicines; reimport the spreadsheet if its original mapping source is needed.
+The overall file limit remains 128 MB; export fewer lists or omit photos if needed.

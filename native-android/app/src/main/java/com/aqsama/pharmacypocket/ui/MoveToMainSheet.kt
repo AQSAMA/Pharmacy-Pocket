@@ -7,6 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -33,11 +34,13 @@ private enum class TransferMode(val label: String, val icon: AppSymbol) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<ImportedList>, busy: Boolean, onDismiss: () -> Unit,
-    onTransfer: (String?, Boolean, String, Long, String, String?) -> Unit) {
+    onTransfer: (String?, Boolean, String, Long, String, String?) -> Unit,
+    mainAvailable: Boolean = true, mainName: String = "My medications",
+    loadDestination: (suspend (String?) -> AppSnapshot)? = null) {
     var name by rememberSaveable(item.id) { mutableStateOf(item.name) }
     var price by rememberSaveable(item.id) { mutableStateOf(item.official.toString()) }
-    var category by rememberSaveable(item.id) { mutableStateOf(main.categories.firstOrNull { it.id != "all" }?.id ?: "tablets") }
-    var destination by rememberSaveable(item.id) { mutableStateOf<String?>(null) }
+    var category by rememberSaveable(item.id) { mutableStateOf(if (item.imported) main.categories.firstOrNull { it.id != "all" }?.id ?: "tablets" else item.category) }
+    var destination by rememberSaveable(item.id) { mutableStateOf<String?>(if (mainAvailable) null else lists.firstOrNull()?.id) }
     var mode by rememberSaveable(item.id) { mutableStateOf(TransferMode.COPY) }
     var targetId by rememberSaveable(item.id) { mutableStateOf<String?>(null) }
     var search by rememberSaveable(item.id) { mutableStateOf("") }
@@ -47,11 +50,30 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
     val keyboard = LocalSoftwareKeyboardController.current
     val latestBusy by rememberUpdatedState(busy)
     val merging = mode == TransferMode.MERGE
-    val target = main.items.firstOrNull { it.id == targetId }
+    var destinationSnapshot by remember(item.id) { mutableStateOf(main) }
+    var loading by remember { mutableStateOf(loadDestination != null) }
+    var loadedKey by remember { mutableStateOf<String?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(destination) {
+        targetId = null
+        if (loadDestination != null) {
+            loading = true; loadedKey = null; loadError = null
+            try { destinationSnapshot = loadDestination(destination); loadedKey = destination ?: MAIN_LIST_KEY }
+            catch (error: Exception) { if (error is kotlinx.coroutines.CancellationException) throw error; loadError = error.message ?: "Could not load destination." }
+            finally { loading = false }
+        }
+    }
+    val destinationImported = lists.firstOrNull { it.id == destination }?.imported == true
+    val formState = rememberLazyListState()
+    LaunchedEffect(targetId, picker) {
+        if (targetId != null && picker.isEmpty() && merging) formState.animateScrollToItem(2)
+    }
+    val ready = loadDestination == null || loadedKey == (destination ?: MAIN_LIST_KEY)
+    val target = if (ready) destinationSnapshot.items.firstOrNull { it.id == targetId } else null
     val value = price.trim().toLongOrNull()
-    val valid = if (merging) target != null else destination != null || (name.isNotBlank() && value != null && value in 0..9_007_199_254_740_991L)
-    val destinationLabel = if (destination == null) "My medications" else lists.firstOrNull { it.id == destination }?.name ?: "Choose list"
-    val destinationExists = destination == null || lists.any { it.id == destination }
+    val valid = ready && !loading && loadError == null && if (merging) !destinationImported && target != null else destinationImported || (name.isNotBlank() && value != null && value in 0..9_007_199_254_740_991L)
+    val destinationLabel = if (destination == null && !mainAvailable) "Choose list" else if (destination == null) mainName else lists.firstOrNull { it.id == destination }?.name ?: "Choose list"
+    val destinationExists = destination == null && mainAvailable || lists.any { it.id == destination }
     fun pick(screen: String) { picker = screen; search = ""; Haptics.action(view) }
     fun closePicker() { picker = ""; keyboard?.hide() }
     ModalBottomSheet(onDismissRequest = { if (!busy) onDismiss() },
@@ -78,37 +100,42 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 when (screen) {
                                     "lists" -> {
-                                        if (normalizeSearch("My medications").contains(needle)) item {
-                                            PickerRow("My medications", selected = destination == null, enabled = !busy) { destination = null; closePicker() }
+                                        if (mainAvailable && normalizeSearch(mainName).contains(needle)) item {
+                                            PickerRow(mainName, selected = destination == null, enabled = !busy) { destination = null; closePicker() }
                                         }
-                                        items(lists.filter { normalizeSearch(it.name).contains(needle) }, key = { it.id }) { list ->
+                                        items(lists.filter { (!merging || !it.imported) && normalizeSearch(it.name).contains(needle) }, key = { it.id }) { list ->
                                             PickerRow(list.name, selected = destination == list.id, enabled = !busy) { destination = list.id; closePicker() }
                                         }
                                     }
                                     "medicines" -> {
-                                        val results = main.items.filter { normalizeSearch(it.name).contains(needle) }
-                                        if (results.isEmpty()) item { Text(if (main.items.isEmpty()) "No medications yet" else "No matches", Modifier.padding(16.dp)) }
+                                        val results = destinationSnapshot.items.filter { normalizeSearch(it.name).contains(needle) }
+                                        if (results.isEmpty()) item { Text(if (destinationSnapshot.items.isEmpty()) "No medications yet" else "No matches", Modifier.padding(16.dp)) }
                                         items(results, key = { it.id }) { medicine ->
-                                            PickerRow(medicine.name, "${formatPrice(medicine.official)} ${main.currency}", selected = targetId == medicine.id, enabled = !busy, modifier = Modifier.testTag("picker-medication:${medicine.id}")) { targetId = medicine.id; closePicker() }
+                                            PickerRow(medicine.name, "${formatPrice(medicine.official)} ${destinationSnapshot.currency}", selected = targetId == medicine.id, enabled = !busy, modifier = Modifier.testTag("picker-medication:${medicine.id}")) { targetId = medicine.id; closePicker() }
                                         }
                                     }
-                                    else -> items(main.categories.filter { it.id != "all" && normalizeSearch("${it.label} ${it.arabic}").contains(needle) }, key = { it.id }) { option ->
+                                    else -> items(destinationSnapshot.categories.filter { it.id != "all" && normalizeSearch("${it.label} ${it.arabic}").contains(needle) }, key = { it.id }) { option ->
                                         PickerRow(option.label, option.arabic.takeIf { it != option.label }, selected = category == option.id, enabled = !busy) { category = option.id; closePicker() }
                                     }
                                 }
                             }
                         }
                     }
-                    else -> LazyColumn(Modifier.fillMaxSize().testTag("transfer-form"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    else -> LazyColumn(Modifier.fillMaxSize().testTag("transfer-form"), state = formState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         item {
                             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                                 TransferMode.entries.forEachIndexed { index, option ->
                                     SegmentedButton(selected = mode == option, onClick = {
-                                        mode = option; if (option == TransferMode.MERGE) destination = null; Haptics.selection(view)
+                                        mode = option
+                                        if (option == TransferMode.MERGE && destinationImported) destination = if (mainAvailable) null else lists.firstOrNull { !it.imported }?.id
+                                        Haptics.selection(view)
                                     }, enabled = !busy, shape = SegmentedButtonDefaults.itemShape(index, TransferMode.entries.size)) { Text(option.label) }
                                 }
                             }
                         }
+                        item { ActionRow(AppSymbol.MOVE, "To", destinationLabel, !busy, Modifier.testTag("transfer-destination")) { pick("lists") } }
+                        if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                        loadError?.let { message -> item { Text(message, color = MaterialTheme.colorScheme.error) } }
                         if (merging) {
                             item { ActionRow(AppSymbol.MERGE, "Merge into", target?.name ?: "Choose medication", !busy, Modifier.testTag("transfer-target")) { pick("medicines") } }
                             target?.let { medicine ->
@@ -119,8 +146,8 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                                                 AppIcon(AppSymbol.CHECK); Text("Name & prices kept", style = MaterialTheme.typography.labelLarge)
                                             }
                                             Text(medicine.name, style = MaterialTheme.typography.titleMedium)
-                                            Text("${formatPrice(medicine.official)} ${main.currency}", style = MaterialTheme.typography.titleMedium)
-                                            medicine.discounted?.let { Text("${formatPrice(it)} ${main.currency} · discounted", style = MaterialTheme.typography.bodyMedium) }
+                                            Text("${formatPrice(medicine.official)} ${destinationSnapshot.currency}", style = MaterialTheme.typography.titleMedium)
+                                            medicine.discounted?.let { Text("${formatPrice(it)} ${destinationSnapshot.currency} · discounted", style = MaterialTheme.typography.bodyMedium) }
                                             HorizontalDivider()
                                             Text("Other details updated", style = MaterialTheme.typography.labelLarge)
                                             item.importedFields.firstOrNull { it.field == ImportField.SCIENTIFIC }?.value?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
@@ -136,13 +163,12 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                                 }
                             }
                         } else {
-                            item { ActionRow(AppSymbol.MOVE, "To", destinationLabel, !busy, Modifier.testTag("transfer-destination")) { pick("lists") } }
-                            if (destination == null) {
+                            if (!destinationImported) {
                                 item { OutlinedTextField(name, { name = it.take(SpreadsheetLimits.maxCellLength) }, label = { Text("Common name") }, modifier = Modifier.fillMaxWidth(), enabled = !busy, maxLines = 3) }
-                                item { OutlinedTextField(price, { price = it }, label = { Text("Your price") }, suffix = { Text(main.currency) }, singleLine = true,
+                                item { OutlinedTextField(price, { price = it }, label = { Text("Your price") }, suffix = { Text(destinationSnapshot.currency) }, singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
                                     modifier = Modifier.fillMaxWidth(), enabled = !busy, isError = value == null || value !in 0..9_007_199_254_740_991L) }
-                                item { ActionRow(AppSymbol.CATEGORY, "Category", main.categories.firstOrNull { it.id == category }?.label, !busy) { pick("categories") } }
+                                item { ActionRow(AppSymbol.CATEGORY, "Category", destinationSnapshot.categories.firstOrNull { it.id == category }?.label, !busy) { pick("categories") } }
                             }
                             item {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

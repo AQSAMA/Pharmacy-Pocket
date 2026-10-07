@@ -279,11 +279,13 @@ internal fun MedicineEditorScreen(
                             TextButton(onClick = { discountExpanded = true }) { AppIcon(AppSymbol.ADD); androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp)); Text("Add discount") }
                         }
 
-                        Text(
-                            "${snapshot.currency} · Discount optional",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
+                        val purchase = importedFields.firstOrNull { it.field == com.aqsama.pharmacypocket.data.ImportField.WHOLESALE_PRICE }
+                        OutlinedTextField(purchase?.value.orEmpty(), { value ->
+                            val field = (purchase ?: ImportedField("purchase-price", "Purchase price", "", com.aqsama.pharmacypocket.data.ImportField.WHOLESALE_PRICE, true)).copy(value = value)
+                            fieldsJson = fieldsToJson(importedFields.filterNot { it.key == field.key } + field).toString()
+                        }, label = { Text("Purchase price") }, placeholder = { Text("Optional") }, suffix = { Text(snapshot.currency) },
+                            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
+
 
                     }
 

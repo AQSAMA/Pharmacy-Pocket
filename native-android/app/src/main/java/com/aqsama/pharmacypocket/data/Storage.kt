@@ -513,7 +513,7 @@ private fun codesFromJson(raw: String): List<MedicineCode> = buildList {
     }
 }
 
-private class PreferenceStore(private val context: Context, private val listId: String? = null) {
+private class PreferenceStore(private val context: Context, private val listId: String? = null, private val manualList: Boolean = false) {
     private val prefs = context.getSharedPreferences(if (listId == null) "pharmacy-pocket-native" else "pharmacy-pocket-list-$listId", Context.MODE_PRIVATE)
 
     init {
@@ -570,7 +570,7 @@ private class PreferenceStore(private val context: Context, private val listId: 
     }
 
     fun categories(): List<Category> {
-        val defaults = if (listId == null) PharmacyDefaults.categories else listOf(PharmacyDefaults.categories.first())
+        val defaults = if (listId == null || manualList) PharmacyDefaults.categories else listOf(PharmacyDefaults.categories.first())
         val raw = prefs.getString("category-definitions-v1", null) ?: return defaults
         return runCatching { mergeCategoryDefinitions(defaults, parseCategories(raw)) }
             .getOrDefault(defaults)
@@ -611,14 +611,14 @@ private class PreferenceStore(private val context: Context, private val listId: 
     }
 }
 
-class PharmacyRepository(private val context: Context, val listId: String? = null) {
+class PharmacyRepository(private val context: Context, val listId: String? = null, val isImportedList: Boolean = listId != null) {
     private val database = MedicineDatabase(context.applicationContext, listId)
-    private val preferences = PreferenceStore(context.applicationContext, listId)
+    private val preferences = PreferenceStore(context.applicationContext, listId, manualList = !isImportedList)
     private val globalPreferences = if (listId == null) preferences else PreferenceStore(context.applicationContext)
 
-    fun forList(id: String?): PharmacyRepository {
+    fun forList(id: String?, imported: Boolean = id != null): PharmacyRepository {
         require(id == null || Regex("[a-f0-9-]{36}").matches(id)) { "Invalid list ID." }
-        return PharmacyRepository(context, id)
+        return PharmacyRepository(context, id, imported)
     }
 
     internal suspend fun seedImportedList(items: List<Medicine>) = withContext(Dispatchers.IO) {
@@ -713,6 +713,7 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             val conflicts = database.loadMedicines().filter { it.id != item.id }
                 .flatMap { other -> other.codes.map { it.value to other.name } }.toMap()
             codes.forEach { require(it.value !in conflicts) { "Code already belongs to ${conflicts[it.value]}." } }
+            item.importedFields.filter { it.field.isPrice && it.value.isNotBlank() }.forEach { spreadsheetPrice(it.value, it.priceFormat) }
             fieldsFromJson(fieldsToJson(item.importedFields)) // Validate user fields before persisting.
             database.saveMedicine(item.copy(codes = codes), photo, removePhoto)
             snapshotUnsafe()
@@ -759,30 +760,30 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
 
     suspend fun transferMedication(id: String, destination: PharmacyRepository, removeSource: Boolean,
         commonName: String? = null, price: Long? = null, category: String? = null, mergeTargetId: String? = null): AppSnapshot = withContext(Dispatchers.IO) {
-        require(listId != null && listId != destination.listId) { "Choose a different destination list." }
+        require(listId != destination.listId) { "Choose a different destination list." }
         transferMutex.withLock { mutex.withLock { destination.mutex.withLock {
             val source = database.loadMedicines().firstOrNull { it.id == id } ?: error("This medicine is no longer available.")
             val targets = destination.database.loadMedicines()
             val target = mergeTargetId?.let { targetId ->
-                require(destination.listId == null) { "Merge into My medications." }
+                require(!destination.isImportedList) { "Merge into a manual list." }
                 targets.firstOrNull { it.id == targetId } ?: error("The merge target is no longer available.")
             }
             val item = if (target != null) mergeMedicationDetails(target, source, preferences.currency()) else {
-                val name = if (destination.listId == null) commonName?.trim() ?: source.name else source.name
+                val name = if (!destination.isImportedList) commonName?.trim() ?: source.name else source.name
                 require(name.isNotEmpty() && name.length <= SpreadsheetLimits.maxCellLength)
-                val chosenPrice = if (destination.listId == null) price ?: source.official else source.official
+                val chosenPrice = if (!destination.isImportedList) price ?: source.official else source.official
                 require(chosenPrice in 0..9_007_199_254_740_991L)
                 source.copy(id = "manual-${java.util.UUID.randomUUID()}", name = name,
-                    category = if (destination.listId == null) category ?: "tablets" else source.category,
-                    subcategory = if (destination.listId == null) "General" else source.subcategory,
-                    official = chosenPrice, discounted = if (destination.listId == null) null else source.discounted,
-                    imported = destination.listId != null,
-                    importedFields = if (destination.listId == null) sourceDetailFields(source, preferences.currency()) else source.importedFields)
+                    category = if (!destination.isImportedList) category ?: source.category else source.category,
+                    subcategory = if (!destination.isImportedList && isImportedList) "General" else source.subcategory,
+                    official = chosenPrice, discounted = if (!destination.isImportedList && isImportedList) null else source.discounted,
+                    imported = destination.isImportedList,
+                    importedFields = if (!destination.isImportedList && isImportedList) sourceDetailFields(source, preferences.currency()) else source.importedFields)
             }
             fieldsFromJson(fieldsToJson(item.importedFields))
             val conflicts = targets.filter { it.id != item.id }.flatMap { other -> other.codes.map { it.value to other.name } }.toMap()
             item.codes.forEach { require(it.value !in conflicts) { "A package code already belongs to ${conflicts[it.value]}. Resolve the code conflict first." } }
-            val destinationCategories = if (destination.listId != null) {
+            val destinationCategories = if (target == null) {
                 val current = destination.preferences.categories()
                 mergeCategoryDefinitions(current, preferences.categories().filter { it.id == source.category }.filter { candidate -> current.none { it.id == candidate.id } })
             } else destination.preferences.categories()
@@ -790,9 +791,7 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             require(item.category != "all") { "Choose a medication category." }
             val photo = database.loadPhoto(id) ?: target?.let { destination.database.loadPhoto(it.id) }
             destination.database.transferFrom(database, id, item, photo, removeSource)
-            if (destination.listId != null) {
-                destination.preferences.setCategories(destinationCategories)
-            }
+            destination.preferences.setCategories(destinationCategories)
             snapshotUnsafe()
         } } }
     }
@@ -801,11 +800,13 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
         mutex.withLock { database.loadPhoto(id) }
     }
 
-    suspend fun exportBackup(): String = withContext(Dispatchers.IO) {
+    suspend fun exportBackup(selection: BackupSelection = BackupSelection()): String = withContext(Dispatchers.IO) {
         mutex.withLock {
             val snapshot = snapshotUnsafe()
-            BackupCodec.encode(snapshot.items, snapshot.currency, snapshot.categories,
-                photos = database.exportPhotos(snapshot.items.filter { it.hasPhoto }.map { it.id }), importedList = listId != null)
+            val selected = selection.apply(snapshot.items)
+            BackupCodec.encode(selected, snapshot.currency, if (selection.categories) snapshot.categories else emptyList(),
+                photos = if (selection.photos) database.exportPhotos(selected.filter { it.hasPhoto }.map { it.id }) else emptyMap(), importedList = isImportedList,
+                photosIncluded = selection.photos, categoriesIncluded = selection.categories)
         }
     }
 
@@ -849,40 +850,53 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
         }
     }
 
+    /** Check every selected destination before a multi-list restore starts writing. */
+    suspend fun checkImportBackup(data: ParsedBackup, mode: ImportMode) = withContext(Dispatchers.IO) {
+        require(data.importedList == isImportedList) { "Choose a destination of the same list type." }
+        mutex.withLock { validateBackupUnsafe(data, mode); Unit }
+    }
+
+    private fun validateBackupUnsafe(data: ParsedBackup, mode: ImportMode): List<Category> {
+        val incomingIds = data.medicines.mapTo(HashSet()) { it.id }
+        val allCodes = mutableSetOf<String>()
+        val currentItems = if (mode == ImportMode.MERGE) database.loadMedicines() else emptyList()
+        val currentById = (currentItems + if (mode == ImportMode.MERGE) {
+            database.loadTrash().map { it.medicine }
+        } else emptyList()).associateBy { it.id }
+        currentItems.filter { it.id !in incomingIds }.forEach { item ->
+            item.codes.forEach { allCodes.add(it.value) }
+        }
+        data.medicines.forEach { item ->
+            item.importedFields.filter { it.field.isPrice && it.value.isNotBlank() }.forEach { spreadsheetPrice(it.value, it.priceFormat) }
+            val existingCodes = if (mode == ImportMode.MERGE && !item.codesSpecified) {
+                currentById[item.id]?.codes ?: emptyList()
+            } else validateCodes(item.codes)
+            existingCodes.forEach { code ->
+                require(allCodes.add(code.value)) { "The backup assigns a code to more than one medicine." }
+            }
+        }
+        val currentCategories = preferences.categories()
+        val nextCategories = if (!data.categoriesSpecified) ensureCategoriesForMedicines(currentCategories, data.medicines.map { it.category }) else if (isImportedList) ensureCategoriesForMedicines(
+            mergeCategoryDefinitions(currentCategories, data.categories), data.medicines.map { it.category },
+        ) else resolveCategoryImport(
+            currentCategories,
+            data.categories,
+            mode,
+            data.medicines.map { it.category },
+        )
+        require(isImportedList || nextCategories.count { it.id != "all" } <= PharmacyDefaults.maxCategories) { "Too many categories in the destination list." }
+        return nextCategories
+    }
+
     suspend fun importBackup(data: ParsedBackup, mode: ImportMode): AppSnapshot = withContext(Dispatchers.IO) {
-        require(data.importedList == (listId != null)) {
+        require(data.importedList == isImportedList) {
             "This backup belongs to ${if (data.importedList) "an imported list" else "My medications"}. Open that list from the side menu before restoring it."
         }
         mutex.withLock {
-            val incomingIds = data.medicines.mapTo(HashSet()) { it.id }
-            val allCodes = mutableSetOf<String>()
-            val currentItems = if (mode == ImportMode.MERGE) database.loadMedicines() else emptyList()
-            val currentById = (currentItems + if (mode == ImportMode.MERGE) {
-                database.loadTrash().map { it.medicine }
-            } else emptyList()).associateBy { it.id }
-            currentItems.filter { it.id !in incomingIds }.forEach { item ->
-                item.codes.forEach { allCodes.add(it.value) }
-            }
-            data.medicines.forEach { item ->
-                val existingCodes = if (mode == ImportMode.MERGE && !item.codesSpecified) {
-                    currentById[item.id]?.codes ?: emptyList()
-                } else validateCodes(item.codes)
-                existingCodes.forEach { code ->
-                    require(allCodes.add(code.value)) { "The backup assigns a code to more than one medicine." }
-                }
-            }
-            val currentCategories = preferences.categories()
-            val nextCategories = if (listId != null) ensureCategoriesForMedicines(
-                mergeCategoryDefinitions(currentCategories, data.categories), data.medicines.map { it.category },
-            ) else resolveCategoryImport(
-                currentCategories,
-                data.categories,
-                mode,
-                data.medicines.map { it.category },
-            )
+            val nextCategories = validateBackupUnsafe(data, mode)
             when (mode) {
                 ImportMode.MERGE -> database.mergeMedicines(data.medicines, data.photos)
-                ImportMode.REPLACE -> database.replaceMedicines(data.medicines, data.photos, data.sourceVersion >= 3)
+                ImportMode.REPLACE -> database.replaceMedicines(data.medicines, data.photos, data.sourceVersion >= 3 && data.photosSpecified)
             }
             if (shouldApplyImportedCurrency(mode, data.hasCurrency)) {
                 preferences.setCurrency(data.currency)
