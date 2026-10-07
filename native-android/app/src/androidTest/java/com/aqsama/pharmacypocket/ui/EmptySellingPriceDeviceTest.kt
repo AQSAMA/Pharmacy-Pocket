@@ -55,7 +55,7 @@ class EmptySellingPriceDeviceTest {
         try {
             assertNull(runBlocking { repository.loadSnapshot() }.items.single().official)
             tapAndVerifyKeyboard()
-            compose.onNodeWithTag("selling-price-input").assertTextContains("")
+            assertEquals("", compose.onNodeWithTag("selling-price-input").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
             compose.onNodeWithTag("selling-price-input").performTextInput("1250")
             compose.onNodeWithTag("selling-price-save").performTouchInput { click() }
             compose.waitUntil(10_000) { compose.onAllNodesWithText("1,250").fetchSemanticsNodes().isNotEmpty() }

@@ -109,6 +109,33 @@ class EmptySellingPriceTest {
         } finally { storage.close(); storage.dbFile.delete() }
     }
 
+    @Test fun repositoryBackupReplaceMergeAndTransfersPreserveEmptySellingPrices() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val firstId = UUID.randomUUID().toString()
+        val secondId = UUID.randomUUID().toString()
+        val first = PharmacyRepository(context, firstId, false)
+        val second = PharmacyRepository(context, secondId, false)
+        try {
+            first.saveMedicine(item(1250))
+            first.importBackup(BackupCodec.parse(json()), ImportMode.MERGE)
+            assertNull(first.loadSnapshot().items.single().official)
+            second.importBackup(BackupCodec.parse(first.exportBackup()), ImportMode.REPLACE)
+            assertNull(second.loadSnapshot().items.single().official)
+            assertEquals(item().importedFields, second.loadSnapshot().items.single().importedFields)
+            second.importBackup(BackupCodec.parse(json(0)), ImportMode.REPLACE)
+            assertEquals(0L, second.loadSnapshot().items.single().official)
+            first.setSellingPrice("empty", 1250)
+            assertEquals("1700", first.loadSnapshot().items.single().importedFields.single().value)
+            second.importBackup(BackupCodec.parse(BackupCodec.encode(emptyList(), "IQD", PharmacyDefaults.categories)), ImportMode.REPLACE)
+            first.transferMedication("empty", second, false, price = null, priceSpecified = true)
+            assertNull(second.loadSnapshot().items.single().official)
+        } finally {
+            first.close(); second.close()
+            File(context.filesDir, "SQLite/imported-$firstId.db").delete()
+            File(context.filesDir, "SQLite/imported-$secondId.db").delete()
+        }
+    }
+
     @Test fun emptyPricesSortAfterKnownPricesInBothDirections() {
         val empty = item()
         assertTrue(compareMedicines(empty, item(0), MedicineSort.PRICE_ASC) > 0)

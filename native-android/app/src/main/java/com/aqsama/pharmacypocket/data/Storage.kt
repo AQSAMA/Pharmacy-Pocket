@@ -898,13 +898,18 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
         currentItems.filter { it.id !in incomingIds }.forEach { item ->
             item.codes.forEach { allCodes.add(it.value) }
         }
-        data.medicines.forEach { item ->
-            item.importedFields.filter { it.field.isPrice && it.value.isNotBlank() }.forEach { spreadsheetPrice(it.value, it.priceFormat) }
+        data.medicines.forEachIndexed { medicineIndex, item ->
+            item.importedFields.forEachIndexed { fieldIndex, field ->
+                if (field.field.isPrice && field.value.isNotBlank()) try { spreadsheetPrice(field.value, field.priceFormat) }
+                catch (error: IllegalArgumentException) {
+                    throw IllegalArgumentException("Medicine #${medicineIndex + 1} (${importValue(item.name)}): Field 'importedFields[$fieldIndex].value': value ${importValue(field.value)}; expected a price in ${field.priceFormat.name} format.", error)
+                }
+            }
             val existingCodes = if (mode == ImportMode.MERGE && !item.codesSpecified) {
                 currentById[item.id]?.codes ?: emptyList()
             } else validateCodes(item.codes)
-            existingCodes.forEach { code ->
-                require(allCodes.add(code.value)) { "The backup assigns a code to more than one medicine." }
+            existingCodes.forEachIndexed { index, code ->
+                require(allCodes.add(code.value)) { "Medicine #${medicineIndex + 1} (${importValue(item.name)}): Field 'codes[$index].value': value ${importValue(code.value)}; expected a code unique across medicines in the destination list." }
             }
         }
         val currentCategories = preferences.categories()

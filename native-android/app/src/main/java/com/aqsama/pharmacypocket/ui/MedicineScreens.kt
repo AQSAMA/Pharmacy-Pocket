@@ -270,7 +270,7 @@ internal fun MedicineEditorScreen(
                     Field("Medicine / brand", name, { name = it })
 
                     if (!imported) {
-                        OutlinedTextField(official, { official = it }, label = { Text("Official price") }, suffix = { Text(snapshot.currency) },
+                        OutlinedTextField(official, { official = it }, label = { Text("Official price") }, placeholder = { Text("Optional") }, suffix = { Text(snapshot.currency) },
                             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                         if (discountExpanded) {
                             OutlinedTextField(discounted, { discounted = it }, label = { Text("Discounted") }, placeholder = { Text("Optional") },

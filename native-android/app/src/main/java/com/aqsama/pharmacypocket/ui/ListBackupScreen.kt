@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.toggleable
@@ -246,7 +247,7 @@ internal fun ListBackupScreen(lists: List<MedicationList>, initialKey: String, o
                 finally { working = false }
             }
         }) { Text("Import") } })
-    error?.let { text -> AlertDialog(onDismissRequest = { error = null }, title = { Text("Import & export") }, text = { Text(text) },
+    error?.let { text -> AlertDialog(onDismissRequest = { error = null }, title = { Text("Import & export") }, text = { androidx.compose.foundation.layout.Box(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) { Text(text) } },
         confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } }) }
 }
 
