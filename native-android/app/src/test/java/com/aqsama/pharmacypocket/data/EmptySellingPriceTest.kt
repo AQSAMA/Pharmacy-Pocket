@@ -53,6 +53,32 @@ class EmptySellingPriceTest {
         }
     }
 
+    @Test fun streamingMetadataUsesTheSameStrictTypesAndDiagnosticsAsSingleListBackups() {
+        val badFields = listOf(
+            "version" to "3", "version" to 1.5, "version" to 4,
+            "currency" to 1250, "currency" to "X".repeat(25),
+            "photosIncluded" to "true", "categoriesIncluded" to JSONObject.NULL,
+            "importedList" to "false",
+        )
+        for ((field, bad) in badFields) {
+            val root = JSONObject(json()).put(field, bad)
+            val single = assertThrows(IllegalArgumentException::class.java) { BackupCodec.parse(root.toString()) }
+            val envelope = LibraryBackupCodec.encode(listOf(MedicationList("main", "Ward A", false) to root.toString()))
+            val library = assertThrows(IllegalArgumentException::class.java) { LibraryBackupCodec.parse(envelope) }
+            for (failure in listOf(single, library)) {
+                val message = failure.message!!
+                for (part in listOf(field, importValue(bad), "expected")) assertTrue(message, message.contains(part))
+            }
+            assertTrue(library.message!!, library.message!!.contains("Ward A"))
+            // Force the compact imported-list streaming route too.
+            if (field != "importedList") {
+                val compact = "{\"importedList\":true," + root.toString().removePrefix("{")
+                val failure = assertThrows(IllegalArgumentException::class.java) { BackupCodec.parse(compact) }
+                assertTrue(failure.message!!, failure.message!!.contains("Field '$field'"))
+            }
+        }
+    }
+
     @Test fun nestedCodeAndCustomFieldErrorsHaveExactPaths() {
         val root = JSONObject(json())
         val medicine = root.getJSONArray("medicines").getJSONObject(0)

@@ -241,15 +241,28 @@ object BackupCodec {
         var importedList = false
         run {
             reader.beginObject()
-            while (reader.hasNext()) when (reader.nextName()) {
-                "importedList" -> importedList = reader.nextBoolean()
-                "photosIncluded" -> photosIncluded = reader.nextBoolean()
-                "categoriesIncluded" -> categoriesIncluded = reader.nextBoolean()
-                "version" -> sourceVersion = reader.nextInt()
+            while (reader.hasNext()) when (val field = reader.nextName()) {
+                "importedList", "photosIncluded", "categoriesIncluded" -> {
+                    val value = readValue(reader, 0, 128)
+                    if (value !is Boolean) throw ImportFieldError(field, value, "a JSON boolean")
+                    when (field) {
+                        "importedList" -> importedList = value
+                        "photosIncluded" -> photosIncluded = value
+                        else -> categoriesIncluded = value
+                    }
+                }
+                "version" -> {
+                    val obj = JSONObject().put(field, readValue(reader, 0, 128))
+                    val value = requiredSafeLong(obj, field)
+                    if (value !in 1L..version.toLong()) rejectImport(obj, field, "a supported backup version from 1 to $version")
+                    sourceVersion = value.toInt()
+                }
                 "currency" -> {
-                    if (reader.peek() == JsonToken.NULL) reader.nextNull() else {
-                        currency = reader.nextString().trim().ifBlank { "IQD" }; hasCurrency = true
-                        require(currency.length <= 24) { "The currency name in this file is too long." }
+                    val obj = JSONObject().put(field, readValue(reader, 0, 128))
+                    if (!obj.isNull(field)) {
+                        currency = requiredString(obj, field, allowBlank = true).trim().ifBlank { "IQD" }
+                        hasCurrency = true
+                        if (currency.length > 24) rejectImport(obj, field, "a string of up to 24 characters")
                     }
                 }
                 "favoriteIds" -> {
