@@ -130,7 +130,7 @@ fun syncImportedFields(item: Medicine): Medicine {
     return item.copy(
         category = categories.firstOrNull()?.value?.trim()?.ifBlank { "Uncategorized" } ?: "Uncategorized",
         subcategory = categories.drop(1).map { it.value.trim().ifBlank { "Uncategorized" } }.joinToString(" › ").ifBlank { "General" },
-        official = price(ImportField.PHARMACY_PRICE) ?: 0,
+        official = price(ImportField.PHARMACY_PRICE),
         discounted = price(ImportField.WHOLESALE_PRICE),
     )
 }

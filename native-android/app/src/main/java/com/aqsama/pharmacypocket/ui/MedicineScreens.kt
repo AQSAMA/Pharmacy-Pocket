@@ -208,13 +208,13 @@ internal fun MedicineEditorScreen(
     }
 
     fun submit() {
-        val officialNumber = if (imported) 0L else official.trim().toLongOrNull()
+        val officialNumber = if (imported) existing?.official else official.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
         val discountedNumber = if (imported) null else discounted.trim().takeIf { it.isNotEmpty() }?.toLongOrNull()
         val discountWasInvalid = !imported && discounted.trim().isNotEmpty() && discountedNumber == null
         if (
             name.trim().isEmpty() ||
-            officialNumber == null ||
-            officialNumber !in 0..MAX_SAFE_INTEGER ||
+            (!imported && official.isNotBlank() && officialNumber == null) ||
+            (officialNumber != null && officialNumber !in 0..MAX_SAFE_INTEGER) ||
             discountWasInvalid ||
             (discountedNumber != null && discountedNumber !in 0..MAX_SAFE_INTEGER)
         ) {
@@ -729,6 +729,7 @@ fun MedicineDetailScreen(
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
     onMoveToMain: ((Medicine) -> Unit)? = null,
+    onSavePrice: (suspend (Long) -> Unit)? = null,
 ) {
     val view = LocalView.current
     val item = snapshot.items.firstOrNull { it.id == medicineId }
@@ -867,7 +868,9 @@ fun MedicineDetailScreen(
                                                 fontWeight = FontWeight.ExtraBold,
                                                 textAlign = TextAlign.Center,
                                             )
-                                            Text(
+                                            if (item.official == null && onSavePrice != null) {
+                                                EmptySellingPrice(snapshot.currency, onSavePrice, Modifier.fillMaxWidth())
+                                            } else Text(
                                                 formatPrice(item.official),
                                                 modifier = Modifier.fillMaxWidth(),
                                                 color = Color(0xFFB8F0CB),
@@ -885,9 +888,9 @@ fun MedicineDetailScreen(
                                 if (!item.imported) item.discounted?.let { price ->
                                     Column(Modifier.fillMaxWidth()) {
                                         Text(
-                                            if (price > item.official) "VERIFY THIS PRICE" else "IF CUSTOMER ASKS",
+                                            if (item.official?.let { price > it } == true) "VERIFY THIS PRICE" else "IF CUSTOMER ASKS",
                                             modifier = Modifier.fillMaxWidth(),
-                                            color = if (price > item.official) Color(0xFFFFB09C) else Color(0xFFDFC68C),
+                                            color = if (item.official?.let { price > it } == true) Color(0xFFFFB09C) else Color(0xFFDFC68C),
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 11.sp,
                                             textAlign = TextAlign.Center,

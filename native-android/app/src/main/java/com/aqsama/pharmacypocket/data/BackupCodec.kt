@@ -89,7 +89,7 @@ object BackupCodec {
         put("note", item.note)
         put("description", item.description)
         if (item.imported || item.importedFields.isNotEmpty()) { put("imported", item.imported); put("importedFields", fieldsToJson(item.importedFields)) }
-        put("official", item.official)
+        put("official", item.official ?: JSONObject.NULL)
         put("discounted", item.discounted ?: JSONObject.NULL)
         put("revision", item.revision.coerceAtLeast(0))
         item.createdAt?.let { put("createdAt", it) }
@@ -101,10 +101,10 @@ object BackupCodec {
         photos[item.id]?.let { jpeg -> put("photoJpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP)) }
     }
 
-    fun parse(raw: String): ParsedBackup {
+    fun parse(raw: String, listName: String = "My medications"): ParsedBackup = importList(listName) {
         try {
             // Our large-list exporter puts this marker first. Read its records incrementally.
-            if (Regex("""^\s*\{\s*"importedList"\s*:\s*true\s*[,}]""").containsMatchIn(raw)) return parseImported(raw)
+            if (Regex("""^\s*\{\s*"importedList"\s*:\s*true\s*[,}]""").containsMatchIn(raw)) return@importList parseImported(raw)
             val root = JSONObject(raw)
             val medicineArray = root.optJSONArray("medicines")
                 ?: throw IllegalArgumentException("This file does not contain a valid medicines list.")
@@ -124,11 +124,14 @@ object BackupCodec {
             val ids = mutableSetOf<String>()
             for (index in 0 until medicineArray.length()) {
                 val obj = medicineArray.optJSONObject(index)
-                    ?: throw IllegalArgumentException("One or more medicines in this file are invalid.")
-                val item = parseMedicine(obj, favoriteIds)
-                require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
+                    ?: throw ImportFieldError("medicines[${index}]", medicineArray.opt(index), "a medicine object")
+                val item = importRecord("Medicine", index, obj) {
+                    val parsed = parseMedicine(obj, favoriteIds)
+                    if (!ids.add(parsed.id)) rejectImport(obj, "id", "a unique medicine ID within this list")
+                    decodePhoto(obj)?.let { photos[parsed.id] = it }
+                    parsed
+                }
                 medicines += item
-                decodePhoto(obj)?.let { photos[item.id] = it }
             }
 
             val sections = if (root.has("sections")) {
@@ -169,7 +172,7 @@ object BackupCodec {
             val currency = root.optString("currency", "IQD").trim().ifEmpty { "IQD" }
             require(currency.length <= 24) { "The currency name in this file is too long." }
 
-            return ParsedBackup(
+            return@importList ParsedBackup(
                 medicines = orderBySections(medicines, sections),
                 sections = sections,
                 categories = categories,
@@ -257,10 +260,13 @@ object BackupCodec {
                     while (reader.hasNext()) {
                         require(medicines.size < SpreadsheetLimits.maxRows) { "This file contains too many medicines." }
                         val obj = readObject(reader)
-                        val item = parseMedicine(obj, emptySet())
-                        require(ids.add(item.id)) { "Duplicate medicine ID: ${item.id}" }
+                        val item = importRecord("Medicine", medicines.size, obj) {
+                            val parsed = parseMedicine(obj, emptySet())
+                            if (!ids.add(parsed.id)) rejectImport(obj, "id", "a unique medicine ID within this list")
+                            decodePhoto(obj)?.let { photos[parsed.id] = it }
+                            parsed
+                        }
                         medicines += item
-                        decodePhoto(obj)?.let { photos[item.id] = it }
                     }
                     reader.endArray()
                 }
@@ -347,29 +353,37 @@ object BackupCodec {
         val subcategory = requiredString(obj, "subcategory", allowBlank = true)
         val name = requiredString(obj, "name")
         val note = requiredString(obj, "note", allowBlank = true)
-        val description = if (obj.has("description")) obj.optString("description", "") else ""
-        val official = requiredSafeLong(obj, "official")
+        val description = if (!obj.has("description") || obj.isNull("description")) "" else requiredString(obj, "description", allowBlank = true)
+        val official = if (!obj.has("official") || obj.isNull("official")) null else requiredSafeLong(obj, "official")
         val discounted = if (!obj.has("discounted") || obj.isNull("discounted")) null
         else requiredSafeLong(obj, "discounted")
         val revisionLong = requiredSafeLong(obj, "revision")
-        require(revisionLong <= Int.MAX_VALUE) { "One or more medicines in this file are invalid." }
+        if (revisionLong > Int.MAX_VALUE) rejectImport(obj, "revision", "an integer from 0 to ${Int.MAX_VALUE}")
         val createdAt = if (!obj.has("createdAt") || obj.isNull("createdAt")) null
         else requiredSafeLong(obj, "createdAt")
         val codes = if (obj.has("codes")) {
             val array = obj.optJSONArray("codes")
-                ?: throw IllegalArgumentException("The codes in this file are invalid.")
-            require(array.length() <= 20) { "A medicine has too many codes." }
+                ?: rejectImport(obj, "codes", "an array of code objects")
+            if (array.length() > 20) rejectImport(obj, "codes", "at most 20 code objects")
             validateCodes(buildList {
                 for (index in 0 until array.length()) {
                     val code = array.optJSONObject(index)
-                        ?: throw IllegalArgumentException("The codes in this file are invalid.")
-                    val kind = runCatching { CodeKind.valueOf(requiredString(code, "kind")) }
-                        .getOrElse { throw IllegalArgumentException("The code type in this file is invalid.") }
-                    add(MedicineCode(kind, requiredString(code, "value"), code.optString("label", "")))
+                        ?: throw ImportFieldError("codes[$index]", array.opt(index), "a code object")
+                    fun invalid(field: String, expected: String): Nothing = throw ImportFieldError("codes[$index].$field", code.opt(field), expected)
+                    val kind = (code.opt("kind") as? String)?.let { runCatching { CodeKind.valueOf(it) }.getOrNull() }
+                        ?: invalid("kind", CodeKind.entries.joinToString { it.name })
+                    val value = (code.opt("value") as? String)?.trim()
+                        ?: invalid("value", "a nonempty string of up to 2048 characters without control characters")
+                    if (value.isEmpty() || value.length > 2048 || value.any { Character.isISOControl(it) }) invalid("value", "a nonempty string of up to 2048 characters without control characters")
+                    val label = if (!code.has("label")) "" else (code.opt("label") as? String)?.trim()
+                        ?: invalid("label", "a string of up to 80 characters without control characters")
+                    if (label.length > 80 || label.any { Character.isISOControl(it) }) invalid("label", "a string of up to 80 characters without control characters")
+                    if (any { it.value == value }) invalid("value", "a code unique within this medicine")
+                    add(MedicineCode(kind, value, label))
                 }
             })
         } else emptyList()
-        require(official >= 0 && (discounted == null || discounted >= 0) && revisionLong >= 0) {
+        require((official == null || official >= 0) && (discounted == null || discounted >= 0) && revisionLong >= 0) {
             "One or more medicines in this file are invalid."
         }
         return Medicine(
@@ -387,7 +401,7 @@ object BackupCodec {
             codes = codes,
             codesSpecified = obj.has("codes"),
             imported = obj.optBoolean("imported", false),
-            importedFields = fieldsFromJson(obj.optJSONArray("importedFields")),
+            importedFields = parseImportedFields(obj),
         )
     }
 
@@ -427,21 +441,44 @@ object BackupCodec {
     private fun requiredString(obj: JSONObject, key: String, allowBlank: Boolean = false): String {
         val value = obj.opt(key)
         if (value !is String || (!allowBlank && value.trim().isEmpty())) {
-            throw IllegalArgumentException("One or more medicines in this file are invalid.")
+            rejectImport(obj, key, if (allowBlank) "a string (empty allowed)" else "a nonempty string")
         }
         return value
     }
 
     private fun requiredSafeLong(obj: JSONObject, key: String): Long {
         val value = obj.opt(key)
-        val number = value as? Number
-            ?: throw IllegalArgumentException("One or more medicines in this file are invalid.")
-        val asDouble = number.toDouble()
-        val asLong = number.toLong()
-        if (!asDouble.isFinite() || asDouble != asLong.toDouble() || asLong < 0 || asLong > maxSafeJsInteger) {
-            throw IllegalArgumentException("One or more medicines in this file are invalid.")
+        val parsed = if (value is Number) runCatching { java.math.BigDecimal(value.toString()).longValueExact() }.getOrNull() else null
+        if (parsed == null || parsed !in 0..maxSafeJsInteger) {
+            rejectImport(obj, key, "a JSON integer from 0 to $maxSafeJsInteger" + if (key == "official" || key == "discounted") "; null or omission for an empty price" else "")
         }
-        return asLong
+        return parsed
+    }
+
+    private fun parseImportedFields(obj: JSONObject): List<ImportedField> {
+        if (!obj.has("importedFields")) return emptyList()
+        val array = obj.optJSONArray("importedFields") ?: rejectImport(obj, "importedFields", "an array of custom field objects")
+        if (array.length() > SpreadsheetLimits.maxFields) rejectImport(obj, "importedFields", "at most ${SpreadsheetLimits.maxFields} custom fields")
+        val keys = hashSetOf<String>()
+        return List(array.length()) { index ->
+            val field = array.optJSONObject(index) ?: throw ImportFieldError("importedFields[$index]", array.opt(index), "a custom field object")
+            fun invalid(key: String, expected: String): Nothing = throw ImportFieldError("importedFields[$index].$key", field.opt(key), expected)
+            fun string(key: String): String = field.opt(key) as? String ?: invalid(key, "a string")
+            val key = string("key")
+            if (!keys.add(key)) invalid("key", "a unique custom field key")
+            val value = string("value")
+            val label = string("label")
+            if (value.length > SpreadsheetLimits.maxCellLength) invalid("value", "a string of up to ${SpreadsheetLimits.maxCellLength} characters")
+            if (label.length !in 1..200) invalid("label", "a string of 1 to 200 characters")
+            val type = runCatching { ImportField.valueOf(string("field")) }.getOrNull() ?: invalid("field", ImportField.entries.joinToString { it.name })
+            val format = if (!field.has("priceFormat")) PriceFormat.DOT_DECIMAL else runCatching { PriceFormat.valueOf(string("priceFormat")) }.getOrNull() ?: invalid("priceFormat", PriceFormat.entries.joinToString { it.name })
+            val placement = if (!field.has("placement")) FieldPlacement.BODY else runCatching { FieldPlacement.valueOf(string("placement")) }.getOrNull() ?: invalid("placement", FieldPlacement.entries.joinToString { it.name })
+            val color = if (!field.has("color") || field.isNull("color")) null else string("color").takeIf { it.isNotEmpty() && it != "null" }
+            if (color != null && !Regex("^#[0-9a-fA-F]{6}$").matches(color)) invalid("color", "#RRGGBB or null")
+            if (field.has("onCard") && field.opt("onCard") !is Boolean) invalid("onCard", "a JSON boolean")
+            if (type.isPrice && value.isNotBlank()) try { spreadsheetPrice(value, format) } catch (error: IllegalArgumentException) { invalid("value", "a price in ${format.name} format: ${error.message}") }
+            ImportedField(key, label, value, type, field.optBoolean("onCard"), format, color, placement)
+        }
     }
 
     private fun sectionToJson(section: BackupSection) = JSONObject()

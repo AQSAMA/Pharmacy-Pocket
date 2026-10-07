@@ -391,6 +391,13 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                             if (allManual) { val ref = ListMedicineRef.decode(id); selectList(ref.listKey.takeUnless { it == MAIN_LIST_KEY }, Destination.Detail(ref.medicineId)) }
                             else push(Destination.Detail(id))
                         },
+                        onSavePrice = { id, price ->
+                            val selected = selectedListId
+                            val ref = if (allManual) ListMedicineRef.decode(id) else ListMedicineRef(selected ?: MAIN_LIST_KEY, id)
+                            val target = repositoryFor(ref.listKey.takeUnless { it == MAIN_LIST_KEY })
+                            val saved = target.setSellingPrice(ref.medicineId, price)
+                            if (selectedListId == selected) snapshot = if (selected == ALL_MANUAL_LISTS) selectedSnapshot() else saved
+                        },
                         onEditMedicine = { id ->
                             if (allManual) { val ref = ListMedicineRef.decode(id); selectList(ref.listKey.takeUnless { it == MAIN_LIST_KEY }, Destination.Editor(ref.medicineId, null)) }
                             else push(Destination.Editor(id, null))
@@ -580,6 +587,12 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                         busy = busy,
                         onBack = ::pop,
                         onEdit = { push(Destination.Editor(destination.medicineId, null)) },
+                        onSavePrice = { price ->
+                            val target = repository
+                            val selected = selectedListId
+                            val saved = target.setSellingPrice(destination.medicineId, price)
+                            if (selectedListId == selected) snapshot = saved
+                        },
                         onToggleFavorite = { item ->
                             scope.launch {
                                 try {
@@ -669,7 +682,7 @@ fun PharmacyApp(baseRepository: PharmacyRepository) {
                             movingMedicine = null
                             if (removeSource) removeMedicineDestinations(item.id)
                             if (mergeId != null) bumpPhotoVersion(photoVersions, mergeId)
-                        }) { repository.transferMedication(item.id, destinationRepository, removeSource, name, price, category, mergeId) }
+                        }) { repository.transferMedication(item.id, destinationRepository, removeSource, name, price, category, mergeId, priceSpecified = true) }
                     }, mainAvailable = selectedListId != null, mainName = mainName,
                     loadDestination = { repositoryFor(it).loadSnapshot() })
             }

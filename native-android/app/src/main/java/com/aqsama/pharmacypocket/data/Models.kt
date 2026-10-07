@@ -13,7 +13,7 @@ data class Medicine(
     val name: String,
     val note: String,
     val description: String = "",
-    val official: Long,
+    val official: Long?,
     val discounted: Long?,
     val revision: Int = 0,
     val favorite: Boolean = false,
@@ -260,19 +260,31 @@ fun listSubcategories(index: List<MedicineSearchEntry>, category: String): List<
 private fun compareNames(left: String, right: String): Int =
     normalizeSearch(left).compareTo(normalizeSearch(right))
 
-private fun sortablePrice(item: Medicine): java.math.BigDecimal =
-    if (item.imported) runCatching { item.importedFields.firstOrNull { it.field == ImportField.PHARMACY_PRICE }?.let { spreadsheetPrice(it.value, it.priceFormat) } }.getOrNull() ?: java.math.BigDecimal.ZERO
-    else java.math.BigDecimal.valueOf(item.official)
+private fun sortablePrice(item: Medicine): java.math.BigDecimal? =
+    if (item.imported) runCatching { item.importedFields.firstOrNull { it.field == ImportField.PHARMACY_PRICE }?.let { spreadsheetPrice(it.value, it.priceFormat) } }.getOrNull()
+    else item.official?.let(java.math.BigDecimal::valueOf)
+
+private fun compareSellingPrices(left: Medicine, right: Medicine, descending: Boolean): Int {
+    val a = sortablePrice(left)
+    val b = sortablePrice(right)
+    return when {
+        a == null && b == null -> 0
+        a == null -> 1
+        b == null -> -1
+        descending -> b.compareTo(a)
+        else -> a.compareTo(b)
+    }
+}
 
 fun compareMedicines(left: Medicine, right: Medicine, sort: MedicineSort): Int = when (sort) {
     MedicineSort.NAME_ASC -> compareNames(left.name, right.name)
     MedicineSort.NAME_DESC -> -compareNames(left.name, right.name)
     MedicineSort.PRICE_ASC -> {
-        val price = sortablePrice(left).compareTo(sortablePrice(right))
+        val price = compareSellingPrices(left, right, false)
         if (price != 0) price else compareNames(left.name, right.name)
     }
     MedicineSort.PRICE_DESC -> {
-        val price = sortablePrice(right).compareTo(sortablePrice(left))
+        val price = compareSellingPrices(left, right, true)
         if (price != 0) price else -compareNames(left.name, right.name)
     }
     MedicineSort.DATE_ASC -> {
@@ -323,7 +335,7 @@ fun filterSortedMedicines(
         .toList()
 }
 
-fun formatPrice(value: Long): String = NumberFormat.getIntegerInstance(Locale.US).format(value)
+fun formatPrice(value: Long?): String = value?.let { NumberFormat.getIntegerInstance(Locale.US).format(it) } ?: "Add price"
 
 fun formatAddedDate(value: Long?): String {
     if (value == null || value < 0 || value > 8_640_000_000_000_000L) return "Unknown"

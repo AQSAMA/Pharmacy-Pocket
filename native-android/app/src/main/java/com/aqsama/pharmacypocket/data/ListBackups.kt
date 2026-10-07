@@ -76,6 +76,22 @@ object LibraryBackupCodec {
             val backup = BackupCodec.parse(raw)
             return listOf(ListBackup(MedicationList(MAIN_LIST_KEY, if (backup.importedList) "Imported medications" else "My medications", backup.importedList), backup, nameSpecified = false))
         }
+        val names = mutableListOf<String>()
+        android.util.JsonReader(java.io.StringReader(raw)).use { reader ->
+            reader.beginObject()
+            while (reader.hasNext()) if (reader.nextName() == "lists") {
+                reader.beginArray()
+                while (reader.hasNext()) {
+                    require(names.size < 256) { "Too many lists." }
+                    var name = "List #${names.size + 1}"
+                    reader.beginObject()
+                    while (reader.hasNext()) if (reader.nextName() == "name") name = reader.nextString() else reader.skipValue()
+                    reader.endObject(); names += name
+                }
+                reader.endArray()
+            } else reader.skipValue()
+            reader.endObject()
+        }
         val entries = mutableListOf<ListBackup>()
         var foundSchema = ""
         var version = 0
@@ -95,7 +111,7 @@ object LibraryBackupCodec {
                             "id" -> key = reader.nextString()
                             "name" -> name = reader.nextString().trim()
                             "imported" -> imported = reader.nextBoolean()
-                            "backup" -> backup = BackupCodec.readBackup(reader)
+                            "backup" -> backup = importList(names.getOrElse(entries.size) { "List #${entries.size + 1}" }) { BackupCodec.readBackup(reader) }
                             else -> reader.skipValue()
                         }
                         reader.endObject()

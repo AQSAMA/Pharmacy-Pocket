@@ -121,6 +121,7 @@ internal fun HomeScreen(
     onLists: () -> Unit = onSettings,
     listName: String? = null,
     imported: Boolean = false,
+    onSavePrice: (suspend (String, Long) -> Unit)? = null,
     indexModel: HomeIndexViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
 ) {
     val view = LocalView.current
@@ -383,6 +384,7 @@ internal fun HomeScreen(
                                 onCamera = { onQuickCapture(row.item.id) },
                                 loadPhoto = loadPhoto,
                                 photoVersion = photoVersions[row.item.id] ?: 0,
+                                onSavePrice = onSavePrice?.let { save -> { price -> save(row.item.id, price) } },
                             )
                         }
                     }
