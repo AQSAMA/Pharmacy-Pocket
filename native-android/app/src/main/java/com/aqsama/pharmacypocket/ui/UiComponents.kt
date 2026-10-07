@@ -145,6 +145,7 @@ fun MedicineCard(
     onCamera: () -> Unit,
     loadPhoto: suspend (String) -> ByteArray?,
     photoVersion: Int,
+    onSavePrice: (suspend (Long) -> Unit)? = null,
 ) {
     var photo by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf<ImageBitmap?>(null) }
     var photoLoading by remember(item.id, item.hasPhoto, photoVersion) { mutableStateOf(item.hasPhoto) }
@@ -310,10 +311,10 @@ fun MedicineCard(
                                 Color(0xFFA66C14)
                             }
                             val discountColor: (Long) -> Color = { price ->
-                                if (price > item.official) verifyPriceColor else normalDiscountColor
+                                if (item.official?.let { price > it } == true) verifyPriceColor else normalDiscountColor
                             }
 
-                            if (!item.imported) MedicineCardPrices(item, item.displayCurrency ?: currency, large, discountColor)
+                            if (!item.imported) MedicineCardPrices(item, item.displayCurrency ?: currency, large, discountColor, onSavePrice)
                             ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.BODY }, compact = true, large = large)
                             ImportedFields(item.importedFields.filter { it.placement == com.aqsama.pharmacypocket.data.FieldPlacement.FOOTER }, compact = true, large = large)
                             Row(
@@ -411,12 +412,12 @@ private fun MedicineCardPhotoDialog(name: String, bitmap: ImageBitmap, onDismiss
 
 /** Keep ordinary prices in one row; reflow amounts that cannot fit at a readable size. */
 @Composable
-private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean, discountColor: (Long) -> Color) {
+private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean, discountColor: (Long) -> Color, onSavePrice: (suspend (Long) -> Unit)?) {
     val priceLabel = if (item.importedFields.any { it.key == "source-name" }) "YOUR PRICE" else "OFFICIAL"
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
     val minimumStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-    fun requiredWidth(price: Long): Int = measurer.measure(
+    fun requiredWidth(price: Long?): Int = measurer.measure(
         text = AnnotatedString(formatPrice(price)),
         style = minimumStyle,
         maxLines = 1,
@@ -433,18 +434,18 @@ private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean,
         if (reflow) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 MedicineCardPrice(priceLabel, item.official, currency, large, MaterialTheme.colorScheme.primary,
-                    allowWrap = true, modifier = Modifier.fillMaxWidth())
+                    allowWrap = true, modifier = Modifier.fillMaxWidth(), onSavePrice = onSavePrice)
                 item.discounted?.let { price ->
-                    MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
+                    MedicineCardPrice(if (item.official?.let { price > it } == true) "VERIFY" else "IF ASKED", price, null,
                         large, discountColor(price), allowWrap = true, modifier = Modifier.fillMaxWidth())
                 }
             }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Bottom) {
                 MedicineCardPrice(priceLabel, item.official, currency, large, MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f))
+                    modifier = Modifier.weight(1f), onSavePrice = onSavePrice)
                 item.discounted?.let { price ->
-                    MedicineCardPrice(if (price > item.official) "VERIFY" else "IF ASKED", price, null,
+                    MedicineCardPrice(if (item.official?.let { price > it } == true) "VERIFY" else "IF ASKED", price, null,
                         large, discountColor(price), modifier = Modifier.weight(0.82f))
                 }
             }
@@ -455,12 +456,13 @@ private fun MedicineCardPrices(item: Medicine, currency: String, large: Boolean,
 @Composable
 private fun MedicineCardPrice(
     label: String,
-    price: Long,
+    price: Long?,
     currency: String?,
     large: Boolean,
     color: Color,
     allowWrap: Boolean = false,
     modifier: Modifier = Modifier,
+    onSavePrice: (suspend (Long) -> Unit)? = null,
 ) {
     Column(
         modifier = modifier,
@@ -472,7 +474,9 @@ private fun MedicineCardPrice(
             fontSize = 10.sp,
             fontWeight = FontWeight.ExtraBold,
         )
-        Text(
+        if (price == null && onSavePrice != null) {
+            EmptySellingPrice(currency.orEmpty(), onSavePrice)
+        } else Text(
             text = formatPrice(price),
             color = color,
             modifier = Modifier.fillMaxWidth(),

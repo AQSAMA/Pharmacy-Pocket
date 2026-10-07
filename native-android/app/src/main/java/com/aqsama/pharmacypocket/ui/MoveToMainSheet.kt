@@ -34,11 +34,11 @@ private enum class TransferMode(val label: String, val icon: AppSymbol) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<ImportedList>, busy: Boolean, onDismiss: () -> Unit,
-    onTransfer: (String?, Boolean, String, Long, String, String?) -> Unit,
+    onTransfer: (String?, Boolean, String, Long?, String, String?) -> Unit,
     mainAvailable: Boolean = true, mainName: String = "My medications",
     loadDestination: (suspend (String?) -> AppSnapshot)? = null) {
     var name by rememberSaveable(item.id) { mutableStateOf(item.name) }
-    var price by rememberSaveable(item.id) { mutableStateOf(item.official.toString()) }
+    var price by rememberSaveable(item.id) { mutableStateOf(item.official?.toString().orEmpty()) }
     var category by rememberSaveable(item.id) { mutableStateOf(if (item.imported) main.categories.firstOrNull { it.id != "all" }?.id ?: "tablets" else item.category) }
     var destination by rememberSaveable(item.id) { mutableStateOf<String?>(if (mainAvailable) null else lists.firstOrNull()?.id) }
     var mode by rememberSaveable(item.id) { mutableStateOf(TransferMode.COPY) }
@@ -71,7 +71,7 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
     val ready = loadDestination == null || loadedKey == (destination ?: MAIN_LIST_KEY)
     val target = if (ready) destinationSnapshot.items.firstOrNull { it.id == targetId } else null
     val value = price.trim().toLongOrNull()
-    val valid = ready && !loading && loadError == null && if (merging) !destinationImported && target != null else destinationImported || (name.isNotBlank() && value != null && value in 0..9_007_199_254_740_991L)
+    val valid = ready && !loading && loadError == null && if (merging) !destinationImported && target != null else destinationImported || (name.isNotBlank() && (price.isBlank() || value != null && value in 0..9_007_199_254_740_991L))
     val destinationLabel = if (destination == null && !mainAvailable) "Choose list" else if (destination == null) mainName else lists.firstOrNull { it.id == destination }?.name ?: "Choose list"
     val destinationExists = destination == null && mainAvailable || lists.any { it.id == destination }
     fun pick(screen: String) { picker = screen; search = ""; Haptics.action(view) }
@@ -167,7 +167,7 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                                 item { OutlinedTextField(name, { name = it.take(SpreadsheetLimits.maxCellLength) }, label = { Text("Common name") }, modifier = Modifier.fillMaxWidth(), enabled = !busy, maxLines = 3) }
                                 item { OutlinedTextField(price, { price = it }, label = { Text("Your price") }, suffix = { Text(destinationSnapshot.currency) }, singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
-                                    modifier = Modifier.fillMaxWidth(), enabled = !busy, isError = value == null || value !in 0..9_007_199_254_740_991L) }
+                                    modifier = Modifier.fillMaxWidth(), enabled = !busy, isError = price.isNotBlank() && (value == null || value !in 0..9_007_199_254_740_991L)) }
                                 item { ActionRow(AppSymbol.CATEGORY, "Category", destinationSnapshot.categories.firstOrNull { it.id == category }?.label, !busy) { pick("categories") } }
                             }
                             item {
@@ -184,7 +184,7 @@ internal fun MoveToMainSheet(item: Medicine, main: AppSnapshot, lists: List<Impo
                 HorizontalDivider()
                 Button(onClick = {
                     keyboard?.hide()
-                    onTransfer(destination, mode == TransferMode.MOVE || merging && removeAfterMerge, name.trim(), value ?: item.official, category, if (merging) targetId else null)
+                    onTransfer(destination, mode == TransferMode.MOVE || merging && removeAfterMerge, name.trim(), value, category, if (merging) targetId else null)
                 }, enabled = !busy && valid && destinationExists, modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp).heightIn(min = 54.dp).testTag("transfer-confirm")) {
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else AppIcon(mode.icon)
                     Spacer(Modifier.width(8.dp)); Text(if (busy) "Saving…" else mode.label)

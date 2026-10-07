@@ -130,7 +130,7 @@ fun syncImportedFields(item: Medicine): Medicine {
     return item.copy(
         category = categories.firstOrNull()?.value?.trim()?.ifBlank { "Uncategorized" } ?: "Uncategorized",
         subcategory = categories.drop(1).map { it.value.trim().ifBlank { "Uncategorized" } }.joinToString(" › ").ifBlank { "General" },
-        official = price(ImportField.PHARMACY_PRICE) ?: 0,
+        official = price(ImportField.PHARMACY_PRICE),
         discounted = price(ImportField.WHOLESALE_PRICE),
     )
 }
@@ -157,7 +157,7 @@ fun prepareSpreadsheet(sheet: SpreadsheetSheet, headerRow: Int, mappings: List<C
             medicines += syncImportedFields(Medicine(
                 id = "$prefix-${row.number}", category = "Uncategorized", subcategory = "General",
                 name = value(ImportField.NAME), note = value(ImportField.NOTE), description = value(ImportField.DESCRIPTION),
-                official = 0, discounted = null, createdAt = now, imported = true, importedFields = fields,
+                official = null, discounted = null, createdAt = now, imported = true, importedFields = fields,
             ))
         } catch (error: IllegalArgumentException) {
             errorCount++

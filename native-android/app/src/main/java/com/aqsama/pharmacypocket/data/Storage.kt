@@ -13,7 +13,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Locale
 
-private const val DATABASE_VERSION = 4
+private const val DATABASE_VERSION = 5
 
 private data class ExistingRow(
     val sortOrder: Long,
@@ -78,7 +78,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
                   name TEXT NOT NULL,
                   note TEXT NOT NULL,
                   description TEXT NOT NULL DEFAULT '',
-                  official INTEGER NOT NULL,
+                  official INTEGER,
                   discounted INTEGER,
                   revision INTEGER NOT NULL DEFAULT 0,
                   favorite INTEGER NOT NULL DEFAULT 0,
@@ -118,6 +118,27 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
             }
             db.execSQL("CREATE TABLE IF NOT EXISTS medicine_photos (medicine_id TEXT PRIMARY KEY NOT NULL, jpeg BLOB NOT NULL)")
 
+            // SQLite cannot remove NOT NULL with ALTER COLUMN. Rebuild transactionally,
+            // copying every column (including trash, ordering and imported fields).
+            val officialRequired = db.rawQuery("PRAGMA table_info(medicines)", null).use { cursor ->
+                var required = false
+                while (cursor.moveToNext()) if (cursor.getString(cursor.getColumnIndexOrThrow("name")) == "official") {
+                    required = cursor.getInt(cursor.getColumnIndexOrThrow("notnull")) != 0
+                }
+                required
+            }
+            if (officialRequired) {
+                val definition = db.rawQuery("SELECT sql FROM sqlite_master WHERE type='table' AND name='medicines'", null).use {
+                    check(it.moveToFirst()); it.getString(0)
+                }
+                val nullableDefinition = definition.replace(Regex("(?i)official\\s+INTEGER\\s+NOT\\s+NULL"), "official INTEGER")
+                check(nullableDefinition != definition) { "Cannot migrate selling prices." }
+                db.execSQL("ALTER TABLE medicines RENAME TO medicines_required_price")
+                db.execSQL(nullableDefinition)
+                val names = tableColumns(db).joinToString(",") { "\"$it\"" }
+                db.execSQL("INSERT INTO medicines ($names) SELECT $names FROM medicines_required_price")
+                db.execSQL("DROP TABLE medicines_required_price")
+            }
             db.execSQL("PRAGMA user_version = $DATABASE_VERSION")
             db.setTransactionSuccessful()
         } finally {
@@ -135,7 +156,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
             name = cursor.getString(cursor.getColumnIndexOrThrow("name")),
             note = cursor.getString(cursor.getColumnIndexOrThrow("note")),
             description = cursor.getString(cursor.getColumnIndexOrThrow("description")) ?: "",
-            official = cursor.getLong(cursor.getColumnIndexOrThrow("official")),
+            official = cursor.getColumnIndexOrThrow("official").let { if (cursor.isNull(it)) null else cursor.getLong(it) },
             discounted = if (cursor.isNull(discounted)) null else cursor.getLong(discounted),
             revision = cursor.getInt(cursor.getColumnIndexOrThrow("revision")),
             favorite = cursor.getInt(cursor.getColumnIndexOrThrow("favorite")) != 0,
@@ -228,7 +249,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
             put("description", item.description)
             put("imported", if (item.imported) 1 else 0)
             put("imported_fields", fieldsToJson(item.importedFields).toString())
-            put("official", item.official)
+            if (item.official == null) putNull("official") else put("official", item.official)
             if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
             put("revision", item.revision)
             put("favorite", if (current?.favorite ?: item.favorite) 1 else 0)
@@ -258,7 +279,7 @@ internal class MedicineDatabase(context: Context, listId: String? = null) {
             put("description", item.description)
             put("imported", if (item.imported) 1 else 0)
             put("imported_fields", fieldsToJson(item.importedFields).toString())
-            put("official", item.official)
+            if (item.official == null) putNull("official") else put("official", item.official)
             if (item.discounted == null) putNull("discounted") else put("discounted", item.discounted)
             put("revision", item.revision)
             put("favorite", if (item.favorite) 1 else 0)
@@ -705,9 +726,20 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
         }
     }
 
+    suspend fun setSellingPrice(id: String, price: Long): AppSnapshot = withContext(Dispatchers.IO) {
+        require(price in 0..9_007_199_254_740_991L) { "Enter a nonnegative whole-number price." }
+        mutex.withLock {
+            val current = database.loadMedicines().firstOrNull { it.id == id }
+                ?: throw IllegalArgumentException("This medicine is no longer available.")
+            require(!current.imported) { "Edit mapped prices in the medicine editor." }
+            database.saveMedicine(current.copy(official = price))
+            snapshotUnsafe()
+        }
+    }
+
     suspend fun saveMedicine(item: Medicine, photo: ByteArray? = null, removePhoto: Boolean = false): AppSnapshot = withContext(Dispatchers.IO) {
         require(item.id.isNotBlank() && item.name.isNotBlank() && item.category.isNotBlank())
-        require(item.official >= 0 && (item.discounted == null || item.discounted >= 0))
+        require((item.official == null || item.official in 0..9_007_199_254_740_991L) && (item.discounted == null || item.discounted >= 0))
         mutex.withLock {
             val codes = validateCodes(item.codes)
             val conflicts = database.loadMedicines().filter { it.id != item.id }
@@ -753,13 +785,13 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
         }
     }
 
-    suspend fun moveToMain(id: String, main: PharmacyRepository, commonName: String, price: Long, category: String): AppSnapshot =
-        transferMedication(id, main, true, commonName, price, category)
+    suspend fun moveToMain(id: String, main: PharmacyRepository, commonName: String, price: Long?, category: String): AppSnapshot =
+        transferMedication(id, main, true, commonName, price, category, priceSpecified = true)
 
     private companion object { val transferMutex = Mutex() }
 
     suspend fun transferMedication(id: String, destination: PharmacyRepository, removeSource: Boolean,
-        commonName: String? = null, price: Long? = null, category: String? = null, mergeTargetId: String? = null): AppSnapshot = withContext(Dispatchers.IO) {
+        commonName: String? = null, price: Long? = null, category: String? = null, mergeTargetId: String? = null, priceSpecified: Boolean = false): AppSnapshot = withContext(Dispatchers.IO) {
         require(listId != destination.listId) { "Choose a different destination list." }
         transferMutex.withLock { mutex.withLock { destination.mutex.withLock {
             val source = database.loadMedicines().firstOrNull { it.id == id } ?: error("This medicine is no longer available.")
@@ -771,8 +803,8 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
             val item = if (target != null) mergeMedicationDetails(target, source, preferences.currency()) else {
                 val name = if (!destination.isImportedList) commonName?.trim() ?: source.name else source.name
                 require(name.isNotEmpty() && name.length <= SpreadsheetLimits.maxCellLength)
-                val chosenPrice = if (!destination.isImportedList) price ?: source.official else source.official
-                require(chosenPrice in 0..9_007_199_254_740_991L)
+                val chosenPrice = if (!destination.isImportedList) if (priceSpecified || price != null) price else source.official else source.official
+                require(chosenPrice == null || chosenPrice in 0..9_007_199_254_740_991L)
                 source.copy(id = "manual-${java.util.UUID.randomUUID()}", name = name,
                     category = if (!destination.isImportedList) category ?: source.category else source.category,
                     subcategory = if (!destination.isImportedList && isImportedList) "General" else source.subcategory,
@@ -866,13 +898,18 @@ class PharmacyRepository(private val context: Context, val listId: String? = nul
         currentItems.filter { it.id !in incomingIds }.forEach { item ->
             item.codes.forEach { allCodes.add(it.value) }
         }
-        data.medicines.forEach { item ->
-            item.importedFields.filter { it.field.isPrice && it.value.isNotBlank() }.forEach { spreadsheetPrice(it.value, it.priceFormat) }
+        data.medicines.forEachIndexed { medicineIndex, item ->
+            item.importedFields.forEachIndexed { fieldIndex, field ->
+                if (field.field.isPrice && field.value.isNotBlank()) try { spreadsheetPrice(field.value, field.priceFormat) }
+                catch (error: IllegalArgumentException) {
+                    throw IllegalArgumentException("Medicine #${medicineIndex + 1} (${importValue(item.name)}): Field 'importedFields[$fieldIndex].value': value ${importValue(field.value)}; expected a price in ${field.priceFormat.name} format.", error)
+                }
+            }
             val existingCodes = if (mode == ImportMode.MERGE && !item.codesSpecified) {
                 currentById[item.id]?.codes ?: emptyList()
             } else validateCodes(item.codes)
-            existingCodes.forEach { code ->
-                require(allCodes.add(code.value)) { "The backup assigns a code to more than one medicine." }
+            existingCodes.forEachIndexed { index, code ->
+                require(allCodes.add(code.value)) { "Medicine #${medicineIndex + 1} (${importValue(item.name)}): Field 'codes[$index].value': value ${importValue(code.value)}; expected a code unique across medicines in the destination list." }
             }
         }
         val currentCategories = preferences.categories()

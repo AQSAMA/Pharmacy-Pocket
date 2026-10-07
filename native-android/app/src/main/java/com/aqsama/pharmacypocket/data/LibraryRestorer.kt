@@ -25,7 +25,7 @@ class LibraryRestorer(context: Context) {
         var completed = 0
         try {
             // All predictable failures are checked before touching any destination.
-            entries.forEach { entry ->
+            entries.forEach { entry -> importList(entry.list.name) {
                 if (destinationKey == null && entry.nameSpecified) require(entry.list.name.trim().length in 1..100) {
                     "Use a list name of 1–100 characters."
                 }
@@ -40,14 +40,14 @@ class LibraryRestorer(context: Context) {
                     if (!entry.list.imported) resolveCategoryImport(PharmacyDefaults.categories, entry.backup.categories,
                         mode, entry.backup.medicines.map { it.category })
                 }
-            }
+            } }
             entries.forEach { entry ->
                 val matched = existing(entry)
                 val target = matched ?: catalog.createRestored(
                     if (destinationKey?.startsWith("new:") == true) destinationKey.removePrefix("new:") else entry.list.name,
                     entry.list.imported, if (destinationKey == null) entry.list.id else null,
                 ).let { MedicationList(it.id, it.name, it.imported) }
-                repository(target).importBackup(entry.backup, mode)
+                importList(entry.list.name) { repository(target).importBackup(entry.backup, mode) }
                 // Only separate-list restores apply saved names. Legacy files have no name,
                 // and importing into a chosen destination keeps that destination's name.
                 if (destinationKey == null && entry.nameSpecified && matched != null) {
